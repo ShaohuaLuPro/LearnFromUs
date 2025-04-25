@@ -4,7 +4,7 @@ import Footer from './components/Footer';
 import Home from './pages/Home';
 import About from './pages/About';
 import MLModel from './pages/MLModel';
-import Algorithms from './pages/Algorithms';
+import Algorithm from './pages/Algorithm';
 import './App.css';
 
 function App() {
@@ -17,7 +17,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/about" element={<About />} />
             <Route path="/ml" element={<MLModel />} />
-            <Route path="/algorithms" element={<Algorithms />} />
+            <Route path="/algorithm" element={<Algorithm />} />
           </Routes>
         </main>
         <Footer />

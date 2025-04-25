@@ -1,17 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Form, Card } from 'react-bootstrap';
+import { algorithmList } from './Algorithms';
 
-// Placeholder algorithm components
-const BubbleSort = () => <p>Bubble Sort Visualizer Coming Soon...</p>;
-const Dijkstra = () => <p>Dijkstra's Algorithm Visualizer Coming Soon...</p>;
-
-const algorithmList = [
-  { name: 'Bubble Sort', component: <BubbleSort /> },
-  { name: "Dijkstra's Algorithm", component: <Dijkstra /> },
-  // Add more algorithms here
-];
-
-export default function Algorithms() {
+export default function Algorithm() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [open, setOpen] = useState(false);
@@ -21,7 +12,6 @@ export default function Algorithms() {
     item.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Click outside to close
   useEffect(() => {
     const handleClickOutside = e => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -36,7 +26,6 @@ export default function Algorithms() {
     <div className="container mt-5 pt-5">
       <h2>Algorithm Visualizations</h2>
 
-      {/* Dropdown with search */}
       <div ref={dropdownRef} style={{ maxWidth: '400px' }} className="position-relative mb-4">
         <button
           className="btn btn-outline-success w-100 text-start"
@@ -77,7 +66,6 @@ export default function Algorithms() {
         )}
       </div>
 
-      {/* Selected algorithm demo */}
       <div>
         {selected ? (
           <Card className="p-3">

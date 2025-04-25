@@ -1,14 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Form, Card } from 'react-bootstrap';
-
-// Demo components
-const LogisticRegressionDemo = () => <p>Logistic Regression Demo Placeholder</p>;
-const KMeansDemo = () => <p>K-Means Clustering Demo Placeholder</p>;
-
-const mlModels = [
-  { name: 'Logistic Regression', component: <LogisticRegressionDemo /> },
-  { name: 'K-Means Clustering', component: <KMeansDemo /> },
-];
+import { mlModels } from './MLModels';
 
 export default function MLModel() {
   const [search, setSearch] = useState('');
@@ -20,7 +12,6 @@ export default function MLModel() {
     item.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = e => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -35,7 +26,6 @@ export default function MLModel() {
     <div className="container mt-5 pt-5">
       <h2>Machine Learning Demos</h2>
 
-      {/* Custom dropdown with search */}
       <div ref={dropdownRef} style={{ maxWidth: '400px' }} className="position-relative mb-4">
         <button
           className="btn btn-outline-primary w-100 text-start"
@@ -62,7 +52,7 @@ export default function MLModel() {
                   onClick={() => {
                     setSelected(item);
                     setOpen(false);
-                    setSearch(''); // clear search on select
+                    setSearch('');
                   }}
                 >
                   {item.name}
@@ -76,7 +66,6 @@ export default function MLModel() {
         )}
       </div>
 
-      {/* Render selected demo */}
       <div>
         {selected ? (
           <Card className="p-3">

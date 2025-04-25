@@ -12,7 +12,7 @@ export default function Header() {
           <Nav className="me-auto">
             <Nav.Link as={NavLink} to="/about">About</Nav.Link>
             <Nav.Link as={NavLink} to="/ml">ML Demos</Nav.Link>
-            <Nav.Link as={NavLink} to="/algorithms">Algorithms</Nav.Link>
+            <Nav.Link as={NavLink} to="/algorithm">Algorithms</Nav.Link>
           </Nav>
         </Navbar.Collapse>
       </Container>

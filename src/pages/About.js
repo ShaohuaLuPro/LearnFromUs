@@ -2,56 +2,69 @@ import React from 'react';
 
 export default function About() {
   return (
-    <div className="container mt-5 pt-5">
-      <div className="row">
-        {/* Left: Brief intro or photo */}
-        <div className="col-md-4 mb-4">
-          <h2>About Me</h2>
-          <p>Hi! I'm Shaohua Lu, a data scientist passionate about building smart tools and interfaces using data, code, and machine learning.</p>
-          <p>📍 Based in Weymouth, MA</p>
+    <div className="container page-shell">
+      <section className="hero-card mb-4">
+        <h1 className="hero-title mb-2">Founder</h1>
+        <p className="hero-copy mb-0">
+          I am Shaohua Lu, founder of LearnFromUs. I build practical products at the intersection of
+          software engineering, AI, and community learning.
+        </p>
+      </section>
+
+      <div className="row g-4">
+        <div className="col-lg-7">
+          <section className="panel mb-4">
+            <h4>Why I Built LearnFromUs</h4>
+            <p className="mb-0 muted">
+              Too much technical learning is passive. LearnFromUs is designed around sharing real
+              implementations, practical hacks, and product lessons from builders who are actively shipping.
+            </p>
+          </section>
+
+          <section className="panel mb-4">
+            <h4>What I Focus On</h4>
+            <p className="mb-2">
+              I lead product direction and engineering execution, with a focus on:
+            </p>
+            <ul className="mb-0">
+              <li>Developer tools and community features that encourage high-quality contributions</li>
+              <li>AI-assisted workflows that improve shipping speed without sacrificing quality</li>
+              <li>Modern full-stack systems using React, TypeScript, and scalable backend architecture</li>
+            </ul>
+          </section>
+
+          <section className="panel">
+            <h4>Vision</h4>
+            <p className="mb-0 muted">
+              Build a forum where learning is public, proof of skill is visible, and career growth comes
+              from what you can build and explain, not just what you claim on paper.
+            </p>
+          </section>
         </div>
 
-        {/* Right: Resume */}
-        <div className="col-md-8">
-          <h4>Resume</h4>
-          <p><strong>Shaohua Lu</strong><br />
-          Weymouth, MA 02190 ▪ 267-328-7664 ▪ <a href="mailto:tomlu1234567@gmail.com">tomlu1234567@gmail.com</a><br />
-          <a href="https://www.linkedin.com/in/shaohualu/" target="_blank" rel="noreferrer">LinkedIn</a> ▪ 
-          <a href="https://github.com/ShaohuaLu97" target="_blank" rel="noreferrer"> GitHub</a>
-          </p>
-
-          <h5>Education</h5>
-          <ul>
-            <li><strong>Tufts University</strong>, MS in Data Science (May 2025)</li>
-            <li><strong>Northeastern University</strong>, MS in Information Systems (May 2022)</li>
-            <li><strong>Drexel University</strong>, BS in Business Admin - MIS & Business Analytics (March 2020)</li>
-          </ul>
-
-          <h5>Skills</h5>
-          <ul>
-            <li><strong>Programming:</strong> Python, SQL, HTML5, CSS, JavaScript, Bootstrap, MongoDB, React, Node.js, Spring, R, REST API, OpenCV</li>
-            <li><strong>Analytics:</strong> Pandas, NumPy, ML, Classification, Clustering, NLP, Random Forest, XGBoost, Statistical Analysis, Excel, LP</li>
-            <li><strong>Visualization:</strong> D3.js, Tableau, Matplotlib, Seaborn, Figma, Moqups, Balsamiq, Axure</li>
-          </ul>
-
-          <h5>Professional Experience</h5>
-          <p><strong>Tech Brain Solution</strong>, Front-End Web Developer (July 2022 – May 2023)</p>
-          <ul>
-            <li>Revamped 12 certification pages with modern, responsive UI using Bootstrap & custom CSS.</li>
-            <li>Built Accordion, Progress Bar, and interactive features using React and Font Awesome.</li>
-          </ul>
-
-          <p><strong>China MinSheng Bank</strong>, Data Analyst Intern (July 2019 – Sept 2019)</p>
-          <ul>
-            <li>Digitized customer data with Excel + VLOOKUP, used R for ML analysis & segmentation.</li>
-          </ul>
-
-          <h5>Project Experience</h5>
-          <p><strong>Boston Touring</strong> – E-commerce site using MERN stack (Sept 2021 – Dec 2021)</p>
-          <ul>
-            <li>Built secure user auth (bcrypt + JWT), product CRUD, MongoDB backend, Cloudinary image storage.</li>
-            <li>Used Postman for API testing and validation.</li>
-          </ul>
+        <div className="col-lg-5">
+          <section className="glass-card p-4 h-100">
+            <h4 className="mb-3">Connect</h4>
+            <p className="mb-2"><strong>Name:</strong> Shaohua Lu</p>
+            <p className="mb-2"><strong>Role:</strong> Founder, LearnFromUs</p>
+            <p className="mb-2"><strong>Location:</strong> Boston, MA</p>
+            <p className="mb-2">
+              <strong>Email:</strong>{' '}
+              <a href="mailto:tomlu1234567@gmail.com">tomlu1234567@gmail.com</a>
+            </p>
+            <p className="mb-2">
+              <strong>LinkedIn:</strong>{' '}
+              <a href="https://www.linkedin.com/in/shaohualu/" target="_blank" rel="noreferrer">
+                linkedin.com/in/shaohualu
+              </a>
+            </p>
+            <p className="mb-0">
+              <strong>GitHub:</strong>{' '}
+              <a href="https://github.com/ShaohuaLuPro" target="_blank" rel="noreferrer">
+                github.com/ShaohuaLuPro
+              </a>
+            </p>
+          </section>
         </div>
       </div>
     </div>

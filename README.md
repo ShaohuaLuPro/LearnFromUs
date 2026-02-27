@@ -1,70 +1,68 @@
-# Getting Started with Create React App
+# LearnFromUs Forum
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Community forum MVP for coding hacks and project showcases.
 
-## Available Scripts
+## Stack
+- Frontend: React (GitHub Pages)
+- Backend: Node.js + Express
+- Database: PostgreSQL (Neon recommended)
 
-In the project directory, you can run:
+## Project Structure
+- `src/` frontend
+- `server/` backend API
+- `database/schema.sql` PostgreSQL schema
 
-### `npm start`
+## Local Setup
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### 1) Install dependencies
+```powershell
+npm install
+npm install --prefix server
+```
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### 2) Configure environment
+Frontend:
+```powershell
+Copy-Item .env.example .env.local
+```
 
-### `npm test`
+Backend:
+```powershell
+Copy-Item server\\.env.example server\\.env
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Set `server/.env`:
+- `DATABASE_URL=...`
+- `JWT_SECRET=...`
+- `FRONTEND_ORIGIN=http://localhost:3000,https://<your-github-username>.github.io`
 
-### `npm run build`
+### 3) Initialize database
+```powershell
+psql "postgresql://USER:PASSWORD@HOST/DB?sslmode=require" -f database/schema.sql
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### 4) Run app
+Backend:
+```powershell
+npm run dev --prefix server
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Frontend:
+```powershell
+npm start
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## API Endpoints
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/posts`
+- `POST /api/posts` (auth required)
 
-### `npm run eject`
+## Deploy (GitHub Pages + Hosted API)
+1. Deploy backend to Render/Railway/Vercel
+2. Set backend env vars: `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_ORIGIN`
+3. Set frontend `REACT_APP_API_BASE_URL` to your backend URL
+4. Deploy frontend to GitHub Pages
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Do not put database secrets in frontend or GitHub Pages.

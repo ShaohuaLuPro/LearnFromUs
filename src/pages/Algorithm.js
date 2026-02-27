@@ -23,32 +23,32 @@ export default function Algorithm() {
   }, []);
 
   return (
-    <div className="container mt-5 pt-5">
-      <h2>Algorithm Visualizations</h2>
+    <div className="container page-shell">
+      <h2 className="section-title">Algorithm Visualizations</h2>
+      <p className="muted">Pick an algorithm and inspect its behavior visually.</p>
 
-      <div ref={dropdownRef} style={{ maxWidth: '400px' }} className="position-relative mb-4">
+      <div ref={dropdownRef} className="position-relative mb-4 picker-wrap">
         <button
-          className="btn btn-outline-success w-100 text-start"
+          className="btn w-100 text-start picker-btn"
           onClick={() => setOpen(!open)}
         >
           {selected?.name || 'Select an Algorithm'}
         </button>
 
         {open && (
-          <div className="border position-absolute bg-white w-100 shadow mt-1 z-1" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+          <div className="position-absolute w-100 mt-1 z-1 picker-menu" style={{ maxHeight: '260px', overflowY: 'auto' }}>
             <Form.Control
               type="text"
               placeholder="Search algorithms..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="border-bottom"
+              className="border-0 border-bottom rounded-0"
             />
             <ul className="list-group list-group-flush">
               {filtered.map((item, idx) => (
                 <li
                   key={idx}
-                  className="list-group-item list-group-item-action"
-                  style={{ cursor: 'pointer' }}
+                  className="list-group-item list-group-item-action picker-item"
                   onClick={() => {
                     setSelected(item);
                     setOpen(false);
@@ -68,12 +68,12 @@ export default function Algorithm() {
 
       <div>
         {selected ? (
-          <Card className="p-3">
+          <Card className="p-3 panel">
             <h5>{selected.name}</h5>
             {selected.component}
           </Card>
         ) : (
-          <p>Select an algorithm from the dropdown above.</p>
+          <p className="muted">Select an algorithm from the picker above.</p>
         )}
       </div>
     </div>

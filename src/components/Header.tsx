@@ -14,7 +14,8 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { to: '/', label: 'Forum' },
+  { to: '/', label: 'Home' },
+  { to: '/forum', label: 'Forum' },
   { to: '/about', label: 'About' }
 ];
 

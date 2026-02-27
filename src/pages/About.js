@@ -43,27 +43,55 @@ export default function About() {
         </div>
 
         <div className="col-lg-5">
-          <section className="glass-card p-4 h-100">
-            <h4 className="mb-3">Connect</h4>
-            <p className="mb-2"><strong>Name:</strong> Shaohua Lu</p>
-            <p className="mb-2"><strong>Role:</strong> Founder, LearnFromUs</p>
-            <p className="mb-2"><strong>Location:</strong> Boston, MA</p>
-            <p className="mb-2">
-              <strong>Email:</strong>{' '}
-              <a href="mailto:tomlu1234567@gmail.com">tomlu1234567@gmail.com</a>
-            </p>
-            <p className="mb-2">
-              <strong>LinkedIn:</strong>{' '}
-              <a href="https://www.linkedin.com/in/shaohualu/" target="_blank" rel="noreferrer">
-                linkedin.com/in/shaohualu
-              </a>
-            </p>
-            <p className="mb-0">
-              <strong>GitHub:</strong>{' '}
-              <a href="https://github.com/ShaohuaLuPro" target="_blank" rel="noreferrer">
-                github.com/ShaohuaLuPro
-              </a>
-            </p>
+          <section className="glass-card founder-profile-panel p-3 p-lg-4">
+            <img
+              src={`${process.env.PUBLIC_URL}/images/founder-portrait.jpg`}
+              alt="Shaohua Lu"
+              className="founder-profile-image"
+            />
+
+            <div className="founder-profile-body">
+              <div>
+                <div className="founder-eyebrow">Founder Profile</div>
+                <h4 className="mb-1">Shaohua Lu</h4>
+                <p className="muted mb-0">Founder, LearnFromUs</p>
+              </div>
+
+              <p className="mb-0 muted">
+                Building a technical community where people learn by shipping, explaining, and sharing
+                what actually works.
+              </p>
+
+              <div className="about-connect-list">
+                <div className="about-connect-row">
+                  <span className="about-connect-label">Location</span>
+                  <span>Boston, MA</span>
+                </div>
+                <div className="about-connect-row">
+                  <span className="about-connect-label">Email</span>
+                  <a href="mailto:tomlu1234567@gmail.com">tomlu1234567@gmail.com</a>
+                </div>
+              </div>
+
+              <div className="founder-link-row">
+                <a
+                  href="https://www.linkedin.com/in/shaohualu/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="founder-link-pill"
+                >
+                  LinkedIn
+                </a>
+                <a
+                  href="https://github.com/ShaohuaLuPro"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="founder-link-pill"
+                >
+                  GitHub
+                </a>
+              </div>
+            </div>
           </section>
         </div>
       </div>

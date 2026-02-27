@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
+import Landing from './pages/Landing';
 import Home from './pages/Home';
 import About from './pages/About';
 import Login from './pages/Login';
@@ -68,11 +69,11 @@ function App() {
     setCurrentUser(null);
   };
 
-  const createPost = async ({ title, content, tag }) => {
+  const createPost = async ({ title, content, section, tags }) => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return { ok: false, message: 'Please login first.' };
     try {
-      const data = await apiCreatePost({ title, content, tag }, token);
+      const data = await apiCreatePost({ title, content, section, tags }, token);
       setPosts((prev) => [data.post, ...prev]);
       return { ok: true };
     } catch (error) {
@@ -105,7 +106,29 @@ function App() {
   };
 
   if (authLoading) {
-    return <div className="container page-shell"><p className="muted">Loading forum...</p></div>;
+    return (
+      <div className="app-loading-shell">
+        <div className="container">
+          <section className="app-loading-card">
+            <div className="app-loading-badge">Starting up</div>
+            <h1 className="app-loading-title">Waking up the forum backend.</h1>
+            <p className="app-loading-copy">
+              The API is running on a free instance, so the first request can take a moment while the
+              server resumes.
+            </p>
+
+            <div className="app-loading-glow" />
+
+            <div className="app-loading-skeletons">
+              <div className="app-loading-skeleton app-loading-skeleton-wide" />
+              <div className="app-loading-skeleton app-loading-skeleton-mid" />
+              <div className="app-loading-skeleton app-loading-skeleton-card" />
+              <div className="app-loading-skeleton app-loading-skeleton-card" />
+            </div>
+          </section>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -114,8 +137,21 @@ function App() {
         <Header currentUser={currentUser} onLogout={logout} />
         <main className="app-main">
           <Routes>
+            <Route path="/" element={<Landing currentUser={currentUser} />} />
             <Route
-              path="/"
+              path="/forum"
+              element={
+                <Home
+                  posts={posts}
+                  currentUser={currentUser}
+                  onCreatePost={createPost}
+                  onUpdatePost={updatePost}
+                  onDeletePost={deletePost}
+                />
+              }
+            />
+            <Route
+              path="/forum/section/:sectionId"
               element={
                 <Home
                   posts={posts}
@@ -129,7 +165,7 @@ function App() {
             <Route path="/about" element={<About />} />
             <Route
               path="/login"
-              element={currentUser ? <Navigate to="/" replace /> : <Login onLogin={login} onRegister={register} />}
+              element={currentUser ? <Navigate to="/forum" replace /> : <Login onLogin={login} onRegister={register} />}
             />
           </Routes>
         </main>

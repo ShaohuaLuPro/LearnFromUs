@@ -1,7 +1,49 @@
-import React, { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
-const tags = ['Coding Hack', 'Project Showcase', 'Interview Tip', 'Career', 'Discussion'];
+const sectionGroups = [
+  {
+    title: 'Software Engineering',
+    items: [
+      { value: 'frontend', label: 'Front End' },
+      { value: 'backend', label: 'Back End' },
+      { value: 'algorithms', label: 'Algorithms' },
+      { value: 'system-design', label: 'System Design' },
+      { value: 'ui-ux', label: 'UI / UX' },
+      { value: 'devops-cloud', label: 'DevOps / Cloud' },
+      { value: 'mobile', label: 'Mobile' },
+      { value: 'testing-qa', label: 'Testing / QA' },
+      { value: 'security', label: 'Security' },
+      { value: 'sde-general', label: 'General SDE' }
+    ]
+  },
+  {
+    title: 'Data Science & AI',
+    items: [
+      { value: 'ai-llm', label: 'AI / LLM' },
+      { value: 'mle', label: 'MLE' },
+      { value: 'deep-learning', label: 'Deep Learning' },
+      { value: 'data-engineering', label: 'Data Engineering' },
+      { value: 'statistics', label: 'Statistics' },
+      { value: 'analytics', label: 'Analytics' },
+      { value: 'experimentation', label: 'Experimentation' },
+      { value: 'visualization', label: 'Visualization' },
+      { value: 'ds-general', label: 'General DS' }
+    ]
+  }
+];
+
+const allSections = sectionGroups.flatMap((group) => group.items);
+const defaultSection = allSections[0];
+
+function getSectionLabel(value) {
+  const found = allSections.find((item) => item.value === value);
+  if (found) return found.label;
+  return String(value || '')
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
 
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
@@ -13,15 +55,90 @@ function formatTime(timestamp) {
 }
 
 export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, onDeletePost }) {
-  const [form, setForm] = useState({ title: '', content: '', tag: tags[0] });
+  const navigate = useNavigate();
+  const { sectionId } = useParams();
+
+  const [form, setForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
   const [message, setMessage] = useState('');
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ title: '', content: '', tag: tags[0] });
+  const [editForm, setEditForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSections, setSelectedSections] = useState(sectionId ? [sectionId] : []);
 
   const orderedPosts = useMemo(
     () => [...posts].sort((a, b) => b.createdAt - a.createdAt),
     [posts]
   );
+
+  const sectionCounts = useMemo(() => {
+    const counts = Object.fromEntries(allSections.map((item) => [item.value, 0]));
+    for (const post of posts) {
+      const key = post.section || 'sde-general';
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }, [posts]);
+
+  const groupCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        sectionGroups.map((group) => [
+          group.title,
+          group.items.reduce((sum, item) => sum + (sectionCounts[item.value] || 0), 0)
+        ])
+      ),
+    [sectionCounts]
+  );
+
+  useEffect(() => {
+    if (sectionId) {
+      setSelectedSections([sectionId]);
+    }
+  }, [sectionId]);
+
+  const filteredPosts = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    return orderedPosts.filter((post) => {
+      const sectionMatch = selectedSections.length === 0 || selectedSections.includes(post.section);
+      if (!sectionMatch) {
+        return false;
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const searchableFields = [
+        post.title,
+        post.content,
+        post.authorName,
+        getSectionLabel(post.section),
+        ...(post.tags || [])
+      ];
+
+      return searchableFields.some((value) =>
+        String(value || '').toLowerCase().includes(normalizedQuery)
+      );
+    });
+  }, [orderedPosts, selectedSections, searchQuery]);
+
+  const toggleSection = (sectionValue) => {
+    if (sectionId) {
+      navigate('/forum');
+    }
+    setSelectedSections((current) =>
+      current.includes(sectionValue)
+        ? current.filter((value) => value !== sectionValue)
+        : [...current, sectionValue]
+    );
+  };
+
+  const clearSections = () => {
+    if (sectionId) {
+      navigate('/forum');
+    }
+    setSelectedSections([]);
+  };
 
   const submitPost = async (event) => {
     event.preventDefault();
@@ -35,7 +152,12 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
       setMessage(result.message);
       return;
     }
-    setForm({ title: '', content: '', tag: tags[0] });
+    setForm({ title: '', content: '', section: defaultSection.value, tags: '' });
+    setIsComposerOpen(false);
+    setSelectedSections([form.section]);
+    if (sectionId) {
+      navigate('/forum');
+    }
     setMessage('Post published.');
   };
 
@@ -44,7 +166,8 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
     setEditForm({
       title: post.title,
       content: post.content,
-      tag: tags.find((tag) => tag.toLowerCase().replace(/\s+/g, '-') === post.tag) || tags[0]
+      section: post.section || defaultSection.value,
+      tags: (post.tags || []).join(', ')
     });
     setMessage('');
   };
@@ -72,87 +195,125 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
     setMessage('Post deleted.');
   };
 
+  const toggleTagFilter = (tag) => {
+    setSearchQuery((current) => (current === tag ? '' : tag));
+  };
+
   return (
     <div className="container page-shell">
       <section className="hero-card mb-4">
         <h1 className="hero-title">LearnFromUs Community Forum</h1>
         <p className="hero-copy mb-0">
-          Post coding hacks, showcase what you built, and get feedback from people shipping real products.
+          Share practical ideas across software engineering and data science, filter by section, and drill
+          down further with tag search.
         </p>
       </section>
 
-      <div className="row g-4">
-        <div className="col-lg-4">
-          <section className="panel h-100">
-            <h3 className="mb-2">Create a Post</h3>
-            <p className="muted mb-3">
-              {currentUser ? `Posting as ${currentUser.name}` : 'Login required to post.'}
-            </p>
-
-            {!currentUser ? (
-              <Link to="/login" className="forum-primary-btn d-inline-block text-center w-100 text-decoration-none">
-                Login to Post
-              </Link>
-            ) : (
-              <form onSubmit={submitPost} className="forum-form">
-                <div className="mb-3">
-                  <label className="form-label">Title</label>
-                  <input
-                    className="form-control forum-input"
-                    value={form.title}
-                    onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                    placeholder="One clear sentence"
-                  />
-                </div>
-
-                <div className="mb-3">
-                  <label className="form-label">Tag</label>
-                  <select
-                    className="form-select forum-input"
-                    value={form.tag}
-                    onChange={(e) => setForm((prev) => ({ ...prev, tag: e.target.value }))}
-                  >
-                    {tags.map((tag) => (
-                      <option key={tag} value={tag}>{tag}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="mb-2">
-                  <label className="form-label">Content</label>
-                  <textarea
-                    className="form-control forum-input"
-                    rows={5}
-                    value={form.content}
-                    onChange={(e) => setForm((prev) => ({ ...prev, content: e.target.value }))}
-                    placeholder="Share the idea, code approach, and why it worked."
-                  />
-                </div>
-
-                {message && <p className="mt-3 mb-0 muted">{message}</p>}
-
-                <button type="submit" className="forum-primary-btn mt-4 w-100">Publish</button>
-              </form>
-            )}
-          </section>
+      <section className="panel mb-4">
+        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <div>
+            <h3 className="mb-1">Sections</h3>
+            <p className="muted mb-0">Browse the forum by discipline, then narrow by tags.</p>
+          </div>
+          <span className="muted">{filteredPosts.length} visible posts</span>
         </div>
 
-        <div className="col-lg-8">
+        <div className="section-grid">
+          {sectionGroups.map((group) => (
+            <div key={group.title} className="section-card is-open">
+              <div className="section-group-toggle">
+                <span className="section-group-copy">
+                  <span className="section-card-title mb-0">{group.title}</span>
+                  <span className="section-group-summary">
+                    {groupCounts[group.title] || 0} posts across {group.items.length} sections
+                  </span>
+                </span>
+                <span className="section-group-meta">
+                  <span className="section-group-total">{groupCounts[group.title] || 0}</span>
+                </span>
+              </div>
+              <div className="section-chip-wrap mt-3">
+                {group.items.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`}
+                    onClick={() => toggleSection(item.value)}
+                  >
+                    <span>{item.label}</span>
+                    <span className="section-count">{sectionCounts[item.value] || 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {selectedSections.length > 0 && (
+          <div className="section-filter-row mt-3">
+            <button
+              type="button"
+              className="section-filter is-active"
+              onClick={clearSections}
+            >
+              All Sections
+            </button>
+            {selectedSections.map((sectionValue) => (
+              <button
+                key={sectionValue}
+                type="button"
+                className="section-filter"
+                onClick={() => toggleSection(sectionValue)}
+              >
+                {getSectionLabel(sectionValue)}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="row g-4">
+        <div className="col-12">
           <section className="panel">
-            <div className="d-flex justify-content-between align-items-center mb-3">
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
               <h3 className="mb-0">Latest Posts</h3>
-              <span className="muted">{orderedPosts.length} posts</span>
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <span className="muted">{filteredPosts.length} posts</span>
+                {!currentUser ? (
+                  <Link to="/login" className="forum-primary-btn text-decoration-none">
+                    Login to Post
+                  </Link>
+                ) : (
+                  <button type="button" className="forum-primary-btn" onClick={() => { setMessage(''); setIsComposerOpen(true); }}>
+                    Create a Post
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="tag-toolbar mb-3">
+              <input
+                className="form-control forum-input tag-search-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search title, content, tags, section"
+              />
+              {searchQuery && (
+                <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
+                  Clear Search
+                </button>
+              )}
             </div>
 
             <div className="forum-feed">
-              {orderedPosts.map((post) => {
+              {filteredPosts.map((post) => {
                 const isOwner = currentUser && currentUser.id === post.authorId;
                 const isEditing = editingId === post.id;
 
                 return (
                   <article key={post.id} className="forum-post-card">
                     <div className="d-flex justify-content-between align-items-center mb-2">
-                      <span className="forum-tag">{post.tag}</span>
+                      <span className="forum-tag">{getSectionLabel(post.section)}</span>
                       <span className="muted forum-time">{formatTime(post.createdAt)}</span>
                     </div>
 
@@ -168,13 +329,25 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
                         <div className="mb-2">
                           <select
                             className="form-select forum-input"
-                            value={editForm.tag}
-                            onChange={(e) => setEditForm((prev) => ({ ...prev, tag: e.target.value }))}
+                            value={editForm.section}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, section: e.target.value }))}
                           >
-                            {tags.map((tag) => (
-                              <option key={tag} value={tag}>{tag}</option>
+                            {sectionGroups.map((group) => (
+                              <optgroup key={group.title} label={group.title}>
+                                {group.items.map((item) => (
+                                  <option key={item.value} value={item.value}>{item.label}</option>
+                                ))}
+                              </optgroup>
                             ))}
                           </select>
+                        </div>
+                        <div className="mb-2">
+                          <input
+                            className="form-control forum-input"
+                            value={editForm.tags}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, tags: e.target.value }))}
+                            placeholder="react, auth, postgres"
+                          />
                         </div>
                         <div className="mb-2">
                           <textarea
@@ -192,8 +365,22 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
                     ) : (
                       <>
                         <h5 className="mb-1">{post.title}</h5>
+                        {!!post.tags?.length && (
+                          <div className="post-tag-row mb-2">
+                            {post.tags.map((tag) => (
+                              <button
+                                key={`${post.id}-${tag}`}
+                                type="button"
+                                className={`post-tag-pill ${searchQuery === tag ? 'is-active' : ''}`}
+                                onClick={() => toggleTagFilter(tag)}
+                              >
+                                #{tag}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <p className="mb-2">{post.content}</p>
-                        <div className="d-flex justify-content-between align-items-center">
+                        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                           <small className="muted">Posted by {post.authorName}</small>
                           {isOwner && (
                             <div className="forum-actions">
@@ -208,13 +395,85 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
                 );
               })}
 
-              {orderedPosts.length === 0 && (
-                <p className="muted mb-0">No posts yet. Be the first to publish one.</p>
+              {filteredPosts.length === 0 && (
+                <p className="muted mb-0">No posts match the current section and tag filters.</p>
               )}
             </div>
           </section>
         </div>
       </div>
+
+      {isComposerOpen && currentUser && (
+        <div className="forum-modal-backdrop" onClick={() => setIsComposerOpen(false)}>
+          <section className="forum-modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
+              <div>
+                <h3 className="mb-1">Create a Post</h3>
+                <p className="muted mb-0">Posting as {currentUser.name}</p>
+              </div>
+              <button type="button" className="forum-close-btn" onClick={() => setIsComposerOpen(false)}>Close</button>
+            </div>
+
+            <form onSubmit={submitPost} className="forum-form">
+              <div className="mb-3">
+                <label className="form-label">Title</label>
+                <input
+                  className="form-control forum-input"
+                  value={form.title}
+                  onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="One clear sentence"
+                />
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Section</label>
+                <select
+                  className="form-select forum-input"
+                  value={form.section}
+                  onChange={(e) => setForm((prev) => ({ ...prev, section: e.target.value }))}
+                >
+                  {sectionGroups.map((group) => (
+                    <optgroup key={group.title} label={group.title}>
+                      {group.items.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Tags</label>
+                <input
+                  className="form-control forum-input"
+                  value={form.tags}
+                  onChange={(e) => setForm((prev) => ({ ...prev, tags: e.target.value }))}
+                  placeholder="react, auth, postgres"
+                />
+                <div className="form-help">Optional. Separate tags with commas.</div>
+              </div>
+
+              <div className="mb-2">
+                <label className="form-label">Content</label>
+                <textarea
+                  className="form-control forum-input"
+                  rows={6}
+                  value={form.content}
+                  onChange={(e) => setForm((prev) => ({ ...prev, content: e.target.value }))}
+                  placeholder="Share the idea, code approach, and why it worked."
+                />
+              </div>
+
+              {message && <p className="mt-3 mb-0 muted">{message}</p>}
+
+              <div className="forum-actions mt-4">
+                <button type="submit" className="forum-primary-btn">Publish</button>
+                <button type="button" className="forum-secondary-btn" onClick={() => setIsComposerOpen(false)}>Cancel</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

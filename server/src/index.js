@@ -71,6 +71,49 @@ function slugify(title) {
   return `${base || 'post'}-${Date.now().toString(36)}`;
 }
 
+function normalizeSection(section) {
+  return String(section || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function normalizeTags(input) {
+  const values = Array.isArray(input)
+    ? input
+    : String(input || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  return [...new Set(values
+    .map((value) => String(value)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9+#.\- ]+/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/^-+|-+$/g, ''))
+    .filter(Boolean)
+  )].slice(0, 8);
+}
+
+async function attachTags(client, postId, tags) {
+  await client.query(`DELETE FROM post_tag WHERE post_id = $1`, [postId]);
+  for (const tagName of tags) {
+    const tagRow = await client.query(
+      `INSERT INTO tag (name) VALUES ($1)
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+      [tagName]
+    );
+    await client.query(
+      `INSERT INTO post_tag (post_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [postId, tagRow.rows[0].id]
+    );
+  }
+}
+
 app.get('/api/health', (_, res) => {
   res.json({ ok: true });
 });
@@ -175,7 +218,7 @@ app.get('/api/posts', async (_, res) => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT p.id, p.author_id, p.title, p.content_markdown, p.created_at, u.username AS author_name,
+      `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, u.username AS author_name,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
        FROM post p
        JOIN app_user u ON u.id = p.author_id
@@ -192,7 +235,8 @@ app.get('/api/posts', async (_, res) => {
       createdAt: new Date(row.created_at).getTime(),
       authorId: row.author_id,
       authorName: row.author_name,
-      tag: row.tags[0] || 'discussion'
+      section: row.section || 'sde-general',
+      tags: row.tags || []
     }));
     return res.json({ posts });
   } finally {
@@ -201,10 +245,11 @@ app.get('/api/posts', async (_, res) => {
 });
 
 app.post('/api/posts', authRequired, async (req, res) => {
-  const { title, content, tag } = req.body || {};
+  const { title, content, section, tags } = req.body || {};
   const cleanTitle = String(title || '').trim();
   const cleanContent = String(content || '').trim();
-  const cleanTag = String(tag || '').trim();
+  const cleanSection = normalizeSection(section);
+  const cleanTags = normalizeTags(tags);
   if (!cleanTitle) {
     return res.status(400).json({ message: 'Post title is required.' });
   }
@@ -217,29 +262,19 @@ app.post('/api/posts', authRequired, async (req, res) => {
   if (cleanContent.length < 10) {
     return res.status(400).json({ message: 'Post content must be at least 10 characters.' });
   }
-  if (!cleanTag) {
-    return res.status(400).json({ message: 'Post tag is required.' });
+  if (!cleanSection) {
+    return res.status(400).json({ message: 'Post section is required.' });
   }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const normalizedTag = cleanTag.toLowerCase().replace(/\s+/g, '-');
-    const tagRow = await client.query(
-      `INSERT INTO tag (name) VALUES ($1)
-       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id, name`,
-      [normalizedTag]
-    );
     const created = await client.query(
-      `INSERT INTO post (author_id, title, content_markdown, slug)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, title, content_markdown, created_at`,
-      [req.user.sub, cleanTitle, cleanContent, slugify(cleanTitle)]
+      `INSERT INTO post (author_id, section, title, content_markdown, slug)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, section, title, content_markdown, created_at`,
+      [req.user.sub, cleanSection, cleanTitle, cleanContent, slugify(cleanTitle)]
     );
-    await client.query(
-      `INSERT INTO post_tag (post_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [created.rows[0].id, tagRow.rows[0].id]
-    );
+    await attachTags(client, created.rows[0].id, cleanTags);
     await client.query('COMMIT');
     return res.status(201).json({
       post: {
@@ -249,7 +284,8 @@ app.post('/api/posts', authRequired, async (req, res) => {
         createdAt: new Date(created.rows[0].created_at).getTime(),
         authorId: req.user.sub,
         authorName: req.user.name,
-        tag: normalizedTag
+        section: created.rows[0].section,
+        tags: cleanTags
       }
     });
   } catch {
@@ -261,10 +297,11 @@ app.post('/api/posts', authRequired, async (req, res) => {
 });
 
 app.put('/api/posts/:postId', authRequired, async (req, res) => {
-  const { title, content, tag } = req.body || {};
+  const { title, content, section, tags } = req.body || {};
   const cleanTitle = String(title || '').trim();
   const cleanContent = String(content || '').trim();
-  const cleanTag = String(tag || '').trim();
+  const cleanSection = normalizeSection(section);
+  const cleanTags = normalizeTags(tags);
   if (!cleanTitle) {
     return res.status(400).json({ message: 'Post title is required.' });
   }
@@ -277,8 +314,8 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
   if (cleanContent.length < 10) {
     return res.status(400).json({ message: 'Post content must be at least 10 characters.' });
   }
-  if (!cleanTag) {
-    return res.status(400).json({ message: 'Post tag is required.' });
+  if (!cleanSection) {
+    return res.status(400).json({ message: 'Post section is required.' });
   }
 
   const client = await pool.connect();
@@ -296,28 +333,14 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({ message: 'You can only edit your own posts.' });
     }
-
-    const normalizedTag = cleanTag.toLowerCase().replace(/\s+/g, '-');
-    const tagRow = await client.query(
-      `INSERT INTO tag (name) VALUES ($1)
-       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id`,
-      [normalizedTag]
-    );
-
     const updated = await client.query(
       `UPDATE post
-       SET title = $1, content_markdown = $2, updated_at = NOW()
-       WHERE id = $3
-       RETURNING id, title, content_markdown, created_at`,
-      [cleanTitle, cleanContent, req.params.postId]
+       SET section = $1, title = $2, content_markdown = $3, updated_at = NOW()
+       WHERE id = $4
+       RETURNING id, section, title, content_markdown, created_at`,
+      [cleanSection, cleanTitle, cleanContent, req.params.postId]
     );
-
-    await client.query(`DELETE FROM post_tag WHERE post_id = $1`, [req.params.postId]);
-    await client.query(
-      `INSERT INTO post_tag (post_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [req.params.postId, tagRow.rows[0].id]
-    );
+    await attachTags(client, req.params.postId, cleanTags);
     await client.query('COMMIT');
 
     return res.json({
@@ -328,7 +351,8 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
         createdAt: new Date(updated.rows[0].created_at).getTime(),
         authorId: req.user.sub,
         authorName: req.user.name,
-        tag: normalizedTag
+        section: updated.rows[0].section,
+        tags: cleanTags
       }
     });
   } catch {

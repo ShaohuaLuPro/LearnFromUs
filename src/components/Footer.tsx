@@ -7,7 +7,8 @@ type FooterLink = {
 };
 
 const links: FooterLink[] = [
-  { href: '/LearnFromUs', label: 'Forum Home' },
+  { href: '/LearnFromUs', label: 'Home' },
+  { href: '/LearnFromUs/forum', label: 'Forum' },
   { href: '/LearnFromUs/about', label: 'About' }
 ];
 

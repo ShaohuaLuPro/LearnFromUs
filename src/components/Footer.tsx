@@ -1,15 +1,15 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 type FooterLink = {
-  href: string;
+  to: string;
   label: string;
-  external?: boolean;
 };
 
 const links: FooterLink[] = [
-  { href: '/LearnFromUs', label: 'Home' },
-  { href: '/LearnFromUs/forum', label: 'Forum' },
-  { href: '/LearnFromUs/about', label: 'About' }
+  { to: '/', label: 'Home' },
+  { to: '/forum', label: 'Forum' },
+  { to: '/about', label: 'About' }
 ];
 
 export default function Footer() {
@@ -24,15 +24,13 @@ export default function Footer() {
           <p className="mb-2 muted">Built for builders shipping real work.</p>
           <div className="footer-links">
             {links.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
+              <Link
+                key={link.to}
+                to={link.to}
                 className="footer-link"
-                target={link.external ? '_blank' : undefined}
-                rel={link.external ? 'noreferrer' : undefined}
               >
                 {link.label}
-              </a>
+              </Link>
             ))}
           </div>
         </div>

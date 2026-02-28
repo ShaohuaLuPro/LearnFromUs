@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import Landing from './pages/Landing';
@@ -184,7 +184,7 @@ function App() {
   }
 
   return (
-    <BrowserRouter basename="/LearnFromUs">
+    <HashRouter basename="/LearnFromUs">
       <div className="app-wrapper d-flex flex-column min-vh-100">
         <Header currentUser={currentUser} onLogout={logout} />
         <main className="app-main">
@@ -256,7 +256,7 @@ function App() {
         </main>
         <Footer />
       </div>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 

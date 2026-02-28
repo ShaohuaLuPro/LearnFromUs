@@ -1156,31 +1156,41 @@ label,
 .auth-card {
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.88);
+  background: linear-gradient(180deg, rgba(10, 22, 34, 0.96), rgba(8, 18, 29, 0.96));
   box-shadow: var(--shadow-soft);
   padding: 1.6rem;
 }
 
 .mode-switch {
   display: inline-flex;
-  border: 1px solid #d2dff3;
+  border: 1px solid var(--brand-border);
   border-radius: 999px;
   padding: 0.2rem;
-  background: #f5f9ff;
+  background: rgba(0, 240, 255, 0.04);
 }
 
 .mode-btn {
   border: 0;
   background: transparent;
-  color: #315587;
+  color: var(--text-soft);
   border-radius: 999px;
   padding: 0.34rem 0.85rem;
   font-weight: 700;
 }
 
 .mode-btn.is-active {
-  color: #fff;
-  background: linear-gradient(130deg, var(--brand), #2a81ff);
+  color: var(--bg);
+  background: linear-gradient(130deg, var(--brand), var(--brand-2));
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.18);
+}
+
+.mode-btn:hover:not(.is-active) {
+  color: var(--text-main);
+  background: var(--brand-wash);
+}
+
+.auth-card .text-danger {
+  color: #ff9b9b !important;
 }
 
 .picker-wrap {

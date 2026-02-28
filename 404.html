@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <meta http-equiv="refresh" content="0; url=/" />
+    <script>
+      (function () {
+        var path = window.location.pathname.replace(/^\/LearnFromUs/, '') || '/';
+        var search = window.location.search || '';
+        var hash = window.location.hash || '';
+        window.location.replace('/LearnFromUs/#' + path + search + hash);
+      })();
+    </script>
   </head>
   <body></body>
 </html>

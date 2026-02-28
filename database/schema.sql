@@ -62,7 +62,16 @@ CREATE TABLE IF NOT EXISTS post_bookmark (
   PRIMARY KEY (post_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS user_follow (
+  follower_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  following_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (follower_id, following_id),
+  CHECK (follower_id <> following_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_post_author_created ON post(author_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_created ON post(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comment_post_created ON comment(post_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vote_post ON post_vote(post_id);
+CREATE INDEX IF NOT EXISTS idx_user_follow_following ON user_follow(following_id, created_at DESC);

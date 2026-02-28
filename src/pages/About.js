@@ -13,37 +13,50 @@ export default function About() {
 
       <div className="row g-4">
         <div className="col-lg-7">
-          <section className="panel mb-4">
-            <h4>Why I Built LearnFromUs</h4>
-            <p className="mb-0 muted">
-              Too much technical learning is passive. LearnFromUs is designed around sharing real
-              implementations, practical hacks, and product lessons from builders who are actively shipping.
-            </p>
-          </section>
+          <section className="panel about-story-panel h-100">
+            <div className="about-story-block">
+              <p className="about-story-kicker">Why This Exists</p>
+              <h3 className="about-story-title">I built LearnFromUs to make technical learning more public and more useful.</h3>
+              <p className="about-story-copy mb-0">
+                Too much learning in software and data stays passive: people consume tutorials, save threads,
+                and move on. LearnFromUs is designed around the opposite model. The goal is to make real
+                implementation details visible through posts about shipping, debugging, architecture decisions,
+                experiments, and practical hacks that other builders can actually use.
+              </p>
+            </div>
 
-          <section className="panel mb-4">
-            <h4>What I Focus On</h4>
-            <p className="mb-2">
-              I lead product direction and engineering execution, with a focus on:
-            </p>
-            <ul className="mb-0">
-              <li>Developer tools and community features that encourage high-quality contributions</li>
-              <li>AI-assisted workflows that improve shipping speed without sacrificing quality</li>
-              <li>Modern full-stack systems using React, TypeScript, and scalable backend architecture</li>
-            </ul>
-          </section>
+            <div className="about-story-block">
+              <p className="about-story-kicker">What I Bring</p>
+              <h3 className="about-story-title">My background spans product execution, software delivery, and data science.</h3>
+              <p className="about-story-copy">
+                I work across full-stack product development and applied AI, with experience in software
+                engineering, analytics, machine learning, and team execution. That mix shapes how this
+                platform is built: practical on the product side, structured on the engineering side, and
+                rigorous about signal over noise.
+              </p>
+              <div className="about-focus-grid">
+                <span className="about-focus-pill">Product + Engineering Leadership</span>
+                <span className="about-focus-pill">React / TypeScript / Node</span>
+                <span className="about-focus-pill">Data Science + Applied ML</span>
+                <span className="about-focus-pill">Community Systems</span>
+              </div>
+            </div>
 
-          <section className="panel">
-            <h4>Vision</h4>
-            <p className="mb-0 muted">
-              Build a forum where learning is public, proof of skill is visible, and career growth comes
-              from what you can build and explain, not just what you claim on paper.
-            </p>
+            <div className="about-story-block is-last">
+              <p className="about-story-kicker">Long-Term Direction</p>
+              <h3 className="about-story-title">The vision is a forum where proof of skill is built into the product.</h3>
+              <p className="about-story-copy mb-0">
+                Over time, LearnFromUs should become a place where strong work naturally stands out: clear
+                posts, strong examples, useful feedback, and visible patterns of execution. The point is not
+                to mimic a traditional social feed. The point is to build a technical community where what you
+                can explain, ship, and improve is visible by default.
+              </p>
+            </div>
           </section>
         </div>
 
         <div className="col-lg-5">
-          <section className="glass-card founder-profile-panel p-3 p-lg-4">
+          <section className="glass-card founder-profile-panel h-100 p-3 p-lg-4">
             <img
               src={`${process.env.PUBLIC_URL}/images/founder-portrait.jpg`}
               alt="Shaohua Lu"

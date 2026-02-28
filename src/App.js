@@ -6,14 +6,23 @@ import Landing from './pages/Landing';
 import Home from './pages/Home';
 import About from './pages/About';
 import Login from './pages/Login';
+import Settings from './pages/Settings';
+import MyPosts from './pages/MyPosts';
+import Goodbye from './pages/Goodbye';
+import UserProfile from './pages/UserProfile';
+import PostDetail from './pages/PostDetail';
+import Following from './pages/Following';
 import {
   TOKEN_KEY,
+  apiDeleteAccount,
   apiCreatePost,
   apiDeletePost,
   apiGetPosts,
   apiLogin,
   apiMe,
   apiRegister,
+  apiUpdatePassword,
+  apiUpdateProfile,
   apiUpdatePost
 } from './api';
 import './App.css';
@@ -67,6 +76,49 @@ function App() {
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
     setCurrentUser(null);
+  };
+
+  const updateProfile = async ({ name }) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return { ok: false, message: 'Please login first.' };
+    try {
+      const data = await apiUpdateProfile({ name }, token);
+      localStorage.setItem(TOKEN_KEY, data.token);
+      setCurrentUser(data.user);
+      setPosts((prev) =>
+        prev.map((post) =>
+          post.authorId === data.user.id ? { ...post, authorName: data.user.name } : post
+        )
+      );
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const updatePassword = async (input) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return { ok: false, message: 'Please login first.' };
+    try {
+      await apiUpdatePassword(input, token);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const deleteAccount = async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return { ok: false, message: 'Please login first.' };
+    try {
+      await apiDeleteAccount(token);
+      setPosts((prev) => prev.filter((post) => post.authorId !== currentUser?.id));
+      localStorage.removeItem(TOKEN_KEY);
+      setCurrentUser(null);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
   };
 
   const createPost = async ({ title, content, section, tags }) => {
@@ -145,8 +197,6 @@ function App() {
                   posts={posts}
                   currentUser={currentUser}
                   onCreatePost={createPost}
-                  onUpdatePost={updatePost}
-                  onDeletePost={deletePost}
                 />
               }
             />
@@ -157,12 +207,47 @@ function App() {
                   posts={posts}
                   currentUser={currentUser}
                   onCreatePost={createPost}
-                  onUpdatePost={updatePost}
-                  onDeletePost={deletePost}
                 />
               }
             />
+            <Route path="/forum/post/:postId" element={<PostDetail posts={posts} />} />
             <Route path="/about" element={<About />} />
+            <Route path="/goodbye" element={<Goodbye />} />
+            <Route path="/users/:userId" element={<UserProfile currentUser={currentUser} />} />
+            <Route
+              path="/following"
+              element={currentUser ? <Following /> : <Navigate to="/login" replace />}
+            />
+            <Route
+              path="/settings"
+              element={
+                currentUser ? (
+                  <Settings
+                    currentUser={currentUser}
+                    onUpdateProfile={updateProfile}
+                    onUpdatePassword={updatePassword}
+                    onDeleteAccount={deleteAccount}
+                  />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/my-posts"
+              element={
+                currentUser ? (
+                  <MyPosts
+                    currentUser={currentUser}
+                    posts={posts}
+                    onUpdatePost={updatePost}
+                    onDeletePost={deletePost}
+                  />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
             <Route
               path="/login"
               element={currentUser ? <Navigate to="/forum" replace /> : <Login onLogin={login} onRegister={register} />}

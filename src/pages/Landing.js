@@ -6,9 +6,9 @@ export default function Landing({ currentUser }) {
     <div className="container page-shell">
       <section className="landing-hero">
         <div className="landing-copy">
-          <p className="landing-eyebrow">Technical Community</p>
-          <h1 className="landing-title">A place to share what actually works.</h1>
-          <p className="landing-text">
+          <p className="landing-eyebrow type-kicker">Technical Community</p>
+          <h1 className="landing-title type-title-lg">A place to share what actually works.</h1>
+          <p className="landing-text type-body">
             LearnFromUs is built for engineers, data scientists, and builders who want practical ideas,
             code-driven discussions, and visible proof of execution.
           </p>
@@ -46,9 +46,9 @@ export default function Landing({ currentUser }) {
       <section className="row g-4 mt-1">
         <div className="col-lg-4">
           <div className="feature-card landing-feature-card">
-            <p className="landing-card-kicker">Forum</p>
-            <h4>Curated by technical section</h4>
-            <p className="muted mb-0">
+            <p className="landing-card-kicker type-kicker">Forum</p>
+            <h4 className="type-title-md">Curated by technical section</h4>
+            <p className="type-body mb-0">
               Browse Front End, Back End, Algorithms, AI / LLM, Statistics, and more without mixing
               everything into one noisy feed.
             </p>
@@ -56,9 +56,9 @@ export default function Landing({ currentUser }) {
         </div>
         <div className="col-lg-4">
           <div className="feature-card landing-feature-card">
-            <p className="landing-card-kicker">Search</p>
-            <h4>Find posts by real relevance</h4>
-            <p className="muted mb-0">
+            <p className="landing-card-kicker type-kicker">Search</p>
+            <h4 className="type-title-md">Find posts by real relevance</h4>
+            <p className="type-body mb-0">
               Search titles, content, tags, authors, and sections so useful posts are discoverable even as
               the forum grows.
             </p>
@@ -66,9 +66,9 @@ export default function Landing({ currentUser }) {
         </div>
         <div className="col-lg-4">
           <div className="feature-card landing-feature-card">
-            <p className="landing-card-kicker">Community</p>
-            <h4>Built for proof, not fluff</h4>
-            <p className="muted mb-0">
+            <p className="landing-card-kicker type-kicker">Community</p>
+            <h4 className="type-title-md">Built for proof, not fluff</h4>
+            <p className="type-body mb-0">
               The product is designed around implementation details, practical hacks, and explanations that
               make real skill visible.
             </p>

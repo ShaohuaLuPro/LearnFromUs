@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Container, Nav, Navbar } from 'react-bootstrap';
 import { NavLink } from 'react-router-dom';
 
@@ -25,6 +25,27 @@ type HeaderProps = {
 };
 
 export default function Header({ currentUser, onLogout }: HeaderProps) {
+  const [accountOpen, setAccountOpen] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openAccountMenu = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setAccountOpen(true);
+  };
+
+  const closeAccountMenu = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+    }
+    closeTimerRef.current = setTimeout(() => {
+      setAccountOpen(false);
+      closeTimerRef.current = null;
+    }, 160);
+  };
+
   return (
     <Navbar expand="lg" sticky="top" className="site-navbar">
       <Container className="site-navbar-inner">
@@ -41,10 +62,33 @@ export default function Header({ currentUser, onLogout }: HeaderProps) {
               </Nav.Link>
             ))}
             {currentUser ? (
-              <>
-                <span className="user-pill">Hi, {currentUser.name}</span>
-                <button type="button" className="nav-action-btn" onClick={onLogout}>Logout</button>
-              </>
+              <div
+                className="account-menu"
+                onMouseEnter={openAccountMenu}
+                onMouseLeave={closeAccountMenu}
+              >
+                <button type="button" className="account-menu-trigger">
+                  Hi, {currentUser.name}
+                </button>
+                <div className={`account-menu-panel ${accountOpen ? 'is-open' : ''}`}>
+                  <NavLink to={`/users/${currentUser.id}`} className="account-menu-item" onClick={() => setAccountOpen(false)}>
+                    My Profile
+                  </NavLink>
+                  <NavLink to="/my-posts" className="account-menu-item" onClick={() => setAccountOpen(false)}>
+                    My Posts
+                  </NavLink>
+                  <NavLink to="/following" className="account-menu-item" onClick={() => setAccountOpen(false)}>
+                    Following
+                  </NavLink>
+                  <NavLink to="/settings" className="account-menu-item" onClick={() => setAccountOpen(false)}>
+                    Settings
+                  </NavLink>
+                  <div className="account-menu-divider" />
+                  <button type="button" className="account-menu-item is-button" onClick={onLogout}>
+                    Logout
+                  </button>
+                </div>
+              </div>
             ) : (
               <Nav.Link as={NavLink} to="/login" className="site-nav-link">
                 Login

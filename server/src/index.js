@@ -29,6 +29,27 @@ const pool = new Pool({
   ssl: dbUrl.includes('sslmode=require') ? { rejectUnauthorized: false } : false
 });
 
+async function ensureRuntimeSchema() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_follow (
+        follower_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        following_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (follower_id, following_id),
+        CHECK (follower_id <> following_id)
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_follow_following
+      ON user_follow(following_id, created_at DESC)
+    `);
+  } finally {
+    client.release();
+  }
+}
+
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -112,6 +133,31 @@ async function attachTags(client, postId, tags) {
       [postId, tagRow.rows[0].id]
     );
   }
+}
+
+async function getPostsByAuthor(client, userId) {
+  const result = await client.query(
+    `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, u.username AS author_name,
+            COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+     FROM post p
+     JOIN app_user u ON u.id = p.author_id
+     LEFT JOIN post_tag pt ON pt.post_id = p.id
+     LEFT JOIN tag t ON t.id = pt.tag_id
+     WHERE p.is_published = TRUE AND p.author_id = $1
+     GROUP BY p.id, u.username
+     ORDER BY p.created_at DESC`,
+    [userId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    content: row.content_markdown,
+    createdAt: new Date(row.created_at).getTime(),
+    authorId: row.author_id,
+    authorName: row.author_name,
+    section: row.section || 'sde-general',
+    tags: row.tags || []
+  }));
 }
 
 app.get('/api/health', (_, res) => {
@@ -209,6 +255,250 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
     }
     const user = result.rows[0];
     return res.json({ user: { id: user.id, email: user.email, name: user.username } });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/account/profile', authRequired, async (req, res) => {
+  const { name } = req.body || {};
+  const cleanName = String(name || '').trim();
+  if (!cleanName) {
+    return res.status(400).json({ message: 'Display name is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `UPDATE app_user
+       SET username = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, email, username`,
+      [cleanName, req.user.sub]
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    const user = result.rows[0];
+    const token = signUser(user);
+    return res.json({
+      token,
+      user: { id: user.id, email: user.email, name: user.username }
+    });
+  } catch (error) {
+    if (String(error.code) === '23505') {
+      return res.status(409).json({ message: 'That display name is already taken.' });
+    }
+    return res.status(500).json({ message: 'Failed to update profile.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/account/password', authRequired, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  const cleanCurrentPassword = String(currentPassword || '');
+  const cleanNewPassword = String(newPassword || '');
+  if (!cleanCurrentPassword) {
+    return res.status(400).json({ message: 'Current password is required.' });
+  }
+  if (!cleanNewPassword) {
+    return res.status(400).json({ message: 'New password is required.' });
+  }
+  if (cleanNewPassword.length < 6) {
+    return res.status(400).json({ message: 'New password must be at least 6 characters.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT id, password_hash FROM app_user WHERE id = $1`,
+      [req.user.sub]
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const passOk = await bcrypt.compare(cleanCurrentPassword, result.rows[0].password_hash);
+    if (!passOk) {
+      return res.status(401).json({ message: 'Current password is incorrect.' });
+    }
+
+    const nextHash = await bcrypt.hash(cleanNewPassword, 10);
+    await client.query(
+      `UPDATE app_user
+       SET password_hash = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [nextHash, req.user.sub]
+    );
+    return res.json({ ok: true });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/account', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const deleted = await client.query(
+      `DELETE FROM app_user WHERE id = $1 RETURNING id`,
+      [req.user.sub]
+    );
+    if (!deleted.rows[0]) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    return res.json({ ok: true });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/account/following', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const [usersResult, postsResult] = await Promise.all([
+      client.query(
+        `SELECT u.id, u.username, u.bio,
+                COALESCE(followers.count, 0) AS follower_count,
+                COALESCE(following.count, 0) AS following_count
+         FROM user_follow uf
+         JOIN app_user u ON u.id = uf.following_id
+         LEFT JOIN (
+           SELECT following_id, COUNT(*)::int AS count
+           FROM user_follow
+           GROUP BY following_id
+         ) followers ON followers.following_id = u.id
+         LEFT JOIN (
+           SELECT follower_id, COUNT(*)::int AS count
+           FROM user_follow
+           GROUP BY follower_id
+         ) following ON following.follower_id = u.id
+         WHERE uf.follower_id = $1
+         ORDER BY u.username ASC`,
+        [req.user.sub]
+      ),
+      client.query(
+        `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, u.username AS author_name,
+                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+         FROM user_follow uf
+         JOIN post p ON p.author_id = uf.following_id
+         JOIN app_user u ON u.id = p.author_id
+         LEFT JOIN post_tag pt ON pt.post_id = p.id
+         LEFT JOIN tag t ON t.id = pt.tag_id
+         WHERE uf.follower_id = $1 AND p.is_published = TRUE
+         GROUP BY p.id, u.username
+         ORDER BY p.created_at DESC
+         LIMIT 24`,
+        [req.user.sub]
+      )
+    ]);
+
+    const users = usersResult.rows.map((row) => ({
+      id: row.id,
+      name: row.username,
+      bio: row.bio || '',
+      followerCount: row.follower_count || 0,
+      followingCount: row.following_count || 0
+    }));
+
+    const posts = postsResult.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      content: row.content_markdown,
+      createdAt: new Date(row.created_at).getTime(),
+      authorId: row.author_id,
+      authorName: row.author_name,
+      section: row.section || 'sde-general',
+      tags: row.tags || []
+    }));
+
+    return res.json({ users, posts });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/users/:userId', async (req, res) => {
+  const viewerId = req.headers.authorization?.startsWith('Bearer ')
+    ? (() => {
+        try {
+          return jwt.verify(req.headers.authorization.slice('Bearer '.length), jwtSecret).sub;
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+
+  const client = await pool.connect();
+  try {
+    const userResult = await client.query(
+      `SELECT id, username, bio, created_at FROM app_user WHERE id = $1`,
+      [req.params.userId]
+    );
+    if (!userResult.rows[0]) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const [posts, followerCount, followingCount, followState] = await Promise.all([
+      getPostsByAuthor(client, req.params.userId),
+      client.query(`SELECT COUNT(*)::int AS count FROM user_follow WHERE following_id = $1`, [req.params.userId]),
+      client.query(`SELECT COUNT(*)::int AS count FROM user_follow WHERE follower_id = $1`, [req.params.userId]),
+      viewerId
+        ? client.query(
+            `SELECT 1
+             FROM user_follow
+             WHERE follower_id = $1 AND following_id = $2`,
+            [viewerId, req.params.userId]
+          )
+        : Promise.resolve({ rows: [] })
+    ]);
+
+    const user = userResult.rows[0];
+    return res.json({
+      user: {
+        id: user.id,
+        name: user.username,
+        bio: user.bio || '',
+        createdAt: new Date(user.created_at).getTime(),
+        followerCount: followerCount.rows[0]?.count || 0,
+        followingCount: followingCount.rows[0]?.count || 0,
+        isFollowing: Boolean(followState.rows[0]),
+        isSelf: viewerId === user.id
+      },
+      posts
+    });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/users/:userId/follow', authRequired, async (req, res) => {
+  if (req.user.sub === req.params.userId) {
+    return res.status(400).json({ message: 'You cannot follow yourself.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `INSERT INTO user_follow (follower_id, following_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [req.user.sub, req.params.userId]
+    );
+    return res.json({ ok: true });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/users/:userId/follow', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `DELETE FROM user_follow WHERE follower_id = $1 AND following_id = $2`,
+      [req.user.sub, req.params.userId]
+    );
+    return res.json({ ok: true });
   } finally {
     client.release();
   }
@@ -383,6 +673,13 @@ app.delete('/api/posts/:postId', authRequired, async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
-});
+ensureRuntimeSchema()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`Server listening on http://localhost:${port}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize schema.', error);
+    process.exit(1);
+  });

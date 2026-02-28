@@ -42,6 +42,55 @@ export async function apiGetPosts() {
   return request('/api/posts');
 }
 
+export async function apiGetUserProfile(userId, token) {
+  return request(`/api/users/${userId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+}
+
+export async function apiGetFollowing(token) {
+  return request('/api/account/following', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiFollowUser(userId, token) {
+  return request(`/api/users/${userId}/follow`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiUnfollowUser(userId, token) {
+  return request(`/api/users/${userId}/follow`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiUpdateProfile(input, token) {
+  return request('/api/account/profile', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiUpdatePassword(input, token) {
+  return request('/api/account/password', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiDeleteAccount(token) {
+  return request('/api/account', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
 export async function apiCreatePost(input, token) {
   return request('/api/posts', {
     method: 'POST',

@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import MDEditor from '@uiw/react-md-editor';
+import '@uiw/react-md-editor/markdown-editor.css';
+import '@uiw/react-markdown-preview/markdown.css';
 
 const sectionGroups = [
   {
@@ -35,6 +38,7 @@ const sectionGroups = [
 
 const allSections = sectionGroups.flatMap((group) => group.items);
 const defaultSection = allSections[0];
+const codeLanguages = ['javascript', 'typescript', 'python', 'sql', 'bash', 'json'];
 
 function getSectionLabel(value) {
   const found = allSections.find((item) => item.value === value);
@@ -54,17 +58,24 @@ function formatTime(timestamp) {
   });
 }
 
-export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, onDeletePost }) {
+function getPreview(content) {
+  const text = String(content || '').trim();
+  if (text.length <= 180) {
+    return text;
+  }
+  return `${text.slice(0, 180).trimEnd()}...`;
+}
+
+export default function Home({ posts, currentUser, onCreatePost }) {
   const navigate = useNavigate();
   const { sectionId } = useParams();
 
   const [form, setForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
   const [message, setMessage] = useState('');
   const [isComposerOpen, setIsComposerOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSections, setSelectedSections] = useState(sectionId ? [sectionId] : []);
+  const [composerLanguage, setComposerLanguage] = useState('javascript');
 
   const orderedPosts = useMemo(
     () => [...posts].sort((a, b) => b.createdAt - a.createdAt),
@@ -161,42 +172,16 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
     setMessage('Post published.');
   };
 
-  const startEdit = (post) => {
-    setEditingId(post.id);
-    setEditForm({
-      title: post.title,
-      content: post.content,
-      section: post.section || defaultSection.value,
-      tags: (post.tags || []).join(', ')
-    });
-    setMessage('');
-  };
-
-  const submitEdit = async (event) => {
-    event.preventDefault();
-    const result = await onUpdatePost(editingId, editForm);
-    if (!result.ok) {
-      setMessage(result.message);
-      return;
-    }
-    setEditingId(null);
-    setMessage('Post updated.');
-  };
-
-  const handleDelete = async (postId) => {
-    const result = await onDeletePost(postId);
-    if (!result.ok) {
-      setMessage(result.message);
-      return;
-    }
-    if (editingId === postId) {
-      setEditingId(null);
-    }
-    setMessage('Post deleted.');
-  };
-
   const toggleTagFilter = (tag) => {
     setSearchQuery((current) => (current === tag ? '' : tag));
+  };
+
+  const insertCodeTemplate = () => {
+    const snippet = `\n\`\`\`${composerLanguage}\n// add code here\n\`\`\`\n`;
+    setForm((prev) => ({
+      ...prev,
+      content: `${String(prev.content || '').trimEnd()}${snippet}`
+    }));
   };
 
   return (
@@ -212,8 +197,8 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
       <section className="panel mb-4">
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div>
-            <h3 className="mb-1">Sections</h3>
-            <p className="muted mb-0">Browse the forum by discipline, then narrow by tags.</p>
+            <h3 className="mb-1 type-title-md">Sections</h3>
+            <p className="type-body mb-0">Browse the forum by discipline, then narrow by tags.</p>
           </div>
           <span className="muted">{filteredPosts.length} visible posts</span>
         </div>
@@ -276,7 +261,7 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
         <div className="col-12">
           <section className="panel">
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-              <h3 className="mb-0">Latest Posts</h3>
+              <h3 className="mb-0 type-title-md">Latest Posts</h3>
               <div className="d-flex align-items-center gap-2 flex-wrap">
                 <span className="muted">{filteredPosts.length} posts</span>
                 {!currentUser ? (
@@ -307,9 +292,6 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
 
             <div className="forum-feed">
               {filteredPosts.map((post) => {
-                const isOwner = currentUser && currentUser.id === post.authorId;
-                const isEditing = editingId === post.id;
-
                 return (
                   <article key={post.id} className="forum-post-card">
                     <div className="d-flex justify-content-between align-items-center mb-2">
@@ -317,80 +299,37 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
                       <span className="muted forum-time">{formatTime(post.createdAt)}</span>
                     </div>
 
-                    {isEditing ? (
-                      <form onSubmit={submitEdit} className="forum-form">
-                        <div className="mb-2">
-                          <input
-                            className="form-control forum-input"
-                            value={editForm.title}
-                            onChange={(e) => setEditForm((prev) => ({ ...prev, title: e.target.value }))}
-                          />
-                        </div>
-                        <div className="mb-2">
-                          <select
-                            className="form-select forum-input"
-                            value={editForm.section}
-                            onChange={(e) => setEditForm((prev) => ({ ...prev, section: e.target.value }))}
+                    <h5 className="mb-1">
+                      <Link to={`/forum/post/${post.id}`} className="post-title-link">
+                        {post.title}
+                      </Link>
+                    </h5>
+                    {!!post.tags?.length && (
+                      <div className="post-tag-row mb-2">
+                        {post.tags.map((tag) => (
+                          <button
+                            key={`${post.id}-${tag}`}
+                            type="button"
+                            className={`post-tag-pill ${searchQuery === tag ? 'is-active' : ''}`}
+                            onClick={() => toggleTagFilter(tag)}
                           >
-                            {sectionGroups.map((group) => (
-                              <optgroup key={group.title} label={group.title}>
-                                {group.items.map((item) => (
-                                  <option key={item.value} value={item.value}>{item.label}</option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="mb-2">
-                          <input
-                            className="form-control forum-input"
-                            value={editForm.tags}
-                            onChange={(e) => setEditForm((prev) => ({ ...prev, tags: e.target.value }))}
-                            placeholder="react, auth, postgres"
-                          />
-                        </div>
-                        <div className="mb-2">
-                          <textarea
-                            className="form-control forum-input"
-                            rows={4}
-                            value={editForm.content}
-                            onChange={(e) => setEditForm((prev) => ({ ...prev, content: e.target.value }))}
-                          />
-                        </div>
-                        <div className="forum-actions">
-                          <button type="submit" className="forum-primary-btn">Save</button>
-                          <button type="button" className="forum-secondary-btn" onClick={() => setEditingId(null)}>Cancel</button>
-                        </div>
-                      </form>
-                    ) : (
-                      <>
-                        <h5 className="mb-1">{post.title}</h5>
-                        {!!post.tags?.length && (
-                          <div className="post-tag-row mb-2">
-                            {post.tags.map((tag) => (
-                              <button
-                                key={`${post.id}-${tag}`}
-                                type="button"
-                                className={`post-tag-pill ${searchQuery === tag ? 'is-active' : ''}`}
-                                onClick={() => toggleTagFilter(tag)}
-                              >
-                                #{tag}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        <p className="mb-2">{post.content}</p>
-                        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                          <small className="muted">Posted by {post.authorName}</small>
-                          {isOwner && (
-                            <div className="forum-actions">
-                              <button type="button" className="forum-secondary-btn" onClick={() => startEdit(post)}>Edit</button>
-                              <button type="button" className="forum-danger-btn" onClick={() => handleDelete(post.id)}>Delete</button>
-                            </div>
-                          )}
-                        </div>
-                      </>
+                            #{tag}
+                          </button>
+                        ))}
+                      </div>
                     )}
+                    <p className="mb-2 forum-post-preview">{getPreview(post.content)}</p>
+                    <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                      <small className="muted">
+                        Posted by{' '}
+                        <Link to={`/users/${post.authorId}`} className="post-author-link">
+                          {post.authorName}
+                        </Link>
+                      </small>
+                      <Link to={`/forum/post/${post.id}`} className="post-read-link">
+                        Read more
+                      </Link>
+                    </div>
                   </article>
                 );
               })}
@@ -455,13 +394,32 @@ export default function Home({ posts, currentUser, onCreatePost, onUpdatePost, o
 
               <div className="mb-2">
                 <label className="form-label">Content</label>
-                <textarea
-                  className="form-control forum-input"
-                  rows={6}
-                  value={form.content}
-                  onChange={(e) => setForm((prev) => ({ ...prev, content: e.target.value }))}
-                  placeholder="Share the idea, code approach, and why it worked."
-                />
+                <div className="composer-toolbar">
+                  <select
+                    className="form-select forum-input code-language-select"
+                    value={composerLanguage}
+                    onChange={(e) => setComposerLanguage(e.target.value)}
+                  >
+                    {codeLanguages.map((language) => (
+                      <option key={language} value={language}>{language}</option>
+                    ))}
+                  </select>
+                  <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
+                    Insert Code Block
+                  </button>
+                </div>
+                <div data-color-mode="dark" className="markdown-editor-shell">
+                  <MDEditor
+                    value={form.content}
+                    onChange={(value) => setForm((prev) => ({ ...prev, content: value || '' }))}
+                    preview="edit"
+                    height={320}
+                    textareaProps={{
+                      placeholder: 'Share the idea, code approach, and why it worked.'
+                    }}
+                  />
+                </div>
+                <div className="form-help">Choose a language, insert a code block, then paste your code inside it.</div>
               </div>
 
               {message && <p className="mt-3 mb-0 muted">{message}</p>}

@@ -165,10 +165,10 @@ export default function Home({ posts, currentUser, onCreatePost }) {
     }
     setForm({ title: '', content: '', section: defaultSection.value, tags: '' });
     setIsComposerOpen(false);
-    setSelectedSections([form.section]);
     if (sectionId) {
       navigate('/forum');
     }
+    setSelectedSections([]);
     setMessage('Post published.');
   };
 

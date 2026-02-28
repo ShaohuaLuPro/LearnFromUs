@@ -27,8 +27,6 @@ import {
 } from './api';
 import './App.css';
 
-const routerBaseName = process.env.NODE_ENV === 'production' ? '/LearnFromUs' : '/';
-
 function App() {
   const [posts, setPosts] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
@@ -186,7 +184,7 @@ function App() {
   }
 
   return (
-    <HashRouter basename={routerBaseName}>
+    <HashRouter>
       <div className="app-wrapper d-flex flex-column min-vh-100">
         <Header currentUser={currentUser} onLogout={logout} />
         <main className="app-main">

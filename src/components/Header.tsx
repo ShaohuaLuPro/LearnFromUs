@@ -6,6 +6,7 @@ type CurrentUser = {
   id: string;
   name: string;
   email: string;
+  isAdmin?: boolean;
 } | null;
 
 type NavItem = {
@@ -80,6 +81,16 @@ export default function Header({ currentUser, onLogout }: HeaderProps) {
                   <NavLink to="/following" className="account-menu-item" onClick={() => setAccountOpen(false)}>
                     Following
                   </NavLink>
+                  {currentUser.isAdmin && (
+                    <NavLink to="/moderation" className="account-menu-item" onClick={() => setAccountOpen(false)}>
+                      Moderation
+                    </NavLink>
+                  )}
+                  {currentUser.isAdmin && (
+                    <NavLink to="/analytics" className="account-menu-item" onClick={() => setAccountOpen(false)}>
+                      Analytics
+                    </NavLink>
+                  )}
                   <NavLink to="/settings" className="account-menu-item" onClick={() => setAccountOpen(false)}>
                     Settings
                   </NavLink>

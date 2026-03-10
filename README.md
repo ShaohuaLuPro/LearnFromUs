@@ -5,7 +5,10 @@ LearnFromUs is a community forum for sharing coding hacks, project showcases, an
 ## Architecture
 - Frontend: React, hosted on GitHub Pages
 - Backend API: Node.js + Express, hosted on Render
-- Database: PostgreSQL, hosted on Neon
+- Databases:
+- PostgreSQL on Neon for users, auth, posts, follows, and transactional data
+- MongoDB for activity events and document-style analytics data
+- DuckDB for local analytical snapshots and cross-source reporting
 
 ## Repository Structure
 - `src/`: React frontend
@@ -24,9 +27,9 @@ LearnFromUs is a community forum for sharing coding hacks, project showcases, an
 - Public API base URL: `https://learnfromus.onrender.com`
 - Health check: `https://learnfromus.onrender.com/api/health`
 
-### Database
-- Hosted on Neon
-- Backend connects using `DATABASE_URL` from Render environment variables
+### Databases
+- Backend connects to Neon using `DATABASE_URL`
+- Backend optionally connects to MongoDB using `MONGODB_URI`
 
 ## Environment Variables
 
@@ -41,6 +44,10 @@ PORT=4000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST/DB?sslmode=require
 JWT_SECRET=replace-with-a-long-random-secret
 FRONTEND_ORIGIN=http://localhost:3000,https://shaohualupro.github.io
+ADMIN_EMAILS=admin@example.com
+MONGODB_URI=mongodb+srv://USER:PASSWORD@HOST/?appName=Cluster0
+MONGODB_DB_NAME=learnfromus
+DUCKDB_PATH=
 ```
 
 Notes:
@@ -91,10 +98,17 @@ npm start
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
+- `GET /api/account/activity`
+- `GET /api/account/posts`
 - `GET /api/posts`
 - `POST /api/posts`
+- `POST /api/posts/:postId/appeal`
 - `PUT /api/posts/:postId`
 - `DELETE /api/posts/:postId`
+- `GET /api/admin/analytics/overview`
+- `GET /api/admin/posts/moderation`
+- `POST /api/admin/posts/:postId/remove`
+- `POST /api/admin/posts/:postId/restore`
 
 ## Render Configuration
 - Service Type: Web Service
@@ -106,6 +120,9 @@ Required Render environment variables:
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `FRONTEND_ORIGIN`
+- `ADMIN_EMAILS`
+- `MONGODB_URI` (optional)
+- `DUCKDB_PATH` (optional)
 
 ## GitHub Pages Deployment
 To publish the frontend:

@@ -1,0 +1,234 @@
+.forum-select {
+  position: relative;
+  width: 100%;
+}
+
+.forum-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.55rem 0.8rem;
+}
+
+.forum-select-trigger:disabled {
+  cursor: not-allowed;
+}
+
+.forum-select-value {
+  color: var(--text-main);
+}
+
+.forum-select-value.is-placeholder {
+  color: var(--text-muted);
+}
+
+.forum-select-caret {
+  color: var(--text-soft);
+  transition: transform 160ms ease;
+}
+
+.forum-select-caret.is-open {
+  transform: rotate(180deg);
+}
+
+.forum-select-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  z-index: 25;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--surface-card-border-strong);
+  border-radius: 14px;
+  background: rgba(7, 17, 27, 0.98);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.4);
+  padding: 0.4rem;
+}
+
+.forum-select-group + .forum-select-group {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(0, 240, 255, 0.08);
+}
+
+.forum-select-group-label {
+  padding: 0.3rem 0.45rem;
+  font-size: var(--font-size-kicker);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-kicker);
+}
+
+.forum-select-option {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+}
+
+.forum-select-option:hover,
+.forum-select-option:focus,
+.forum-select-option.is-active {
+  background: var(--brand-wash);
+}
+
+.forum-select-option.is-selected {
+  color: var(--bg);
+  background: linear-gradient(130deg, var(--brand), var(--brand-2));
+}
+
+.agent-chatbox {
+  position: fixed;
+  right: 1.2rem;
+  bottom: 1.2rem;
+  z-index: 1200;
+  display: grid;
+  justify-items: end;
+  gap: 0.8rem;
+}
+
+.agent-chatbox-trigger {
+  border: 0;
+  color: var(--bg);
+  border-radius: 999px;
+  padding: 0.75rem 1rem;
+  font-weight: 800;
+  background: linear-gradient(130deg, var(--brand), var(--brand-2));
+  box-shadow: 0 18px 30px rgba(0, 0, 0, 0.32);
+}
+
+.agent-chatbox-panel {
+  width: min(420px, calc(100vw - 2rem));
+  max-height: min(78vh, 760px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  border: 1px solid var(--surface-card-border-strong);
+  border-radius: 20px;
+  background: rgba(7, 17, 27, 0.98);
+  box-shadow: 0 24px 54px rgba(0, 0, 0, 0.42);
+  padding: 1rem;
+}
+
+.agent-chatbox-panel h3,
+.agent-chatbox-panel h4,
+.agent-chatbox-panel strong {
+  color: var(--text-heading);
+}
+
+.agent-chatbox-panel p,
+.agent-chatbox-panel label,
+.agent-chatbox-message,
+.agent-chatbox-card,
+.agent-chatbox-draft {
+  color: var(--text-main);
+}
+
+.agent-chatbox-panel .muted,
+.agent-chatbox-panel span:not(.type-kicker),
+.agent-chatbox-panel .forum-select-value.is-placeholder {
+  color: var(--text-soft);
+}
+
+.agent-chatbox-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.agent-chatbox-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.agent-chatbox-thread {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.75rem;
+  padding-right: 0.15rem;
+}
+
+.agent-chatbox-message {
+  border-radius: 16px;
+  padding: 0.85rem 0.95rem;
+}
+
+.agent-chatbox-message.is-agent {
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  background: rgba(0, 240, 255, 0.05);
+}
+
+.agent-chatbox-message.is-user {
+  border: 1px solid rgba(116, 255, 122, 0.18);
+  background: rgba(116, 255, 122, 0.08);
+}
+
+.agent-chatbox-card-grid {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+}
+
+.agent-chatbox-card {
+  display: grid;
+  gap: 0.15rem;
+  text-decoration: none;
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(5, 15, 24, 0.72);
+  padding: 0.7rem 0.75rem;
+}
+
+.agent-chatbox-card strong {
+  color: var(--text-heading);
+}
+
+.agent-chatbox-card span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.agent-chatbox-draft {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(5, 15, 24, 0.72);
+  padding: 0.75rem;
+}
+
+.agent-chatbox-draft strong {
+  color: var(--text-heading);
+}
+
+.agent-chatbox-draft span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.agent-chatbox-draft pre {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text-main);
+  font-family: "IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.agent-chatbox-form {
+  display: grid;
+  gap: 0.65rem;
+}

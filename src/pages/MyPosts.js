@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
+import Select from '../components/Select';
 
 const sectionGroups = [
   {
@@ -39,6 +40,14 @@ const sectionGroups = [
 const allSections = sectionGroups.flatMap((group) => group.items);
 const defaultSection = allSections[0];
 const codeLanguages = ['javascript', 'typescript', 'python', 'sql', 'bash', 'json'];
+const sectionSelectOptions = sectionGroups.map((group) => ({
+  label: group.title,
+  options: group.items.map((item) => ({ value: item.value, label: item.label }))
+}));
+const codeLanguageOptions = codeLanguages.map((language) => ({
+  value: language,
+  label: language
+}));
 
 function getSectionLabel(value) {
   const found = allSections.find((item) => item.value === value);
@@ -54,18 +63,55 @@ function formatTime(timestamp) {
   });
 }
 
-export default function MyPosts({ currentUser, posts, onUpdatePost, onDeletePost }) {
+function getAppealDeadline(moderation) {
+  if (!moderation?.deletedAt) {
+    return null;
+  }
+  return moderation.deletedAt + 15 * 24 * 60 * 60 * 1000;
+}
+
+export default function MyPosts({
+  currentUser,
+  onUpdatePost,
+  onDeletePost,
+  onAppealPost,
+  onGetMyPosts
+}) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
   const [editorLanguage, setEditorLanguage] = useState('javascript');
+  const [myPosts, setMyPosts] = useState([]);
+  const [appealNotes, setAppealNotes] = useState({});
 
-  const myPosts = useMemo(
-    () =>
-      posts
-        .filter((post) => post.authorId === currentUser?.id)
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [posts, currentUser]
+  const loadPosts = async () => {
+    const result = await onGetMyPosts();
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setMyPosts((result.posts || []).sort((a, b) => b.createdAt - a.createdAt));
+  };
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+    async function bootstrap() {
+      const result = await onGetMyPosts();
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      setMyPosts((result.posts || []).sort((a, b) => b.createdAt - a.createdAt));
+    }
+    bootstrap();
+  }, [currentUser, onGetMyPosts]);
+
+  const visiblePosts = useMemo(
+    () => myPosts.filter((post) => post.authorId === currentUser?.id),
+    [myPosts, currentUser]
   );
 
   const startEdit = (post) => {
@@ -77,29 +123,48 @@ export default function MyPosts({ currentUser, posts, onUpdatePost, onDeletePost
       tags: (post.tags || []).join(', ')
     });
     setMessage('');
+    setError('');
   };
 
   const submitEdit = async (event) => {
     event.preventDefault();
+    setError('');
+    setMessage('');
     const result = await onUpdatePost(editingId, editForm);
     if (!result.ok) {
-      setMessage(result.message);
+      setError(result.message);
       return;
     }
     setEditingId(null);
     setMessage('Post updated.');
+    await loadPosts();
   };
 
   const handleDelete = async (postId) => {
+    setError('');
+    setMessage('');
     const result = await onDeletePost(postId);
     if (!result.ok) {
-      setMessage(result.message);
+      setError(result.message);
       return;
     }
     if (editingId === postId) {
       setEditingId(null);
     }
     setMessage('Post deleted.');
+    await loadPosts();
+  };
+
+  const handleAppeal = async (postId) => {
+    setError('');
+    setMessage('');
+    const result = await onAppealPost(postId, appealNotes[postId] || '');
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setMessage(result.message);
+    await loadPosts();
   };
 
   const insertCodeTemplate = () => {
@@ -129,23 +194,43 @@ export default function MyPosts({ currentUser, posts, onUpdatePost, onDeletePost
           <div>
             <p className="type-kicker mb-2">Workspace</p>
             <h2 className="mb-1 type-title-md">My Posts</h2>
-            <p className="type-body mb-0">Review, edit, or remove everything you have published.</p>
+            <p className="type-body mb-0">Review active posts, moderated removals, and appeal windows.</p>
           </div>
           <Link to="/forum" className="forum-secondary-btn text-decoration-none">Back to Forum</Link>
         </div>
 
-        {message && <div className="settings-alert is-success mb-3">{message}</div>}
+        {(message || error) && (
+          <div className={`settings-alert ${error ? 'is-error' : 'is-success'} mb-3`}>
+            {error || message}
+          </div>
+        )}
 
         <div className="forum-feed">
-          {myPosts.map((post) => {
+          {visiblePosts.map((post) => {
             const isEditing = editingId === post.id;
+            const isModerated = Boolean(post.moderation?.isDeleted);
+            const deadline = getAppealDeadline(post.moderation);
+            const appealExpired = Boolean(deadline && Date.now() > deadline);
 
             return (
-              <article key={post.id} className="forum-post-card">
+              <article key={post.id} className={`forum-post-card ${isModerated ? 'moderated-post-card' : ''}`}>
                 <div className="d-flex justify-content-between align-items-center mb-2">
                   <span className="forum-tag">{getSectionLabel(post.section)}</span>
                   <span className="muted forum-time">{formatTime(post.createdAt)}</span>
                 </div>
+
+                {isModerated && (
+                  <div className="moderation-banner mb-3">
+                    <strong>Removed by admin.</strong>{' '}
+                    {post.moderation.deletedReason || 'No reason provided.'}
+                    {deadline && (
+                      <span> Appeal deadline: {formatTime(deadline)}</span>
+                    )}
+                    {post.moderation.appealRequestedAt && (
+                      <span> Appeal submitted on {formatTime(post.moderation.appealRequestedAt)}.</span>
+                    )}
+                  </div>
+                )}
 
                 {isEditing ? (
                   <form onSubmit={submitEdit} className="forum-form">
@@ -157,19 +242,11 @@ export default function MyPosts({ currentUser, posts, onUpdatePost, onDeletePost
                       />
                     </div>
                     <div className="mb-2">
-                      <select
-                        className="form-select forum-input"
+                      <Select
+                        options={sectionSelectOptions}
                         value={editForm.section}
-                        onChange={(e) => setEditForm((prev) => ({ ...prev, section: e.target.value }))}
-                      >
-                        {sectionGroups.map((group) => (
-                          <optgroup key={group.title} label={group.title}>
-                            {group.items.map((item) => (
-                              <option key={item.value} value={item.value}>{item.label}</option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
+                        onChange={(nextValue) => setEditForm((prev) => ({ ...prev, section: nextValue }))}
+                      />
                     </div>
                     <div className="mb-2">
                       <input
@@ -180,15 +257,12 @@ export default function MyPosts({ currentUser, posts, onUpdatePost, onDeletePost
                     </div>
                     <div className="mb-2">
                       <div className="composer-toolbar">
-                        <select
-                          className="form-select forum-input code-language-select"
+                        <Select
+                          options={codeLanguageOptions}
                           value={editorLanguage}
-                          onChange={(e) => setEditorLanguage(e.target.value)}
-                        >
-                          {codeLanguages.map((language) => (
-                            <option key={language} value={language}>{language}</option>
-                          ))}
-                        </select>
+                          onChange={setEditorLanguage}
+                          className="code-language-select"
+                        />
                         <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
                           Insert Code Block
                         </button>
@@ -219,19 +293,41 @@ export default function MyPosts({ currentUser, posts, onUpdatePost, onDeletePost
                     )}
                     <p className="mb-2">{post.content}</p>
                     <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                      <small className="muted">Published by you</small>
-                      <div className="forum-actions">
-                        <button type="button" className="forum-secondary-btn" onClick={() => startEdit(post)}>Edit</button>
-                        <button type="button" className="forum-danger-btn" onClick={() => handleDelete(post.id)}>Delete</button>
-                      </div>
+                      <small className="muted">
+                        {isModerated ? 'Hidden from public forum' : 'Published by you'}
+                      </small>
+                      {!isModerated && (
+                        <div className="forum-actions">
+                          <button type="button" className="forum-secondary-btn" onClick={() => startEdit(post)}>Edit</button>
+                          <button type="button" className="forum-danger-btn" onClick={() => handleDelete(post.id)}>Delete</button>
+                        </div>
+                      )}
                     </div>
+
+                    {isModerated && !post.moderation.appealRequestedAt && !appealExpired && (
+                      <div className="mt-3">
+                        <label className="form-label">Appeal message</label>
+                        <textarea
+                          className="form-control forum-input"
+                          rows={3}
+                          value={appealNotes[post.id] || ''}
+                          onChange={(e) => setAppealNotes((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                          placeholder="Explain why this post should be restored."
+                        />
+                        <div className="forum-actions mt-2">
+                          <button type="button" className="forum-primary-btn" onClick={() => handleAppeal(post.id)}>
+                            Request Restore
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </article>
             );
           })}
 
-          {myPosts.length === 0 && (
+          {visiblePosts.length === 0 && (
             <section className="settings-card">
               <h4 className="mb-2">No posts yet</h4>
               <p className="muted mb-3">Once you publish in the forum, your posts will appear here for management.</p>

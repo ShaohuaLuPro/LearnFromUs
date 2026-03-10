@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -23,13 +23,27 @@ function getSectionLabel(value) {
     .join(' ');
 }
 
-export default function PostDetail({ posts }) {
+export default function PostDetail({ posts, currentUser, onAdminRemovePost }) {
   const { postId } = useParams();
+  const [reason, setReason] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
   const post = useMemo(
     () => posts.find((item) => item.id === postId) || null,
     [posts, postId]
   );
+
+  const removePost = async () => {
+    setError('');
+    setMessage('');
+    const result = await onAdminRemovePost(postId, reason);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setMessage(result.message);
+  };
 
   if (!post) {
     return (
@@ -64,6 +78,12 @@ export default function PostDetail({ posts }) {
             </Link>
           </span>
         </div>
+
+        {(message || error) && (
+          <div className={`settings-alert ${error ? 'is-error' : 'is-success'} mb-3`}>
+            {error || message}
+          </div>
+        )}
 
         <h1 className="post-detail-title">{post.title}</h1>
 
@@ -116,6 +136,26 @@ export default function PostDetail({ posts }) {
             {post.content || ''}
           </ReactMarkdown>
         </div>
+
+        {currentUser?.isAdmin && (
+          <section className="settings-card settings-danger-card mt-4">
+            <h4 className="mb-2">Admin Moderation</h4>
+            <p className="muted mb-3">Remove this post from public view. The author will have 15 days to request restoration.</p>
+            <div className="mb-3">
+              <label className="form-label">Moderation reason</label>
+              <textarea
+                className="form-control forum-input"
+                rows={3}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Explain why the post violates policy."
+              />
+            </div>
+            <button type="button" className="forum-danger-btn" onClick={removePost}>
+              Remove Post
+            </button>
+          </section>
+        )}
       </section>
     </div>
   );

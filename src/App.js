@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
+import AgentChatbox from './components/AgentChatbox';
 import Landing from './pages/Landing';
 import Home from './pages/Home';
 import About from './pages/About';
@@ -12,35 +13,55 @@ import Goodbye from './pages/Goodbye';
 import UserProfile from './pages/UserProfile';
 import PostDetail from './pages/PostDetail';
 import Following from './pages/Following';
+import Moderation from './pages/Moderation';
+import Analytics from './pages/Analytics';
 import {
+  apiGetAdminParquetDatasets,
+  apiDownloadAdminParquetDataset,
+  apiAdminRemovePost,
+  apiAdminRestorePost,
+  apiAppealPost,
+  apiGetAdminAnalytics,
+  apiQueryAdminAnalytics,
   TOKEN_KEY,
   apiDeleteAccount,
   apiCreatePost,
+  apiAgentChat,
+  apiConfirmPasswordReset,
   apiDeletePost,
+  apiGetModerationPosts,
   apiGetPosts,
   apiLogin,
   apiMe,
+  apiGetMyPosts,
+  apiRequestPasswordReset,
   apiRegister,
   apiUpdatePassword,
   apiUpdateProfile,
   apiUpdatePost
 } from './api';
 import './App.css';
+import './styles/components.css';
 
 function App() {
   const [posts, setPosts] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  const refreshPosts = async () => {
+    const { posts: remotePosts } = await apiGetPosts();
+    setPosts(remotePosts || []);
+  };
+
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     async function bootstrap() {
       try {
-        const [{ posts: remotePosts }, me] = await Promise.all([
+        const [postsResponse, me] = await Promise.all([
           apiGetPosts(),
           token ? apiMe(token) : Promise.resolve(null)
         ]);
-        setPosts(remotePosts || []);
+        setPosts(postsResponse.posts || []);
         if (me?.user) setCurrentUser(me.user);
       } catch {
         setPosts([]);
@@ -68,6 +89,24 @@ function App() {
       localStorage.setItem(TOKEN_KEY, data.token);
       setCurrentUser(data.user);
       return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const requestPasswordReset = async ({ email }) => {
+    try {
+      const data = await apiRequestPasswordReset({ email });
+      return { ok: true, message: data.message, resetUrl: data.resetUrl || '' };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const confirmPasswordReset = async ({ token, newPassword }) => {
+    try {
+      const data = await apiConfirmPasswordReset({ token, newPassword });
+      return { ok: true, message: data.message };
     } catch (error) {
       return { ok: false, message: error.message };
     }
@@ -133,6 +172,16 @@ function App() {
     }
   };
 
+  const agentChat = async (message) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    try {
+      const data = await apiAgentChat(message, token);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
   const updatePost = async (postId, input) => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return { ok: false, message: 'Please login first.' };
@@ -151,6 +200,127 @@ function App() {
     try {
       await apiDeletePost(postId, token);
       setPosts((prev) => prev.filter((post) => post.id !== postId));
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const appealPost = async (postId, note) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return { ok: false, message: 'Please login first.' };
+    try {
+      const data = await apiAppealPost(postId, { note }, token);
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const getMyPosts = async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      return { ok: false, message: 'Please login first.', posts: [] };
+    }
+    try {
+      const data = await apiGetMyPosts(token);
+      return { ok: true, posts: data.posts || [] };
+    } catch (error) {
+      return { ok: false, message: error.message, posts: [] };
+    }
+  };
+
+  const getModerationPosts = async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      return { ok: false, message: 'Please login first.', posts: [] };
+    }
+    try {
+      const data = await apiGetModerationPosts(token);
+      return { ok: true, posts: data.posts || [] };
+    } catch (error) {
+      return { ok: false, message: error.message, posts: [] };
+    }
+  };
+
+  const adminRemovePost = async (postId, reason) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return { ok: false, message: 'Please login first.' };
+    try {
+      const data = await apiAdminRemovePost(postId, { reason }, token);
+      await refreshPosts();
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const adminRestorePost = async (postId) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return { ok: false, message: 'Please login first.' };
+    try {
+      const data = await apiAdminRestorePost(postId, token);
+      await refreshPosts();
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const getAdminAnalytics = async (filters = {}) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiGetAdminAnalytics(token, filters);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const queryAdminAnalytics = async (filters = {}) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiQueryAdminAnalytics(token, filters);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  };
+
+  const getAdminParquetDatasets = async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      return { ok: false, message: 'Please login first.', datasets: [] };
+    }
+    try {
+      const data = await apiGetAdminParquetDatasets(token);
+      return { ok: true, datasets: data.datasets || [] };
+    } catch (error) {
+      return { ok: false, message: error.message, datasets: [] };
+    }
+  };
+
+  const downloadAdminParquetDataset = async (dataset) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const { blob, fileName } = await apiDownloadAdminParquetDataset(dataset, token);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
       return { ok: true };
     } catch (error) {
       return { ok: false, message: error.message };
@@ -210,7 +380,6 @@ function App() {
                 />
               }
             />
-            <Route path="/forum/post/:postId" element={<PostDetail posts={posts} />} />
             <Route path="/about" element={<About />} />
             <Route path="/goodbye" element={<Goodbye />} />
             <Route path="/users/:userId" element={<UserProfile currentUser={currentUser} />} />
@@ -242,6 +411,8 @@ function App() {
                     posts={posts}
                     onUpdatePost={updatePost}
                     onDeletePost={deletePost}
+                    onAppealPost={appealPost}
+                    onGetMyPosts={getMyPosts}
                   />
                 ) : (
                   <Navigate to="/login" replace />
@@ -249,12 +420,66 @@ function App() {
               }
             />
             <Route
+              path="/moderation"
+              element={
+                currentUser?.isAdmin ? (
+                  <Moderation
+                    onGetModerationPosts={getModerationPosts}
+                    onRestorePost={adminRestorePost}
+                  />
+                ) : (
+                  <Navigate to="/forum" replace />
+                )
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                currentUser?.isAdmin ? (
+                  <Analytics
+                    onGetAdminAnalytics={getAdminAnalytics}
+                    onQueryAdminAnalytics={queryAdminAnalytics}
+                    onGetParquetDatasets={getAdminParquetDatasets}
+                    onDownloadParquetDataset={downloadAdminParquetDataset}
+                  />
+                ) : (
+                  <Navigate to="/forum" replace />
+                )
+              }
+            />
+            <Route
               path="/login"
-              element={currentUser ? <Navigate to="/forum" replace /> : <Login onLogin={login} onRegister={register} />}
+              element={
+                currentUser ? (
+                  <Navigate to="/forum" replace />
+                ) : (
+                  <Login
+                    onLogin={login}
+                    onRegister={register}
+                    onRequestPasswordReset={requestPasswordReset}
+                    onConfirmPasswordReset={confirmPasswordReset}
+                  />
+                )
+              }
+            />
+            <Route
+              path="/forum/post/:postId"
+              element={
+                <PostDetail
+                  posts={posts}
+                  currentUser={currentUser}
+                  onAdminRemovePost={adminRemovePost}
+                />
+              }
             />
           </Routes>
         </main>
         <Footer />
+        <AgentChatbox
+          currentUser={currentUser}
+          onAgentChat={agentChat}
+          onCreatePost={createPost}
+        />
       </div>
     </HashRouter>
   );

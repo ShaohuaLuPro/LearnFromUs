@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
+import Select from '../components/Select';
 
 const sectionGroups = [
   {
@@ -39,6 +40,14 @@ const sectionGroups = [
 const allSections = sectionGroups.flatMap((group) => group.items);
 const defaultSection = allSections[0];
 const codeLanguages = ['javascript', 'typescript', 'python', 'sql', 'bash', 'json'];
+const sectionSelectOptions = sectionGroups.map((group) => ({
+  label: group.title,
+  options: group.items.map((item) => ({ value: item.value, label: item.label }))
+}));
+const codeLanguageOptions = codeLanguages.map((language) => ({
+  value: language,
+  label: language
+}));
 
 function getSectionLabel(value) {
   const found = allSections.find((item) => item.value === value);
@@ -366,19 +375,11 @@ export default function Home({ posts, currentUser, onCreatePost }) {
 
               <div className="mb-3">
                 <label className="form-label">Section</label>
-                <select
-                  className="form-select forum-input"
+                <Select
+                  options={sectionSelectOptions}
                   value={form.section}
-                  onChange={(e) => setForm((prev) => ({ ...prev, section: e.target.value }))}
-                >
-                  {sectionGroups.map((group) => (
-                    <optgroup key={group.title} label={group.title}>
-                      {group.items.map((item) => (
-                        <option key={item.value} value={item.value}>{item.label}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                  onChange={(nextValue) => setForm((prev) => ({ ...prev, section: nextValue }))}
+                />
               </div>
 
               <div className="mb-3">
@@ -395,15 +396,12 @@ export default function Home({ posts, currentUser, onCreatePost }) {
               <div className="mb-2">
                 <label className="form-label">Content</label>
                 <div className="composer-toolbar">
-                  <select
-                    className="form-select forum-input code-language-select"
+                  <Select
+                    options={codeLanguageOptions}
                     value={composerLanguage}
-                    onChange={(e) => setComposerLanguage(e.target.value)}
-                  >
-                    {codeLanguages.map((language) => (
-                      <option key={language} value={language}>{language}</option>
-                    ))}
-                  </select>
+                    onChange={setComposerLanguage}
+                    className="code-language-select"
+                  />
                   <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
                     Insert Code Block
                   </button>

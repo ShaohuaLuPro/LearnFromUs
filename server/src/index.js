@@ -351,6 +351,21 @@ function normalizeDuckRows(rows) {
   ));
 }
 
+async function createDuckSnapshotTable(tableName, filePath, emptySchemaSql, hasRows) {
+  if (!hasRows) {
+    await duckQuery(`
+      CREATE OR REPLACE TABLE ${tableName} AS
+      ${emptySchemaSql}
+    `);
+    return;
+  }
+
+  await duckQuery(`
+    CREATE OR REPLACE TABLE ${tableName} AS
+    SELECT * FROM read_json_auto('${sqlPath(filePath)}')
+  `);
+}
+
 function normalizeAnalyticsTag(value) {
   return String(value || '')
     .trim()
@@ -437,22 +452,55 @@ async function refreshDuckDbSnapshots() {
     fs.writeFile(tagsFile, JSON.stringify(tagRows.rows, null, 2))
   ]);
 
-  await duckQuery(`
-    CREATE OR REPLACE TABLE posts_snapshot AS
-    SELECT * FROM read_json_auto('${sqlPath(postsFile)}')
-  `);
-  await duckQuery(`
-    CREATE OR REPLACE TABLE users_snapshot AS
-    SELECT * FROM read_json_auto('${sqlPath(usersFile)}')
-  `);
-  await duckQuery(`
-    CREATE OR REPLACE TABLE activity_snapshot AS
-    SELECT * FROM read_json_auto('${sqlPath(activityFile)}')
-  `);
-  await duckQuery(`
-    CREATE OR REPLACE TABLE tags_snapshot AS
-    SELECT * FROM read_json_auto('${sqlPath(tagsFile)}')
-  `);
+  await createDuckSnapshotTable(
+    'posts_snapshot',
+    postsFile,
+    `SELECT
+       CAST(NULL AS VARCHAR) AS id,
+       CAST(NULL AS VARCHAR) AS author_id,
+       CAST(NULL AS VARCHAR) AS section,
+       CAST(NULL AS VARCHAR) AS title,
+       CAST(NULL AS TIMESTAMP) AS created_at,
+       CAST(NULL AS TIMESTAMP) AS updated_at,
+       CAST(NULL AS TIMESTAMP) AS deleted_by_admin_at,
+       CAST(NULL AS VARCHAR) AS deleted_reason,
+       CAST(NULL AS TIMESTAMP) AS appeal_requested_at,
+       CAST(NULL AS TIMESTAMP) AS restored_at,
+       CAST(NULL AS VARCHAR) AS author_name,
+       CAST(NULL AS VARCHAR) AS author_email
+     WHERE FALSE`,
+    postRows.rows.length > 0
+  );
+  await createDuckSnapshotTable(
+    'users_snapshot',
+    usersFile,
+    `SELECT
+       CAST(NULL AS VARCHAR) AS id,
+       CAST(NULL AS VARCHAR) AS email,
+       CAST(NULL AS VARCHAR) AS username,
+       CAST(NULL AS TIMESTAMP) AS created_at
+     WHERE FALSE`,
+    userRows.rows.length > 0
+  );
+  await createDuckSnapshotTable(
+    'activity_snapshot',
+    activityFile,
+    `SELECT
+       CAST(NULL AS VARCHAR) AS type,
+       CAST(NULL AS VARCHAR) AS userId,
+       CAST(NULL AS TIMESTAMP) AS createdAt
+     WHERE FALSE`,
+    activityRows.length > 0
+  );
+  await createDuckSnapshotTable(
+    'tags_snapshot',
+    tagsFile,
+    `SELECT
+       CAST(NULL AS VARCHAR) AS post_id,
+       CAST(NULL AS VARCHAR) AS tag_name
+     WHERE FALSE`,
+    tagRows.rows.length > 0
+  );
   await duckQuery(`
     INSERT INTO analytics_runs
     VALUES (NOW(), 'postgres+mongo')

@@ -6,9 +6,12 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const duckdb = require('duckdb');
 const jwt = require('jsonwebtoken');
-const { MongoClient } = require('mongodb');
 const nodemailer = require('nodemailer');
 const { Pool } = require('pg');
+const { createActivityStore } = require('./lib/activity-store');
+const { createHybridRateLimitStore, createRateLimitMiddleware } = require('./lib/rate-limit');
+const { listPublicPosts, getPublicPostById } = require('./lib/post-queries');
+const { runMigrations } = require('./lib/run-migrations');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -52,10 +55,8 @@ const pool = new Pool({
 });
 let duckDb = null;
 let duckDbReady = null;
-const mongoClient = mongoUri ? new MongoClient(mongoUri) : null;
-let mongoDb = null;
-let activityCollection = null;
-const rateLimitBuckets = new Map();
+const activityStore = createActivityStore({ mongoUri, mongoDbName });
+const rateLimitStore = createHybridRateLimitStore();
 const mailTransport = smtpHost && smtpFrom
   ? nodemailer.createTransport({
       host: smtpHost,
@@ -65,109 +66,35 @@ const mailTransport = smtpHost && smtpFrom
     })
   : null;
 
-function pruneRateLimitBuckets(now = Date.now()) {
-  for (const [key, bucket] of rateLimitBuckets.entries()) {
-    if (bucket.resetAt <= now) {
-      rateLimitBuckets.delete(key);
-    }
-  }
-}
-
-function rateLimit({ windowMs, maxRequests, keyPrefix, keyResolver }) {
-  return (req, res, next) => {
-    const now = Date.now();
-    pruneRateLimitBuckets(now);
-    const identity = keyResolver ? keyResolver(req) : (req.ip || 'unknown');
-    const key = `${keyPrefix}:${identity}`;
-    const current = rateLimitBuckets.get(key);
-    if (!current || current.resetAt <= now) {
-      rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
-      return next();
-    }
-    if (current.count >= maxRequests) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
-      res.set('Retry-After', String(retryAfterSeconds));
-      return res.status(429).json({ message: 'Too many requests. Please slow down and try again shortly.' });
-    }
-    current.count += 1;
-    return next();
-  };
-}
-
-const authRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, maxRequests: 15, keyPrefix: 'auth' });
-const passwordResetRateLimit = rateLimit({ windowMs: 30 * 60 * 1000, maxRequests: 6, keyPrefix: 'password-reset' });
-const agentRateLimit = rateLimit({
+const authRateLimit = createRateLimitMiddleware(rateLimitStore, {
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 15,
+  keyPrefix: 'auth'
+});
+const passwordResetRateLimit = createRateLimitMiddleware(rateLimitStore, {
+  windowMs: 30 * 60 * 1000,
+  maxRequests: 6,
+  keyPrefix: 'password-reset'
+});
+const agentRateLimit = createRateLimitMiddleware(rateLimitStore, {
   windowMs: 5 * 60 * 1000,
   maxRequests: 20,
   keyPrefix: 'agent',
   keyResolver: (req) => req.user?.sub || req.ip || 'unknown'
 });
-const analyticsRateLimit = rateLimit({
+const analyticsRateLimit = createRateLimitMiddleware(rateLimitStore, {
   windowMs: 60 * 1000,
   maxRequests: 20,
   keyPrefix: 'analytics',
   keyResolver: (req) => req.user?.sub || req.ip || 'unknown'
 });
 
-async function ensureRuntimeSchema() {
-  const client = await pool.connect();
-  try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS user_follow (
-        follower_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-        following_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (follower_id, following_id),
-        CHECK (follower_id <> following_id)
-      )
-    `);
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_user_follow_following
-      ON user_follow(following_id, created_at DESC)
-    `);
-    await client.query(`
-      ALTER TABLE post
-      ADD COLUMN IF NOT EXISTS deleted_by_admin_at TIMESTAMPTZ
-    `);
-    await client.query(`
-      ALTER TABLE post
-      ADD COLUMN IF NOT EXISTS deleted_by_admin_id UUID REFERENCES app_user(id) ON DELETE SET NULL
-    `);
-    await client.query(`
-      ALTER TABLE post
-      ADD COLUMN IF NOT EXISTS deleted_reason TEXT
-    `);
-    await client.query(`
-      ALTER TABLE post
-      ADD COLUMN IF NOT EXISTS appeal_requested_at TIMESTAMPTZ
-    `);
-    await client.query(`
-      ALTER TABLE post
-      ADD COLUMN IF NOT EXISTS appeal_note TEXT
-    `);
-    await client.query(`
-      ALTER TABLE post
-      ADD COLUMN IF NOT EXISTS restored_at TIMESTAMPTZ
-    `);
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_post_deleted_by_admin_at
-      ON post(deleted_by_admin_at DESC)
-    `);
-  } finally {
-    client.release();
-  }
-}
-
 async function ensureMongoCollections() {
-  if (!mongoClient) {
+  const connected = await activityStore.connect();
+  if (!connected) {
     return;
   }
-
-  await mongoClient.connect();
-  mongoDb = mongoClient.db(mongoDbName);
-  activityCollection = mongoDb.collection('activity_events');
-  await activityCollection.createIndex({ userId: 1, createdAt: -1 });
-  await activityCollection.createIndex({ type: 1, createdAt: -1 });
+  await rateLimitStore.configureMongoCollection(activityStore.getRateLimitCollection());
 }
 
 async function ensureDuckDbReady() {
@@ -290,21 +217,11 @@ async function sendPasswordResetEmail({ to, name, resetUrl }) {
 }
 
 async function recordActivity(type, payload = {}) {
-  if (!activityCollection) {
-    return;
-  }
+  await activityStore.recordActivity(type, payload);
+}
 
-  const { userId = null, ...rest } = payload;
-  try {
-    await activityCollection.insertOne({
-      type,
-      userId,
-      createdAt: new Date(),
-      ...rest
-    });
-  } catch (error) {
-    console.error('Failed to record MongoDB activity event.', error);
-  }
+function getActivityCollection() {
+  return activityStore.getActivityCollection();
 }
 
 function duckQuery(sql) {
@@ -431,6 +348,7 @@ async function refreshDuckDbSnapshots() {
     )
   ]);
 
+  const activityCollection = getActivityCollection();
   const activityRows = activityCollection
     ? await activityCollection.find({})
       .sort({ createdAt: -1 })
@@ -948,7 +866,9 @@ function pickSectionFromMessage(message) {
     'analytics',
     'experimentation',
     'visualization',
-    'ds-general'
+    'ds-general',
+    'announcements',
+    'system-update'
   ];
   return candidates.find((section) => normalized.includes(section)) || '';
 }
@@ -1146,6 +1066,19 @@ function mapPostRow(row) {
   };
 }
 
+function mapCommentRow(row) {
+  return {
+    id: row.id,
+    postId: row.post_id,
+    authorId: row.author_id,
+    authorName: row.author_name,
+    authorEmail: row.author_email,
+    content: row.content_markdown,
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null
+  };
+}
+
 async function attachTags(client, postId, tags) {
   await client.query(`DELETE FROM post_tag WHERE post_id = $1`, [postId]);
   for (const tagName of tags) {
@@ -1178,6 +1111,43 @@ async function getPostsByAuthor(client, userId) {
     [userId]
   );
   return result.rows.map(mapPostRow);
+}
+
+async function getCommentsByPost(client, postId) {
+  const result = await client.query(
+    `SELECT c.id, c.post_id, c.author_id, c.content_markdown, c.created_at, c.updated_at,
+            u.username AS author_name, u.email AS author_email
+     FROM comment c
+     JOIN app_user u ON u.id = c.author_id
+     WHERE c.post_id = $1
+     ORDER BY c.created_at ASC`,
+    [postId]
+  );
+  return result.rows.map(mapCommentRow);
+}
+
+async function getPublicPostMeta(client, postId) {
+  const result = await client.query(
+    `SELECT id
+     FROM post
+     WHERE id = $1
+       AND is_published = TRUE
+       AND deleted_by_admin_at IS NULL`,
+    [postId]
+  );
+  return result.rows[0] || null;
+}
+
+function mapNetworkUserRow(row) {
+  return {
+    id: row.id,
+    name: row.username,
+    bio: row.bio || '',
+    followerCount: row.follower_count || 0,
+    followingCount: row.following_count || 0,
+    isFollowing: Boolean(row.is_following),
+    isFollowedBy: Boolean(row.is_followed_by)
+  };
 }
 
 app.get('/api/health', (_, res) => {
@@ -1522,6 +1492,7 @@ app.delete('/api/account', authRequired, async (req, res) => {
 });
 
 app.get('/api/account/activity', authRequired, async (req, res) => {
+  const activityCollection = getActivityCollection();
   if (!activityCollection) {
     return res.json({
       enabled: false,
@@ -1551,11 +1522,18 @@ app.get('/api/account/activity', authRequired, async (req, res) => {
 });
 
 app.get('/api/account/following', authRequired, async (req, res) => {
-  const [usersResult, postsResult] = await Promise.all([
+  const [followingResult, followersResult, postsResult] = await Promise.all([
     pool.query(
       `SELECT u.id, u.username, u.bio,
               COALESCE(followers.count, 0) AS follower_count,
-              COALESCE(following.count, 0) AS following_count
+              COALESCE(following.count, 0) AS following_count,
+              TRUE AS is_following,
+              EXISTS (
+                SELECT 1
+                FROM user_follow reverse_follow
+                WHERE reverse_follow.follower_id = u.id
+                  AND reverse_follow.following_id = $1
+              ) AS is_followed_by
        FROM user_follow uf
        JOIN app_user u ON u.id = uf.following_id
        LEFT JOIN (
@@ -1569,6 +1547,33 @@ app.get('/api/account/following', authRequired, async (req, res) => {
          GROUP BY follower_id
        ) following ON following.follower_id = u.id
        WHERE uf.follower_id = $1
+       ORDER BY u.username ASC`,
+      [req.user.sub]
+    ),
+    pool.query(
+      `SELECT u.id, u.username, u.bio,
+              COALESCE(followers.count, 0) AS follower_count,
+              COALESCE(following.count, 0) AS following_count,
+              EXISTS (
+                SELECT 1
+                FROM user_follow follow_state
+                WHERE follow_state.follower_id = $1
+                  AND follow_state.following_id = u.id
+              ) AS is_following,
+              TRUE AS is_followed_by
+       FROM user_follow uf
+       JOIN app_user u ON u.id = uf.follower_id
+       LEFT JOIN (
+         SELECT following_id, COUNT(*)::int AS count
+         FROM user_follow
+         GROUP BY following_id
+       ) followers ON followers.following_id = u.id
+       LEFT JOIN (
+         SELECT follower_id, COUNT(*)::int AS count
+         FROM user_follow
+         GROUP BY follower_id
+       ) following ON following.follower_id = u.id
+       WHERE uf.following_id = $1
        ORDER BY u.username ASC`,
       [req.user.sub]
     ),
@@ -1590,17 +1595,16 @@ app.get('/api/account/following', authRequired, async (req, res) => {
     )
   ]);
 
-  const users = usersResult.rows.map((row) => ({
-    id: row.id,
-    name: row.username,
-    bio: row.bio || '',
-    followerCount: row.follower_count || 0,
-    followingCount: row.following_count || 0
-  }));
-
+  const following = followingResult.rows.map(mapNetworkUserRow);
+  const followers = followersResult.rows.map(mapNetworkUserRow);
   const posts = postsResult.rows.map(mapPostRow);
 
-  return res.json({ users, posts });
+  return res.json({
+    users: following,
+    following,
+    followers,
+    posts
+  });
 });
 
 app.get('/api/users/:userId', async (req, res) => {
@@ -1902,24 +1906,93 @@ app.post('/api/admin/posts/:postId/restore', authRequired, adminRequired, async 
   }
 });
 
-app.get('/api/posts', async (_, res) => {
+app.get('/api/posts', async (req, res) => {
+  try {
+    const data = await listPublicPosts(pool, mapPostRow, req.query);
+    return res.json(data);
+  } catch (error) {
+    console.error('Failed to load public posts.', error);
+    return res.status(500).json({ message: 'Failed to load posts.' });
+  }
+});
+
+app.get('/api/posts/:postId', async (req, res) => {
+  try {
+    const post = await getPublicPostById(pool, mapPostRow, req.params.postId);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+    return res.json({ post });
+  } catch (error) {
+    console.error('Failed to load public post detail.', error);
+    return res.status(500).json({ message: 'Failed to load post detail.' });
+  }
+});
+
+app.get('/api/posts/:postId/comments', async (req, res) => {
   const client = await pool.connect();
   try {
-    const result = await client.query(
-      `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
-              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
-              u.username AS author_name, u.email AS author_email,
-              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
-       FROM post p
-       JOIN app_user u ON u.id = p.author_id
-       LEFT JOIN post_tag pt ON pt.post_id = p.id
-       LEFT JOIN tag t ON t.id = pt.tag_id
-       WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL
-       GROUP BY p.id, u.username, u.email
-       ORDER BY p.created_at DESC`
+    const post = await getPublicPostMeta(client, req.params.postId);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    const comments = await getCommentsByPost(client, req.params.postId);
+    return res.json({ comments });
+  } catch (error) {
+    console.error('Failed to load comments.', error);
+    return res.status(500).json({ message: 'Failed to load comments.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/posts/:postId/comments', authRequired, async (req, res) => {
+  const content = String(req.body?.content || '').trim();
+  if (!content) {
+    return res.status(400).json({ message: 'Comment content is required.' });
+  }
+  if (content.length > 5000) {
+    return res.status(400).json({ message: 'Comment must be 5000 characters or fewer.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const post = await getPublicPostMeta(client, req.params.postId);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    const created = await client.query(
+      `INSERT INTO comment (post_id, author_id, content_markdown)
+       VALUES ($1, $2, $3)
+       RETURNING id, post_id, author_id, content_markdown, created_at, updated_at`,
+      [req.params.postId, req.user.sub, content]
     );
-    const posts = result.rows.map(mapPostRow);
-    return res.json({ posts });
+
+    const author = await client.query(
+      `SELECT username, email
+       FROM app_user
+       WHERE id = $1`,
+      [req.user.sub]
+    );
+
+    await recordActivity('comment.created', {
+      userId: req.user.sub,
+      postId: req.params.postId,
+      commentId: created.rows[0].id
+    });
+
+    return res.status(201).json({
+      comment: mapCommentRow({
+        ...created.rows[0],
+        author_name: author.rows[0]?.username || req.user.name,
+        author_email: author.rows[0]?.email || req.user.email
+      })
+    });
+  } catch (error) {
+    console.error('Failed to create comment.', error);
+    return res.status(500).json({ message: 'Failed to create comment.' });
   } finally {
     client.release();
   }
@@ -2089,7 +2162,11 @@ app.delete('/api/posts/:postId', authRequired, async (req, res) => {
   }
 });
 
-Promise.all([ensureRuntimeSchema(), ensureMongoCollections(), ensureDuckDbReady()])
+Promise.all([
+  runMigrations(pool, path.resolve(__dirname, '../migrations')),
+  ensureMongoCollections(),
+  ensureDuckDbReady()
+])
   .then(async () => {
     const purged = await purgeExpiredModeratedPosts();
     if (purged > 0) {
@@ -2097,8 +2174,8 @@ Promise.all([ensureRuntimeSchema(), ensureMongoCollections(), ensureDuckDbReady(
     }
     await buildDuckDbOverview();
     scheduleDailyAnalyticsRefresh();
-    if (activityCollection) {
-      console.log(`MongoDB connected to database "${mongoDbName}".`);
+    if (activityStore.isEnabled()) {
+      console.log(`MongoDB connected to database "${activityStore.getDbName()}".`);
     } else {
       console.log('MongoDB not configured. Continuing with PostgreSQL only.');
     }

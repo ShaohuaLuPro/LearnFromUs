@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS post (
   content_markdown TEXT NOT NULL CHECK (length(content_markdown) BETWEEN 10 AND 20000),
   slug TEXT NOT NULL UNIQUE,
   is_published BOOLEAN NOT NULL DEFAULT TRUE,
+  deleted_by_admin_at TIMESTAMPTZ,
+  deleted_by_admin_id UUID REFERENCES app_user(id) ON DELETE SET NULL,
+  deleted_reason TEXT,
+  appeal_requested_at TIMESTAMPTZ,
+  appeal_note TEXT,
+  restored_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -72,6 +78,7 @@ CREATE TABLE IF NOT EXISTS user_follow (
 
 CREATE INDEX IF NOT EXISTS idx_post_author_created ON post(author_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_created ON post(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_deleted_by_admin_at ON post(deleted_by_admin_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comment_post_created ON comment(post_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vote_post ON post_vote(post_id);
 CREATE INDEX IF NOT EXISTS idx_user_follow_following ON user_follow(following_id, created_at DESC);

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -23,16 +23,110 @@ function getSectionLabel(value) {
     .join(' ');
 }
 
-export default function PostDetail({ posts, currentUser, onAdminRemovePost }) {
+function MarkdownBlock({ content, className = 'post-detail-content' }) {
+  return (
+    <div className={className}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeSanitize]}
+        components={{
+          code({ inline, className: codeClassName, children, ...props }) {
+            const match = /language-(\w+)/.exec(codeClassName || '');
+            if (inline) {
+              return (
+                <code className="post-inline-code" {...props}>
+                  {children}
+                </code>
+              );
+            }
+
+            return (
+              <section className="post-code-block">
+                {match?.[1] && <div className="post-code-label">{match[1]}</div>}
+                <SyntaxHighlighter
+                  style={oneDark}
+                  language={match?.[1] || 'text'}
+                  PreTag="div"
+                  className="post-code-pre"
+                  customStyle={{ margin: 0, background: 'transparent', padding: '1rem' }}
+                  {...props}
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              </section>
+            );
+          },
+          p({ children }) {
+            return <p>{children}</p>;
+          }
+        }}
+      >
+        {content || ''}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+export default function PostDetail({
+  currentUser,
+  onAdminRemovePost,
+  onGetPostDetail,
+  onGetComments,
+  onCreateComment
+}) {
   const { postId } = useParams();
+  const [post, setPost] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [commentsLoading, setCommentsLoading] = useState(true);
   const [reason, setReason] = useState('');
+  const [commentContent, setCommentContent] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [commentMessage, setCommentMessage] = useState('');
+  const [commentError, setCommentError] = useState('');
 
-  const post = useMemo(
-    () => posts.find((item) => item.id === postId) || null,
-    [posts, postId]
-  );
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPost() {
+      setLoading(true);
+      setCommentsLoading(true);
+      const [postResult, commentsResult] = await Promise.all([
+        onGetPostDetail(postId),
+        onGetComments(postId)
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!postResult.ok) {
+        setError(postResult.message || 'Failed to load post detail.');
+        setPost(null);
+      } else {
+        setError('');
+        setPost(postResult.post || null);
+      }
+
+      if (!commentsResult.ok) {
+        setCommentError(commentsResult.message || 'Failed to load comments.');
+        setComments([]);
+      } else {
+        setCommentError('');
+        setComments(commentsResult.comments || []);
+      }
+
+      setLoading(false);
+      setCommentsLoading(false);
+    }
+
+    loadPost();
+    return () => {
+      cancelled = true;
+    };
+  }, [onGetComments, onGetPostDetail, postId]);
 
   const removePost = async () => {
     setError('');
@@ -45,12 +139,47 @@ export default function PostDetail({ posts, currentUser, onAdminRemovePost }) {
     setMessage(result.message);
   };
 
+  const submitComment = async (event) => {
+    event.preventDefault();
+    setCommentMessage('');
+    setCommentError('');
+
+    const content = commentContent.trim();
+    if (!content) {
+      setCommentError('Please enter a comment.');
+      return;
+    }
+
+    setSubmittingComment(true);
+    const result = await onCreateComment(postId, { content });
+    setSubmittingComment(false);
+
+    if (!result.ok || !result.comment) {
+      setCommentError(result.message || 'Failed to post comment.');
+      return;
+    }
+
+    setComments((current) => [...current, result.comment]);
+    setCommentContent('');
+    setCommentMessage('Comment posted.');
+  };
+
+  if (loading) {
+    return (
+      <div className="container page-shell">
+        <section className="panel">
+          <p className="muted mb-0">Loading post...</p>
+        </section>
+      </div>
+    );
+  }
+
   if (!post) {
     return (
       <div className="container page-shell">
         <section className="panel">
           <h2 className="mb-2">Post not found</h2>
-          <p className="muted mb-3">This post may have been removed or is no longer available.</p>
+          <p className="muted mb-3">{error || 'This post may have been removed or is no longer available.'}</p>
           <Link to="/forum" className="forum-primary-btn text-decoration-none">
             Back to Forum
           </Link>
@@ -97,45 +226,75 @@ export default function PostDetail({ posts, currentUser, onAdminRemovePost }) {
           </div>
         )}
 
-        <div className="post-detail-content">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeSanitize]}
-            components={{
-              code({ inline, className, children, ...props }) {
-                const match = /language-(\w+)/.exec(className || '');
-                if (inline) {
-                  return (
-                    <code className="post-inline-code" {...props}>
-                      {children}
-                    </code>
-                  );
-                }
+        <MarkdownBlock content={post.content} />
 
-                return (
-                  <section className="post-code-block">
-                    {match?.[1] && <div className="post-code-label">{match[1]}</div>}
-                    <SyntaxHighlighter
-                      style={oneDark}
-                      language={match?.[1] || 'text'}
-                      PreTag="div"
-                      className="post-code-pre"
-                      customStyle={{ margin: 0, background: 'transparent', padding: '1rem' }}
-                      {...props}
-                    >
-                      {String(children).replace(/\n$/, '')}
-                    </SyntaxHighlighter>
-                  </section>
-                );
-              },
-              p({ children }) {
-                return <p>{children}</p>;
-              }
-            }}
-          >
-            {post.content || ''}
-          </ReactMarkdown>
-        </div>
+        <section className="post-comments-shell">
+          <div className="post-comments-header">
+            <div>
+              <h3 className="mb-1">Comments</h3>
+              <p className="muted mb-0">
+                {comments.length} {comments.length === 1 ? 'reply' : 'replies'}
+              </p>
+            </div>
+          </div>
+
+          {(commentMessage || commentError) && (
+            <div className={`settings-alert ${commentError ? 'is-error' : 'is-success'} mt-3 mb-0`}>
+              {commentError || commentMessage}
+            </div>
+          )}
+
+          {currentUser ? (
+            <form className="post-comment-form" onSubmit={submitComment}>
+              <label className="form-label" htmlFor="comment-content">Add a comment</label>
+              <textarea
+                id="comment-content"
+                className="form-control forum-input"
+                rows={4}
+                value={commentContent}
+                onChange={(event) => setCommentContent(event.target.value)}
+                placeholder="Share your thoughts, feedback, or follow-up question."
+                disabled={submittingComment}
+              />
+              <div className="post-comment-form-footer">
+                <span className="muted">Markdown is supported.</span>
+                <button type="submit" className="forum-primary-btn" disabled={submittingComment}>
+                  {submittingComment ? 'Posting...' : 'Post Comment'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="post-comment-login-note">
+              <span className="muted">Login to join the discussion.</span>
+              <Link to="/login" className="forum-secondary-btn text-decoration-none">
+                Login
+              </Link>
+            </div>
+          )}
+
+          <div className="post-comment-list">
+            {commentsLoading ? (
+              <p className="muted mb-0">Loading comments...</p>
+            ) : comments.length === 0 ? (
+              <div className="post-comment-empty">
+                <h4 className="mb-2">No comments yet</h4>
+                <p className="muted mb-0">Be the first to add context, ask a question, or share an answer.</p>
+              </div>
+            ) : (
+              comments.map((comment) => (
+                <article key={comment.id} className="post-comment-card">
+                  <div className="post-comment-meta">
+                    <Link to={`/users/${comment.authorId}`} className="post-author-link">
+                      {comment.authorName}
+                    </Link>
+                    <span className="muted">{formatTime(comment.createdAt)}</span>
+                  </div>
+                  <MarkdownBlock content={comment.content} className="post-comment-content" />
+                </article>
+              ))
+            )}
+          </div>
+        </section>
 
         {currentUser?.isAdmin && (
           <section className="settings-card settings-danger-card mt-4">

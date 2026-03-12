@@ -1,54 +1,74 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { TOKEN_KEY, apiGetFollowing } from '../api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import {
+  apiFollowUser,
+  apiGetFollowing,
+  apiUnfollowUser
+} from '../api';
+import { authStorage } from '../lib/authStorage';
 
-function getSectionLabel(value) {
-  return String(value || '')
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function getPreview(content) {
-  const text = String(content || '').trim();
-  if (text.length <= 160) {
-    return text;
-  }
-  return `${text.slice(0, 160).trimEnd()}...`;
-}
-
-function formatTime(timestamp) {
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+function NetworkRow({ user, pending, onToggleFollow }) {
+  return (
+    <article className={`network-list-row ${user.isFollowing ? '' : 'is-inactive'}`}>
+      <div className="network-list-copy">
+        <div className="network-card-topline">
+          <Link to={`/users/${user.id}`} className="network-user-link">
+            <h5 className="mb-1">{user.name}</h5>
+          </Link>
+          {user.isFollowedBy && (
+            <span className="network-relationship-pill">{user.isFollowing ? 'Mutual' : 'Follows you'}</span>
+          )}
+          {!user.isFollowing && (
+            <span className="network-status-pill">Unfollowed</span>
+          )}
+        </div>
+        <p className="muted mb-2">{user.bio || 'Technical builder sharing practical work.'}</p>
+        <div className="following-user-stats">
+          <span>{user.followerCount} followers</span>
+          <span>{user.followingCount} following</span>
+        </div>
+      </div>
+      <div className="network-card-actions">
+        <button
+          type="button"
+          className={user.isFollowing ? 'forum-secondary-btn' : 'forum-primary-btn'}
+          onClick={() => onToggleFollow(user)}
+          disabled={pending}
+        >
+          {pending ? 'Updating...' : user.isFollowing ? 'Unfollow' : 'Refollow'}
+        </button>
+      </div>
+    </article>
+  );
 }
 
 export default function Following() {
-  const [users, setUsers] = useState([]);
-  const [posts, setPosts] = useState([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [followers, setFollowers] = useState([]);
+  const [following, setFollowing] = useState([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [pendingUserId, setPendingUserId] = useState('');
+
+  const activeTab = searchParams.get('tab') === 'followers' ? 'followers' : 'following';
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadFollowing() {
+    async function loadNetwork() {
       setLoading(true);
       setMessage('');
       try {
-        const token = localStorage.getItem(TOKEN_KEY);
+        const token = authStorage.getToken();
         const data = await apiGetFollowing(token);
         if (!cancelled) {
-          setUsers(data.users || []);
-          setPosts(data.posts || []);
+          setFollowers(data.followers || []);
+          setFollowing(data.following || data.users || []);
         }
       } catch (error) {
         if (!cancelled) {
-          setUsers([]);
-          setPosts([]);
+          setFollowers([]);
+          setFollowing([]);
           setMessage(error.message);
         }
       } finally {
@@ -58,17 +78,81 @@ export default function Following() {
       }
     }
 
-    loadFollowing();
+    loadNetwork();
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const currentList = useMemo(() => (
+    activeTab === 'followers' ? followers : following
+  ), [activeTab, followers, following]);
+
+  const currentCount = currentList.length;
+
+  const setTab = (tab) => {
+    setSearchParams({ tab });
+    setMessage('');
+  };
+
+  const patchUserAcrossLists = (userId, nextIsFollowing) => {
+    let updatedUser = null;
+
+    setFollowers((current) => current.map((item) => {
+      if (item.id !== userId) {
+        return item;
+      }
+      updatedUser = { ...item, isFollowing: nextIsFollowing };
+      return updatedUser;
+    }));
+
+    setFollowing((current) => {
+      let found = false;
+      const nextItems = current.map((item) => {
+        if (item.id !== userId) {
+          return item;
+        }
+        found = true;
+        return { ...item, isFollowing: nextIsFollowing };
+      });
+
+      if (!found && nextIsFollowing && updatedUser) {
+        return [...nextItems, updatedUser];
+      }
+
+      return nextItems;
+    });
+  };
+
+  const toggleFollow = async (user) => {
+    const token = authStorage.getToken();
+    if (!token) {
+      setMessage('Please login first.');
+      return;
+    }
+
+    setPendingUserId(user.id);
+    try {
+      if (user.isFollowing) {
+        await apiUnfollowUser(user.id, token);
+        patchUserAcrossLists(user.id, false);
+      } else {
+        await apiFollowUser(user.id, token);
+        patchUserAcrossLists(user.id, true);
+      }
+      setMessage('');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setPendingUserId('');
+    }
+  };
+
   if (loading) {
     return (
       <div className="container page-shell">
         <section className="panel">
-          <p className="muted mb-0">Loading following feed...</p>
+          <p className="muted mb-0">Loading your network...</p>
         </section>
       </div>
     );
@@ -76,92 +160,74 @@ export default function Following() {
 
   return (
     <div className="container page-shell">
-      <section className="panel mb-4">
-        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-          <div>
+      <section className="panel network-shell">
+        <div className="network-layout">
+          <aside className="network-sidebar">
             <p className="type-kicker mb-2">Network</p>
-            <h2 className="mb-1 type-title-md">Following</h2>
-            <p className="type-body mb-0">Jump into the profiles you follow and track what they publish.</p>
-          </div>
-          <Link to="/forum" className="forum-secondary-btn text-decoration-none">
-            Back to Forum
-          </Link>
-        </div>
-
-        {message && <div className="settings-alert is-error mb-3">{message}</div>}
-
-        <div className="following-user-grid">
-          {users.map((user) => (
-            <Link key={user.id} to={`/users/${user.id}`} className="following-user-card">
-              <div>
-                <h5 className="mb-1">{user.name}</h5>
-                <p className="muted mb-2">{user.bio || 'Technical builder sharing practical work.'}</p>
-              </div>
-              <div className="following-user-stats">
-                <span>{user.followerCount} followers</span>
-                <span>{user.followingCount} following</span>
-              </div>
+            <h2 className="mb-3 type-title-md">Manage Connections</h2>
+            <div className="network-sidebar-nav">
+              <button
+                type="button"
+                className={`network-sidebar-link ${activeTab === 'following' ? 'is-active' : ''}`}
+                onClick={() => setTab('following')}
+              >
+                <span>Following</span>
+                <strong>{following.length}</strong>
+              </button>
+              <button
+                type="button"
+                className={`network-sidebar-link ${activeTab === 'followers' ? 'is-active' : ''}`}
+                onClick={() => setTab('followers')}
+              >
+                <span>Followers</span>
+                <strong>{followers.length}</strong>
+              </button>
+            </div>
+            <Link to="/forum" className="forum-secondary-btn text-decoration-none network-back-link">
+              Back to Forum
             </Link>
-          ))}
-        </div>
+          </aside>
 
-        {users.length === 0 && !message && (
-          <section className="settings-card mt-3">
-            <h4 className="mb-2">You are not following anyone yet</h4>
-            <p className="muted mb-0">Visit a user profile and click follow to build your network.</p>
-          </section>
-        )}
-      </section>
+          <div className="network-content">
+            <div className="network-content-head">
+              <div>
+                <h3 className="mb-1 type-title-md">{activeTab === 'followers' ? 'Followers' : 'Following'}</h3>
+                <p className="type-body mb-0">
+                  {activeTab === 'followers'
+                    ? 'See who is following you.'
+                    : 'Unfollow now, and refollow before refresh if you change your mind.'}
+                </p>
+              </div>
+              <span className="network-count-badge">{currentCount}</span>
+            </div>
 
-      <section className="panel">
-        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-          <div>
-            <h3 className="mb-1 type-title-md">Recent Posts From People You Follow</h3>
-            <p className="type-body mb-0">{posts.length} recent posts</p>
+            {message && <div className="settings-alert is-error mb-3">{message}</div>}
+
+            <div className="network-list">
+              {currentList.map((user) => (
+                <NetworkRow
+                  key={`${activeTab}-${user.id}`}
+                  user={user}
+                  pending={pendingUserId === user.id}
+                  onToggleFollow={toggleFollow}
+                />
+              ))}
+            </div>
+
+            {currentList.length === 0 && !message && (
+              <section className="settings-card">
+                <h4 className="mb-2">
+                  {activeTab === 'followers' ? 'No followers yet' : 'You are not following anyone'}
+                </h4>
+                <p className="muted mb-0">
+                  {activeTab === 'followers'
+                    ? 'When other users follow you, they will appear here.'
+                    : 'Once you follow someone, they will appear here for quick management.'}
+                </p>
+              </section>
+            )}
           </div>
         </div>
-
-        <div className="forum-feed">
-          {posts.map((post) => (
-            <article key={post.id} className="forum-post-card">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <span className="forum-tag">{getSectionLabel(post.section)}</span>
-                <span className="muted forum-time">{formatTime(post.createdAt)}</span>
-              </div>
-              <h5 className="mb-1">
-                <Link to={`/forum/post/${post.id}`} className="post-title-link">
-                  {post.title}
-                </Link>
-              </h5>
-              {!!post.tags?.length && (
-                <div className="post-tag-row mb-2">
-                  {post.tags.map((tag) => (
-                    <span key={`${post.id}-${tag}`} className="post-tag-pill">#{tag}</span>
-                  ))}
-                </div>
-              )}
-              <p className="mb-2 forum-post-preview">{getPreview(post.content)}</p>
-              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <small className="muted">
-                  Posted by{' '}
-                  <Link to={`/users/${post.authorId}`} className="post-author-link">
-                    {post.authorName}
-                  </Link>
-                </small>
-                <Link to={`/forum/post/${post.id}`} className="post-read-link">
-                  Read more
-                </Link>
-              </div>
-            </article>
-          ))}
-        </div>
-
-        {posts.length === 0 && users.length > 0 && !message && (
-          <section className="settings-card mt-3">
-            <h4 className="mb-2">No recent posts yet</h4>
-            <p className="muted mb-0">The people you follow have not published anything recently.</p>
-          </section>
-        )}
       </section>
     </div>
   );

@@ -86,6 +86,7 @@ psql "postgresql://USER:PASSWORD@HOST/DB?sslmode=require" -f database/schema.sql
 ### 4) Run locally
 Backend:
 ```powershell
+npm run migrate --prefix server
 npm run server:dev
 ```
 
@@ -101,6 +102,7 @@ npm start
 - `GET /api/account/activity`
 - `GET /api/account/posts`
 - `GET /api/posts`
+- `GET /api/posts/:postId`
 - `POST /api/posts`
 - `POST /api/posts/:postId/appeal`
 - `PUT /api/posts/:postId`
@@ -123,6 +125,12 @@ Required Render environment variables:
 - `ADMIN_EMAILS`
 - `MONGODB_URI` (optional)
 - `DUCKDB_PATH` (optional)
+
+Before starting the backend in a new environment, run:
+
+```powershell
+npm run migrate --prefix server
+```
 
 ## GitHub Pages Deployment
 To publish the frontend:

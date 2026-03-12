@@ -32,6 +32,13 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST/DB?sslmode=require
 JWT_SECRET=replace_with_long_random_secret
 ```
 
+## 4.1) Apply server migrations
+After the base schema is installed, run the backend migration step for moderation and follow-related changes:
+
+```powershell
+npm run migrate --prefix server
+```
+
 ## 5) Deployment note
 - Frontend: GitHub Pages
 - Backend API: Vercel / Railway / Render / Fly.io

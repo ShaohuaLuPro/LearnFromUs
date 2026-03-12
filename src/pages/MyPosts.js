@@ -4,55 +4,17 @@ import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
 import Select from '../components/Select';
+import {
+  defaultSection,
+  getSectionLabel,
+  sectionSelectOptions
+} from '../lib/sections';
 
-const sectionGroups = [
-  {
-    title: 'Software Engineering',
-    items: [
-      { value: 'frontend', label: 'Front End' },
-      { value: 'backend', label: 'Back End' },
-      { value: 'algorithms', label: 'Algorithms' },
-      { value: 'system-design', label: 'System Design' },
-      { value: 'ui-ux', label: 'UI / UX' },
-      { value: 'devops-cloud', label: 'DevOps / Cloud' },
-      { value: 'mobile', label: 'Mobile' },
-      { value: 'testing-qa', label: 'Testing / QA' },
-      { value: 'security', label: 'Security' },
-      { value: 'sde-general', label: 'General SDE' }
-    ]
-  },
-  {
-    title: 'Data Science & AI',
-    items: [
-      { value: 'ai-llm', label: 'AI / LLM' },
-      { value: 'mle', label: 'MLE' },
-      { value: 'deep-learning', label: 'Deep Learning' },
-      { value: 'data-engineering', label: 'Data Engineering' },
-      { value: 'statistics', label: 'Statistics' },
-      { value: 'analytics', label: 'Analytics' },
-      { value: 'experimentation', label: 'Experimentation' },
-      { value: 'visualization', label: 'Visualization' },
-      { value: 'ds-general', label: 'General DS' }
-    ]
-  }
-];
-
-const allSections = sectionGroups.flatMap((group) => group.items);
-const defaultSection = allSections[0];
 const codeLanguages = ['javascript', 'typescript', 'python', 'sql', 'bash', 'json'];
-const sectionSelectOptions = sectionGroups.map((group) => ({
-  label: group.title,
-  options: group.items.map((item) => ({ value: item.value, label: item.label }))
-}));
 const codeLanguageOptions = codeLanguages.map((language) => ({
   value: language,
   label: language
 }));
-
-function getSectionLabel(value) {
-  const found = allSections.find((item) => item.value === value);
-  return found ? found.label : value;
-}
 
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {

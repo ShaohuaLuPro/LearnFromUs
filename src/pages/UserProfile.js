@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
-  TOKEN_KEY,
   apiFollowUser,
   apiGetUserProfile,
   apiUnfollowUser
 } from '../api';
+import { authStorage } from '../lib/authStorage';
 
 function getSectionLabel(value) {
   return String(value || '')
@@ -40,7 +40,7 @@ export default function UserProfile({ currentUser }) {
 
   useEffect(() => {
     let cancelled = false;
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = authStorage.getToken();
 
     async function loadProfile() {
       setLoading(true);
@@ -79,7 +79,7 @@ export default function UserProfile({ currentUser }) {
   }, [profile]);
 
   const toggleFollow = async () => {
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = authStorage.getToken();
     if (!token) {
       setMessage('Please login first.');
       return;
@@ -140,8 +140,20 @@ export default function UserProfile({ currentUser }) {
         </div>
         <div className="user-space-actions">
           <div className="user-space-stats">
-            <span>{profile.followerCount} followers</span>
-            <span>{profile.followingCount} following</span>
+            {profile.isSelf ? (
+              <Link to="/following?tab=followers" className="user-space-stat-link">
+                {profile.followerCount} followers
+              </Link>
+            ) : (
+              <span>{profile.followerCount} followers</span>
+            )}
+            {profile.isSelf ? (
+              <Link to="/following?tab=following" className="user-space-stat-link">
+                {profile.followingCount} following
+              </Link>
+            ) : (
+              <span>{profile.followingCount} following</span>
+            )}
             {joinedLabel && <span>Joined {joinedLabel}</span>}
           </div>
           {!profile.isSelf && currentUser && (

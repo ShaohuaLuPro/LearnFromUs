@@ -4,59 +4,19 @@ import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
 import Select from '../components/Select';
+import {
+  allSections,
+  defaultSection,
+  getSectionLabel,
+  sectionGroups,
+  sectionSelectOptions
+} from '../lib/sections';
 
-const sectionGroups = [
-  {
-    title: 'Software Engineering',
-    items: [
-      { value: 'frontend', label: 'Front End' },
-      { value: 'backend', label: 'Back End' },
-      { value: 'algorithms', label: 'Algorithms' },
-      { value: 'system-design', label: 'System Design' },
-      { value: 'ui-ux', label: 'UI / UX' },
-      { value: 'devops-cloud', label: 'DevOps / Cloud' },
-      { value: 'mobile', label: 'Mobile' },
-      { value: 'testing-qa', label: 'Testing / QA' },
-      { value: 'security', label: 'Security' },
-      { value: 'sde-general', label: 'General SDE' }
-    ]
-  },
-  {
-    title: 'Data Science & AI',
-    items: [
-      { value: 'ai-llm', label: 'AI / LLM' },
-      { value: 'mle', label: 'MLE' },
-      { value: 'deep-learning', label: 'Deep Learning' },
-      { value: 'data-engineering', label: 'Data Engineering' },
-      { value: 'statistics', label: 'Statistics' },
-      { value: 'analytics', label: 'Analytics' },
-      { value: 'experimentation', label: 'Experimentation' },
-      { value: 'visualization', label: 'Visualization' },
-      { value: 'ds-general', label: 'General DS' }
-    ]
-  }
-];
-
-const allSections = sectionGroups.flatMap((group) => group.items);
-const defaultSection = allSections[0];
 const codeLanguages = ['javascript', 'typescript', 'python', 'sql', 'bash', 'json'];
-const sectionSelectOptions = sectionGroups.map((group) => ({
-  label: group.title,
-  options: group.items.map((item) => ({ value: item.value, label: item.label }))
-}));
 const codeLanguageOptions = codeLanguages.map((language) => ({
   value: language,
   label: language
 }));
-
-function getSectionLabel(value) {
-  const found = allSections.find((item) => item.value === value);
-  if (found) return found.label;
-  return String(value || '')
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
 
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
@@ -75,21 +35,28 @@ function getPreview(content) {
   return `${text.slice(0, 180).trimEnd()}...`;
 }
 
-export default function Home({ posts, currentUser, onCreatePost }) {
+export default function Home({
+  posts,
+  pagination,
+  currentFilters,
+  loadingPosts,
+  currentUser,
+  onLoadPosts,
+  onCreatePost
+}) {
   const navigate = useNavigate();
   const { sectionId } = useParams();
 
   const [form, setForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
   const [message, setMessage] = useState('');
   const [isComposerOpen, setIsComposerOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSections, setSelectedSections] = useState(sectionId ? [sectionId] : []);
-  const [composerLanguage, setComposerLanguage] = useState('javascript');
-
-  const orderedPosts = useMemo(
-    () => [...posts].sort((a, b) => b.createdAt - a.createdAt),
-    [posts]
+  const [searchQuery, setSearchQuery] = useState(currentFilters?.q || '');
+  const [selectedSections, setSelectedSections] = useState(
+    sectionId ? [sectionId] : (currentFilters?.section || [])
   );
+  const [composerLanguage, setComposerLanguage] = useState('javascript');
+  const [page, setPage] = useState(currentFilters?.page || 1);
+  const pageSize = pagination?.pageSize || 12;
 
   const sectionCounts = useMemo(() => {
     const counts = Object.fromEntries(allSections.map((item) => [item.value, 0]));
@@ -114,38 +81,32 @@ export default function Home({ posts, currentUser, onCreatePost }) {
   useEffect(() => {
     if (sectionId) {
       setSelectedSections([sectionId]);
+      setPage(1);
+      return;
     }
-  }, [sectionId]);
+    setSelectedSections(currentFilters?.section || []);
+  }, [sectionId, currentFilters]);
 
-  const filteredPosts = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
-    return orderedPosts.filter((post) => {
-      const sectionMatch = selectedSections.length === 0 || selectedSections.includes(post.section);
-      if (!sectionMatch) {
-        return false;
-      }
-      if (!normalizedQuery) {
-        return true;
-      }
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      onLoadPosts({
+        q: searchQuery.trim(),
+        section: selectedSections,
+        page,
+        pageSize
+      });
+    }, 180);
 
-      const searchableFields = [
-        post.title,
-        post.content,
-        post.authorName,
-        getSectionLabel(post.section),
-        ...(post.tags || [])
-      ];
-
-      return searchableFields.some((value) =>
-        String(value || '').toLowerCase().includes(normalizedQuery)
-      );
-    });
-  }, [orderedPosts, selectedSections, searchQuery]);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [onLoadPosts, searchQuery, selectedSections, page, pageSize]);
 
   const toggleSection = (sectionValue) => {
     if (sectionId) {
       navigate('/forum');
     }
+    setPage(1);
     setSelectedSections((current) =>
       current.includes(sectionValue)
         ? current.filter((value) => value !== sectionValue)
@@ -157,6 +118,7 @@ export default function Home({ posts, currentUser, onCreatePost }) {
     if (sectionId) {
       navigate('/forum');
     }
+    setPage(1);
     setSelectedSections([]);
   };
 
@@ -173,15 +135,19 @@ export default function Home({ posts, currentUser, onCreatePost }) {
       return;
     }
     setForm({ title: '', content: '', section: defaultSection.value, tags: '' });
-    setIsComposerOpen(false);
+    setSearchQuery('');
+    setSelectedSections([]);
+    setPage(1);
     if (sectionId) {
       navigate('/forum');
     }
-    setSelectedSections([]);
+    await onLoadPosts({ q: '', section: [], page: 1, pageSize });
+    setIsComposerOpen(false);
     setMessage('Post published.');
   };
 
   const toggleTagFilter = (tag) => {
+    setPage(1);
     setSearchQuery((current) => (current === tag ? '' : tag));
   };
 
@@ -209,7 +175,7 @@ export default function Home({ posts, currentUser, onCreatePost }) {
             <h3 className="mb-1 type-title-md">Sections</h3>
             <p className="type-body mb-0">Browse the forum by discipline, then narrow by tags.</p>
           </div>
-          <span className="muted">{filteredPosts.length} visible posts</span>
+          <span className="muted">{pagination?.total || 0} matching posts</span>
         </div>
 
         <div className="section-grid">
@@ -219,7 +185,7 @@ export default function Home({ posts, currentUser, onCreatePost }) {
                 <span className="section-group-copy">
                   <span className="section-card-title mb-0">{group.title}</span>
                   <span className="section-group-summary">
-                    {groupCounts[group.title] || 0} posts across {group.items.length} sections
+                    {groupCounts[group.title] || 0} posts on this page across {group.items.length} sections
                   </span>
                 </span>
                 <span className="section-group-meta">
@@ -272,7 +238,7 @@ export default function Home({ posts, currentUser, onCreatePost }) {
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
               <h3 className="mb-0 type-title-md">Latest Posts</h3>
               <div className="d-flex align-items-center gap-2 flex-wrap">
-                <span className="muted">{filteredPosts.length} posts</span>
+                <span className="muted">{pagination?.total || 0} posts</span>
                 {!currentUser ? (
                   <Link to="/login" className="forum-primary-btn text-decoration-none">
                     Login to Post
@@ -289,64 +255,91 @@ export default function Home({ posts, currentUser, onCreatePost }) {
               <input
                 className="form-control forum-input tag-search-input"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setPage(1);
+                  setSearchQuery(e.target.value);
+                }}
                 placeholder="Search title, content, tags, section"
               />
               {searchQuery && (
-                <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
+                <button type="button" className="forum-secondary-btn" onClick={() => { setPage(1); setSearchQuery(''); }}>
                   Clear Search
                 </button>
               )}
             </div>
 
+            {loadingPosts && <p className="muted mb-3">Refreshing posts...</p>}
+
             <div className="forum-feed">
-              {filteredPosts.map((post) => {
-                return (
-                  <article key={post.id} className="forum-post-card">
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <span className="forum-tag">{getSectionLabel(post.section)}</span>
-                      <span className="muted forum-time">{formatTime(post.createdAt)}</span>
-                    </div>
+              {posts.map((post) => (
+                <article key={post.id} className="forum-post-card">
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <span className="forum-tag">{getSectionLabel(post.section)}</span>
+                    <span className="muted forum-time">{formatTime(post.createdAt)}</span>
+                  </div>
 
-                    <h5 className="mb-1">
-                      <Link to={`/forum/post/${post.id}`} className="post-title-link">
-                        {post.title}
-                      </Link>
-                    </h5>
-                    {!!post.tags?.length && (
-                      <div className="post-tag-row mb-2">
-                        {post.tags.map((tag) => (
-                          <button
-                            key={`${post.id}-${tag}`}
-                            type="button"
-                            className={`post-tag-pill ${searchQuery === tag ? 'is-active' : ''}`}
-                            onClick={() => toggleTagFilter(tag)}
-                          >
-                            #{tag}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <p className="mb-2 forum-post-preview">{getPreview(post.content)}</p>
-                    <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                      <small className="muted">
-                        Posted by{' '}
-                        <Link to={`/users/${post.authorId}`} className="post-author-link">
-                          {post.authorName}
-                        </Link>
-                      </small>
-                      <Link to={`/forum/post/${post.id}`} className="post-read-link">
-                        Read more
-                      </Link>
+                  <h5 className="mb-1">
+                    <Link to={`/forum/post/${post.id}`} className="post-title-link">
+                      {post.title}
+                    </Link>
+                  </h5>
+                  {!!post.tags?.length && (
+                    <div className="post-tag-row mb-2">
+                      {post.tags.map((tag) => (
+                        <button
+                          key={`${post.id}-${tag}`}
+                          type="button"
+                          className={`post-tag-pill ${searchQuery === tag ? 'is-active' : ''}`}
+                          onClick={() => toggleTagFilter(tag)}
+                        >
+                          #{tag}
+                        </button>
+                      ))}
                     </div>
-                  </article>
-                );
-              })}
+                  )}
+                  <p className="mb-2 forum-post-preview">{getPreview(post.content)}</p>
+                  <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <small className="muted">
+                      Posted by{' '}
+                      <Link to={`/users/${post.authorId}`} className="post-author-link">
+                        {post.authorName}
+                      </Link>
+                    </small>
+                    <Link to={`/forum/post/${post.id}`} className="post-read-link">
+                      Read more
+                    </Link>
+                  </div>
+                </article>
+              ))}
 
-              {filteredPosts.length === 0 && (
+              {!loadingPosts && posts.length === 0 && (
                 <p className="muted mb-0">No posts match the current section and tag filters.</p>
               )}
             </div>
+
+            {(pagination?.totalPages || 1) > 1 && (
+              <div className="forum-actions mt-4">
+                <button
+                  type="button"
+                  className="forum-secondary-btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  Previous
+                </button>
+                <span className="muted">
+                  Page {pagination?.page || page} of {pagination?.totalPages || 1}
+                </span>
+                <button
+                  type="button"
+                  className="forum-secondary-btn"
+                  disabled={page >= (pagination?.totalPages || 1)}
+                  onClick={() => setPage((current) => current + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </section>
         </div>
       </div>

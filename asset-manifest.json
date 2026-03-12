@@ -1,13 +1,13 @@
 {
   "files": {
-    "main.css": "/LearnFromUs/static/css/main.f8383395.css",
-    "main.js": "/LearnFromUs/static/js/main.5b9f0e10.js",
+    "main.css": "/LearnFromUs/static/css/main.4821aca7.css",
+    "main.js": "/LearnFromUs/static/js/main.214f1f49.js",
     "index.html": "/LearnFromUs/index.html",
-    "main.f8383395.css.map": "/LearnFromUs/static/css/main.f8383395.css.map",
-    "main.5b9f0e10.js.map": "/LearnFromUs/static/js/main.5b9f0e10.js.map"
+    "main.4821aca7.css.map": "/LearnFromUs/static/css/main.4821aca7.css.map",
+    "main.214f1f49.js.map": "/LearnFromUs/static/js/main.214f1f49.js.map"
   },
   "entrypoints": [
-    "static/css/main.f8383395.css",
-    "static/js/main.5b9f0e10.js"
+    "static/css/main.4821aca7.css",
+    "static/js/main.214f1f49.js"
   ]
 }

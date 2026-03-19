@@ -47,6 +47,7 @@ const duckDbPath = String(process.env.DUCKDB_PATH || path.resolve(__dirname, '..
 const openAiApiKey = String(process.env.OPENAI_API_KEY || '').trim();
 const openAiModel = String(process.env.OPENAI_MODEL || 'gpt-5-mini').trim() || 'gpt-5-mini';
 const dailyAiUsageLimit = Number(process.env.DAILY_AI_USAGE_LIMIT || 5);
+const isOpenAiConfigured = Boolean(openAiApiKey);
 
 if (!jwtSecret) {
   throw new Error('Missing JWT_SECRET in server environment.');
@@ -2503,7 +2504,22 @@ function mapNetworkUserRow(row) {
 }
 
 app.get('/api/health', (_, res) => {
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    ai: {
+      openAiConfigured: isOpenAiConfigured,
+      model: openAiModel,
+      dailyUsageLimit: Number.isFinite(dailyAiUsageLimit) && dailyAiUsageLimit > 0
+        ? Math.trunc(dailyAiUsageLimit)
+        : 5,
+      features: {
+        agentRouting: openAiAgentRouter.isEnabled(),
+        draftGeneration: openAiDraftService.isEnabled(),
+        rewrite: openAiPostRewriter.isEnabled(),
+        templateDraftFallback: true
+      }
+    }
+  });
 });
 
 app.post('/api/auth/register', authRateLimit, async (req, res) => {
@@ -3642,6 +3658,10 @@ app.delete('/api/posts/:postId', authRequired, async (req, res) => {
 
 runMigrations(pool, path.resolve(__dirname, '../migrations'))
   .then(async () => {
+    if (!isOpenAiConfigured) {
+      console.warn('OPENAI_API_KEY is not configured. Agent routing and AI rewrite will be limited, and post drafting will use the local template fallback.');
+    }
+
     await ensureMongoCollections().catch((error) => {
       console.error('MongoDB initialization failed. Continuing without MongoDB.', error);
     });

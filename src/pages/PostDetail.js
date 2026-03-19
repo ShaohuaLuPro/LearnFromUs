@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import MarkdownBlock from '../components/MarkdownBlock';
+import { applySeo, buildPageTitle, DEFAULT_DESCRIPTION } from '../lib/seo';
 
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
@@ -38,6 +39,30 @@ export default function PostDetail({
   const [error, setError] = useState('');
   const [commentMessage, setCommentMessage] = useState('');
   const [commentError, setCommentError] = useState('');
+
+  useEffect(() => {
+    if (!post) {
+      applySeo({
+        title: buildPageTitle('Forum Post'),
+        description: 'Read technical posts and community discussion on LearnFromUs.',
+        robots: 'index,follow',
+        canonical: 'https://shaohualupro.github.io/LearnFromUs/'
+      });
+      return;
+    }
+
+    const preview = String(post.content || '')
+      .replace(/[#>*_`]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    applySeo({
+      title: buildPageTitle(post.title),
+      description: preview ? preview.slice(0, 160) : DEFAULT_DESCRIPTION,
+      robots: 'index,follow',
+      canonical: 'https://shaohualupro.github.io/LearnFromUs/'
+    });
+  }, [post]);
 
   useEffect(() => {
     let cancelled = false;

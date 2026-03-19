@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import AgentChatbox from './components/AgentChatbox';
 import Footer from './components/Footer';
 import Header from './components/Header';
+import RouteSeo from './components/RouteSeo';
 import { useAuth } from './context/AuthContext';
 import { usePosts } from './context/PostsContext';
 import About from './pages/About';
@@ -71,6 +72,7 @@ export default function AppRoutes() {
 
   return (
     <div className="app-wrapper d-flex flex-column min-vh-100">
+      <RouteSeo />
       <Header currentUser={auth.currentUser} onLogout={auth.logout} />
       <main className="app-main">
         <Routes>

@@ -35,8 +35,11 @@ LearnFromUs is a community forum for sharing coding hacks, project showcases, an
 
 ### Frontend (`.env.local`)
 ```env
-REACT_APP_API_BASE_URL=https://learnfromus.onrender.com
+REACT_APP_API_BASE_URL=http://localhost:4000
 ```
+
+For local development, point the frontend to your local API.
+Production builds automatically fall back to `https://learnfromus.onrender.com` if a localhost API URL is detected.
 
 ### Backend (`server/.env` for local dev, Render env vars for production)
 ```env

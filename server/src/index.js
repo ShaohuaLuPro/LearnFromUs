@@ -135,6 +135,10 @@ async function ensureDuckDbReady() {
   `);
 }
 
+function isDuckDbAvailable() {
+  return Boolean(duckDb && duckDbReady);
+}
+
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -3027,6 +3031,9 @@ app.get('/api/admin/posts/moderation', authRequired, adminRequired, async (req, 
 });
 
 app.get('/api/admin/analytics/overview', authRequired, adminRequired, analyticsRateLimit, async (req, res) => {
+  if (!isDuckDbAvailable()) {
+    return res.status(503).json({ message: 'Analytics is temporarily unavailable.' });
+  }
   try {
     const analytics = await buildDuckDbOverview(req.query);
     return res.json(analytics);
@@ -3037,6 +3044,9 @@ app.get('/api/admin/analytics/overview', authRequired, adminRequired, analyticsR
 });
 
 app.get('/api/admin/analytics/query', authRequired, adminRequired, analyticsRateLimit, async (req, res) => {
+  if (!isDuckDbAvailable()) {
+    return res.status(503).json({ message: 'Analytics is temporarily unavailable.' });
+  }
   try {
     const analytics = await buildDuckDbOverview(req.query);
     return res.json(analytics);
@@ -3047,6 +3057,9 @@ app.get('/api/admin/analytics/query', authRequired, adminRequired, analyticsRate
 });
 
 app.get('/api/admin/analytics/parquet', authRequired, adminRequired, analyticsRateLimit, async (_, res) => {
+  if (!isDuckDbAvailable()) {
+    return res.status(503).json({ message: 'Analytics exports are temporarily unavailable.' });
+  }
   try {
     return res.json({ datasets: listParquetDatasets() });
   } catch (error) {
@@ -3056,6 +3069,9 @@ app.get('/api/admin/analytics/parquet', authRequired, adminRequired, analyticsRa
 });
 
 app.get('/api/admin/analytics/parquet/:dataset', authRequired, adminRequired, analyticsRateLimit, async (req, res) => {
+  if (!isDuckDbAvailable()) {
+    return res.status(503).json({ message: 'Analytics exports are temporarily unavailable.' });
+  }
   try {
     const exported = await exportParquetDataset(req.params.dataset);
     return res.download(exported.filePath, exported.fileName);
@@ -3624,22 +3640,41 @@ app.delete('/api/posts/:postId', authRequired, async (req, res) => {
   }
 });
 
-Promise.all([
-  runMigrations(pool, path.resolve(__dirname, '../migrations')),
-  ensureMongoCollections(),
-  ensureDuckDbReady()
-])
+runMigrations(pool, path.resolve(__dirname, '../migrations'))
   .then(async () => {
+    await ensureMongoCollections().catch((error) => {
+      console.error('MongoDB initialization failed. Continuing without MongoDB.', error);
+    });
+
+    const duckDbAvailable = await ensureDuckDbReady()
+      .then(() => true)
+      .catch((error) => {
+        duckDb = null;
+        duckDbReady = null;
+        console.error('DuckDB initialization failed. Continuing without analytics.', error);
+        return false;
+      });
+
     const purged = await purgeExpiredModeratedPosts();
     if (purged > 0) {
       console.log(`Purged ${purged} expired moderated posts.`);
     }
-    await buildDuckDbOverview();
-    scheduleDailyAnalyticsRefresh();
+
+    if (duckDbAvailable) {
+      try {
+        await buildDuckDbOverview();
+        scheduleDailyAnalyticsRefresh();
+      } catch (error) {
+        duckDb = null;
+        duckDbReady = null;
+        console.error('Initial DuckDB analytics build failed. Continuing without analytics.', error);
+      }
+    }
+
     if (activityStore.isEnabled()) {
       console.log(`MongoDB connected to database "${activityStore.getDbName()}".`);
     } else {
-      console.log('MongoDB not configured. Continuing with PostgreSQL only.');
+      console.log('MongoDB not configured or unavailable. Continuing with PostgreSQL only.');
     }
     setInterval(() => {
       purgeExpiredModeratedPosts().catch((error) => {

@@ -14,7 +14,35 @@ import type {
 } from './types';
 import { TOKEN_KEY } from './lib/authStorage';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+const PRODUCTION_API_BASE_URL = 'https://learnfromus.onrender.com';
+const LOCAL_API_HOSTS = new Set(['localhost', '127.0.0.1']);
+
+function isLocalApiUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return LOCAL_API_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function resolveApiBaseUrl() {
+  const configuredUrl = String(process.env.REACT_APP_API_BASE_URL || '').trim();
+
+  if (configuredUrl) {
+    if (process.env.NODE_ENV !== 'production' || !isLocalApiUrl(configuredUrl)) {
+      return configuredUrl;
+    }
+
+    console.warn('Ignoring localhost API base URL in production. Falling back to the hosted API.');
+  }
+
+  return process.env.NODE_ENV === 'production'
+    ? PRODUCTION_API_BASE_URL
+    : 'http://localhost:4000';
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 type AuthResponse = {
   token: string;

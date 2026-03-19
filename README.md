@@ -3,8 +3,8 @@
 LearnFromUs is a community forum for sharing coding hacks, project showcases, and practical product lessons.
 
 ## Architecture
-- Frontend: React, hosted on GitHub Pages
-- Backend API: Node.js + Express, hosted on Render
+- Frontend: React, hosted on Render Static Site
+- Backend API: Node.js + Express, hosted on Render Web Service
 - Databases:
 - PostgreSQL on Neon for users, auth, posts, follows, and transactional data
 - MongoDB for activity events and document-style analytics data
@@ -19,8 +19,8 @@ LearnFromUs is a community forum for sharing coding hacks, project showcases, an
 ## Current Deployment
 
 ### Frontend
-- Hosted on GitHub Pages
-- Public URL: `https://shaohualupro.github.io/LearnFromUs/`
+- Hosted on Render Static Site
+- Public URL: set `REACT_APP_SITE_URL` to your Render frontend domain or custom domain
 
 ### Backend
 - Hosted on Render
@@ -36,6 +36,7 @@ LearnFromUs is a community forum for sharing coding hacks, project showcases, an
 ### Frontend (`.env.local`)
 ```env
 REACT_APP_API_BASE_URL=http://localhost:4000
+REACT_APP_SITE_URL=http://localhost:3000
 ```
 
 For local development, point the frontend to your local API.
@@ -46,7 +47,8 @@ Production builds automatically fall back to `https://learnfromus.onrender.com` 
 PORT=4000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST/DB?sslmode=require
 JWT_SECRET=replace-with-a-long-random-secret
-FRONTEND_ORIGIN=http://localhost:3000,https://shaohualupro.github.io
+FRONTEND_ORIGIN=http://localhost:3000,https://your-frontend.onrender.com
+PASSWORD_RESET_BASE_URL=https://your-frontend.onrender.com/login
 ADMIN_EMAILS=admin@example.com
 MONGODB_URI=mongodb+srv://USER:PASSWORD@HOST/?appName=Cluster0
 MONGODB_DB_NAME=learnfromus
@@ -120,15 +122,26 @@ npm start
 - `POST /api/admin/posts/:postId/restore`
 
 ## Render Configuration
-- Service Type: Web Service
-- Root Directory: `server`
-- Build Command: `npm install`
-- Start Command: `npm start`
+- Backend:
+  - Service Type: Web Service
+  - Root Directory: `server`
+  - Build Command: `npm install`
+  - Start Command: `npm start`
+- Frontend:
+  - Service Type: Static Site
+  - Root Directory: `.`
+  - Build Command: `npm install && npm run build`
+  - Publish Directory: `build`
+  - Rewrite Rule: `/* -> /index.html`
 
 Required Render environment variables:
+- Frontend:
+  - `REACT_APP_API_BASE_URL`
+  - `REACT_APP_SITE_URL`
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `FRONTEND_ORIGIN`
+- `PASSWORD_RESET_BASE_URL`
 - `ADMIN_EMAILS`
 - `MONGODB_URI` (optional)
 - `DUCKDB_PATH` (optional)
@@ -142,14 +155,7 @@ Before starting the backend in a new environment, run:
 npm run migrate --prefix server
 ```
 
-## GitHub Pages Deployment
-To publish the frontend:
-
-```powershell
-npm run deploy
-```
-
-This builds the React app and publishes it to the `gh-pages` branch.
+This repository also includes a `render.yaml` blueprint so you can create both services from one config file.
 
 ## Security Notes
 - Do not put `DATABASE_URL` or `JWT_SECRET` in the frontend

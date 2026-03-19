@@ -1,7 +1,23 @@
 const SITE_NAME = 'LearnFromUs';
 const DEFAULT_TITLE = `${SITE_NAME} | Technical Forum for Builders`;
 const DEFAULT_DESCRIPTION = 'LearnFromUs is a technical forum for engineers, AI builders, and data scientists to share practical posts, project lessons, debugging notes, and real implementation details.';
-const SITE_BASE_URL = 'https://shaohualupro.github.io/LearnFromUs';
+
+function normalizeBaseUrl(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function getRuntimeBaseUrl() {
+  const configured = normalizeBaseUrl(process.env.REACT_APP_SITE_URL);
+  if (configured) {
+    return configured;
+  }
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return normalizeBaseUrl(window.location.origin);
+  }
+
+  return 'http://localhost:3000';
+}
 
 function upsertMeta(selector, attributes) {
   let element = document.head.querySelector(selector);
@@ -31,7 +47,7 @@ export function applySeo({
   title = DEFAULT_TITLE,
   description = DEFAULT_DESCRIPTION,
   robots = 'index,follow',
-  canonical = `${SITE_BASE_URL}/`
+  canonical = `${getRuntimeBaseUrl()}/`
 } = {}) {
   document.title = title;
   upsertMeta('meta[name="description"]', { name: 'description', content: description });
@@ -49,8 +65,9 @@ export function buildPageTitle(pageTitle) {
 }
 
 export function buildCanonical(pathname = '/') {
+  const siteBaseUrl = getRuntimeBaseUrl();
   const normalized = String(pathname || '/').startsWith('/') ? String(pathname || '/') : `/${pathname}`;
-  return normalized === '/' ? `${SITE_BASE_URL}/` : `${SITE_BASE_URL}${normalized}`;
+  return normalized === '/' ? `${siteBaseUrl}/` : `${siteBaseUrl}${normalized}`;
 }
 
-export { DEFAULT_DESCRIPTION, DEFAULT_TITLE, SITE_BASE_URL, SITE_NAME };
+export { DEFAULT_DESCRIPTION, DEFAULT_TITLE, SITE_NAME };

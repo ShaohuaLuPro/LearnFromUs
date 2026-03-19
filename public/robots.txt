@@ -1,4 +1,4 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
 Disallow:
-Sitemap: https://shaohualupro.github.io/LearnFromUs/sitemap.xml
+Sitemap: http://localhost:3000/sitemap.xml

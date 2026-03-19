@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: learnfromus-api
+    env: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: PASSWORD_RESET_SECRET
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: PASSWORD_RESET_BASE_URL
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: learnfromus
+      - key: DUCKDB_PATH
+        value: /opt/render/project/src/server/data/learnfromus-analytics.duckdb
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5-mini
+      - key: DAILY_AI_USAGE_LIMIT
+        value: 5
+
+  - type: web
+    name: learnfromus-web
+    env: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: REACT_APP_API_BASE_URL
+        sync: false
+      - key: REACT_APP_SITE_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

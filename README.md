@@ -48,12 +48,16 @@ ADMIN_EMAILS=admin@example.com
 MONGODB_URI=mongodb+srv://USER:PASSWORD@HOST/?appName=Cluster0
 MONGODB_DB_NAME=learnfromus
 DUCKDB_PATH=
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5-mini
+DAILY_AI_USAGE_LIMIT=5
 ```
 
 Notes:
 - `server/.env` is for local development only
 - production secrets should be stored in Render, not in GitHub
 - do not commit real secrets
+- when `OPENAI_API_KEY` is configured, the forum assistant uses OpenAI for style-aware post drafting and falls back to the built-in template generator if the API is unavailable
 
 ## Local Development
 
@@ -125,6 +129,9 @@ Required Render environment variables:
 - `ADMIN_EMAILS`
 - `MONGODB_URI` (optional)
 - `DUCKDB_PATH` (optional)
+- `OPENAI_API_KEY` (optional, enables OpenAI drafting)
+- `OPENAI_MODEL` (optional, defaults to `gpt-5-mini`)
+- `DAILY_AI_USAGE_LIMIT` (optional, defaults to `5` for non-admin accounts)
 
 Before starting the backend in a new environment, run:
 

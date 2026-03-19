@@ -1,13 +1,30 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export default function Settings({ currentUser, onUpdateProfile, onUpdatePassword, onDeleteAccount }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [profileName, setProfileName] = useState(currentUser?.name || '');
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '' });
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const profileRef = useRef(null);
+  const passwordRef = useRef(null);
+  const dangerRef = useRef(null);
+
+  useEffect(() => {
+    const panel = searchParams.get('panel');
+    const targetMap = {
+      profile: profileRef.current,
+      password: passwordRef.current,
+      danger: dangerRef.current
+    };
+    const target = targetMap[panel || ''];
+    if (target && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [searchParams]);
 
   const submitProfile = async (event) => {
     event.preventDefault();
@@ -68,7 +85,10 @@ export default function Settings({ currentUser, onUpdateProfile, onUpdatePasswor
 
         <div className="row g-4">
           <div className="col-lg-6">
-            <section className="settings-card">
+            <section
+              ref={profileRef}
+              className={`settings-card ${searchParams.get('panel') === 'profile' ? 'is-focused' : ''}`}
+            >
               <h4 className="mb-3">Profile</h4>
               <form onSubmit={submitProfile} className="forum-form">
                 <div className="mb-3">
@@ -89,7 +109,10 @@ export default function Settings({ currentUser, onUpdateProfile, onUpdatePasswor
           </div>
 
           <div className="col-lg-6">
-            <section className="settings-card">
+            <section
+              ref={passwordRef}
+              className={`settings-card ${searchParams.get('panel') === 'password' ? 'is-focused' : ''}`}
+            >
               <h4 className="mb-3">Password</h4>
               <form onSubmit={submitPassword} className="forum-form">
                 <div className="mb-3">
@@ -116,7 +139,10 @@ export default function Settings({ currentUser, onUpdateProfile, onUpdatePasswor
           </div>
         </div>
 
-        <section className="settings-card settings-danger-card mt-4">
+        <section
+          ref={dangerRef}
+          className={`settings-card settings-danger-card mt-4 ${searchParams.get('panel') === 'danger' ? 'is-focused' : ''}`}
+        >
           <h4 className="mb-2 type-title-md">Danger Zone</h4>
           <p className="type-body mb-3">Deleting your account also removes your posts and associated activity.</p>
           <div className="mb-3">

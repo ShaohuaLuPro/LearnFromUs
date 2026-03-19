@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
@@ -44,8 +44,10 @@ export default function Home({
   onLoadPosts,
   onCreatePost
 }) {
+  const location = useLocation();
   const navigate = useNavigate();
   const { sectionId } = useParams();
+  const [searchParams] = useSearchParams();
 
   const [form, setForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
   const [message, setMessage] = useState('');
@@ -55,8 +57,21 @@ export default function Home({
     sectionId ? [sectionId] : (currentFilters?.section || [])
   );
   const [composerLanguage, setComposerLanguage] = useState('javascript');
-  const [page, setPage] = useState(currentFilters?.page || 1);
-  const pageSize = pagination?.pageSize || 12;
+
+  const applyComposerDraft = (draft) => {
+    if (!draft) {
+      return;
+    }
+
+    setForm({
+      title: String(draft.title || ''),
+      content: String(draft.content || ''),
+      section: String(draft.section || defaultSection.value) || defaultSection.value,
+      tags: Array.isArray(draft.tags) ? draft.tags.join(', ') : String(draft.tags || '')
+    });
+    setMessage('');
+    setIsComposerOpen(true);
+  };
 
   const sectionCounts = useMemo(() => {
     const counts = Object.fromEntries(allSections.map((item) => [item.value, 0]));
@@ -81,32 +96,57 @@ export default function Home({
   useEffect(() => {
     if (sectionId) {
       setSelectedSections([sectionId]);
-      setPage(1);
       return;
     }
     setSelectedSections(currentFilters?.section || []);
   }, [sectionId, currentFilters]);
 
   useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+    if (searchParams.get('compose') === '1') {
+      setMessage('');
+      setIsComposerOpen(true);
+    }
+  }, [currentUser, searchParams]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    const composerDraft = location.state?.composerDraft;
+    if (!composerDraft) {
+      return;
+    }
+
+    applyComposerDraft(composerDraft);
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: null
+    });
+  }, [currentUser, location.pathname, location.search, location.state, navigate]);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       onLoadPosts({
         q: searchQuery.trim(),
         section: selectedSections,
-        page,
-        pageSize
+        page: 1,
+        pageSize: 'all'
       });
     }, 180);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [onLoadPosts, searchQuery, selectedSections, page, pageSize]);
+  }, [onLoadPosts, searchQuery, selectedSections]);
 
   const toggleSection = (sectionValue) => {
     if (sectionId) {
       navigate('/forum');
     }
-    setPage(1);
     setSelectedSections((current) =>
       current.includes(sectionValue)
         ? current.filter((value) => value !== sectionValue)
@@ -118,7 +158,6 @@ export default function Home({
     if (sectionId) {
       navigate('/forum');
     }
-    setPage(1);
     setSelectedSections([]);
   };
 
@@ -137,17 +176,15 @@ export default function Home({
     setForm({ title: '', content: '', section: defaultSection.value, tags: '' });
     setSearchQuery('');
     setSelectedSections([]);
-    setPage(1);
     if (sectionId) {
       navigate('/forum');
     }
-    await onLoadPosts({ q: '', section: [], page: 1, pageSize });
+    await onLoadPosts({ q: '', section: [], page: 1, pageSize: 'all' });
     setIsComposerOpen(false);
     setMessage('Post published.');
   };
 
   const toggleTagFilter = (tag) => {
-    setPage(1);
     setSearchQuery((current) => (current === tag ? '' : tag));
   };
 
@@ -255,14 +292,11 @@ export default function Home({
               <input
                 className="form-control forum-input tag-search-input"
                 value={searchQuery}
-                onChange={(e) => {
-                  setPage(1);
-                  setSearchQuery(e.target.value);
-                }}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search title, content, tags, section"
               />
               {searchQuery && (
-                <button type="button" className="forum-secondary-btn" onClick={() => { setPage(1); setSearchQuery(''); }}>
+                <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
                   Clear Search
                 </button>
               )}
@@ -316,30 +350,6 @@ export default function Home({
                 <p className="muted mb-0">No posts match the current section and tag filters.</p>
               )}
             </div>
-
-            {(pagination?.totalPages || 1) > 1 && (
-              <div className="forum-actions mt-4">
-                <button
-                  type="button"
-                  className="forum-secondary-btn"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  Previous
-                </button>
-                <span className="muted">
-                  Page {pagination?.page || page} of {pagination?.totalPages || 1}
-                </span>
-                <button
-                  type="button"
-                  className="forum-secondary-btn"
-                  disabled={page >= (pagination?.totalPages || 1)}
-                  onClick={() => setPage((current) => current + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            )}
           </section>
         </div>
       </div>

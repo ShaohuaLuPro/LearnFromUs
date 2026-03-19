@@ -9,6 +9,9 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const { Pool } = require('pg');
 const { createActivityStore } = require('./lib/activity-store');
+const { createOpenAIAgentRouter } = require('./lib/openai-agent-router');
+const { createOpenAIDraftService, SECTION_ENUM } = require('./lib/openai-drafts');
+const { createOpenAIPostRewriter } = require('./lib/openai-post-rewriter');
 const { createHybridRateLimitStore, createRateLimitMiddleware } = require('./lib/rate-limit');
 const { listPublicPosts, getPublicPostById } = require('./lib/post-queries');
 const { runMigrations } = require('./lib/run-migrations');
@@ -41,6 +44,9 @@ const smtpFrom = String(process.env.SMTP_FROM || smtpUser).trim();
 const mongoUri = String(process.env.MONGODB_URI || '').trim();
 const mongoDbName = String(process.env.MONGODB_DB_NAME || 'learnfromus').trim();
 const duckDbPath = String(process.env.DUCKDB_PATH || path.resolve(__dirname, '../data/learnfromus-analytics.duckdb')).trim();
+const openAiApiKey = String(process.env.OPENAI_API_KEY || '').trim();
+const openAiModel = String(process.env.OPENAI_MODEL || 'gpt-5-mini').trim() || 'gpt-5-mini';
+const dailyAiUsageLimit = Number(process.env.DAILY_AI_USAGE_LIMIT || 5);
 
 if (!jwtSecret) {
   throw new Error('Missing JWT_SECRET in server environment.');
@@ -57,6 +63,9 @@ let duckDb = null;
 let duckDbReady = null;
 const activityStore = createActivityStore({ mongoUri, mongoDbName });
 const rateLimitStore = createHybridRateLimitStore();
+const openAiAgentRouter = createOpenAIAgentRouter({ apiKey: openAiApiKey, model: openAiModel });
+const openAiDraftService = createOpenAIDraftService({ apiKey: openAiApiKey, model: openAiModel });
+const openAiPostRewriter = createOpenAIPostRewriter({ apiKey: openAiApiKey, model: openAiModel });
 const mailTransport = smtpHost && smtpFrom
   ? nodemailer.createTransport({
       host: smtpHost,
@@ -822,18 +831,799 @@ function listParquetDatasets() {
   }));
 }
 
+const AGENT_TOPIC_HINTS = [
+  {
+    key: 'mle',
+    patterns: [/\bmle\b/i, /\bmachine learning engineering\b/i, /\bmachine learning engineer\b/i],
+    canonical: 'machine learning engineering',
+    terms: ['mle', 'machine learning engineering', 'mlops', 'model deployment', 'feature engineering', 'training pipeline'],
+    sections: ['mle', 'ai-llm', 'ds-general']
+  },
+  {
+    key: 'machine-learning',
+    patterns: [/\bmachine learning\b/i, /\bml\b/i],
+    canonical: 'machine learning',
+    terms: ['machine learning', 'ml', 'supervised learning', 'unsupervised learning', 'model training'],
+    sections: ['mle', 'deep-learning', 'ds-general']
+  },
+  {
+    key: 'llm',
+    patterns: [/\bllm\b/i, /\blarge language model\b/i, /\bgenerative ai\b/i],
+    canonical: 'llm',
+    terms: ['llm', 'large language model', 'prompting', 'rag', 'agents'],
+    sections: ['ai-llm', 'mle']
+  },
+  {
+    key: 'analytics',
+    patterns: [/\banalytics\b/i, /\bbi\b/i, /\bdashboard\b/i],
+    canonical: 'analytics',
+    terms: ['analytics', 'dashboard', 'metrics', 'reporting', 'experimentation'],
+    sections: ['analytics', 'visualization', 'experimentation']
+  },
+  {
+    key: 'backend',
+    patterns: [/\bbackend\b/i, /\bapi\b/i, /\bserver\b/i],
+    canonical: 'backend engineering',
+    terms: ['backend', 'api', 'server', 'database', 'architecture'],
+    sections: ['backend', 'system-design', 'data-engineering']
+  }
+];
+
+const AGENT_TAXONOMY_CACHE_TTL_MS = 10 * 60 * 1000;
+const agentTaxonomyCache = {
+  loadedAt: 0,
+  tags: [],
+  sections: []
+};
+
+function stripMarkdownToText(content) {
+  return String(content || '')
+    .replace(/```[\s\S]*?```/g, ' code snippet ')
+    .replace(/`[^`]+`/g, ' inline code ')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^>\s?/gm, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[*_~]+/g, ' ')
+    .replace(/\r/g, ' ')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function tokenizeText(content) {
+  return stripMarkdownToText(content)
+    .toLowerCase()
+    .split(/[^a-z0-9+#.-]+/g)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3);
+}
+
+function normalizeTaxonomyTerm(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[-_/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function countWords(content) {
+  const text = stripMarkdownToText(content);
+  return text ? text.split(/\s+/).length : 0;
+}
+
+function formatAgentDate(timestamp) {
+  if (!timestamp) {
+    return '';
+  }
+  return new Date(timestamp).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function buildNavigationResponse(destinationKey, user) {
+  const normalized = String(destinationKey || '').trim().toLowerCase();
+  const isLoggedIn = Boolean(user?.sub);
+  const isAdmin = Boolean(user?.isAdmin);
+
+  const responses = {
+    home: {
+      reply: 'Opening the home page.',
+      navigateTo: '/'
+    },
+    about: {
+      reply: 'Opening the About page.',
+      navigateTo: '/about'
+    },
+    forum: {
+      reply: 'Opening the forum.',
+      navigateTo: '/forum'
+    },
+    'forum-create-post': {
+      reply: isLoggedIn ? 'Opening the forum composer.' : 'Login first, then you can create a post.',
+      navigateTo: isLoggedIn ? '/forum?compose=1' : '/login'
+    },
+    'settings-profile': {
+      reply: isLoggedIn ? 'Opening Settings and focusing the profile section.' : 'Login first, then open Settings.',
+      navigateTo: isLoggedIn ? '/settings?panel=profile' : '/login'
+    },
+    'settings-password': {
+      reply: isLoggedIn ? 'Opening Settings and focusing the password section.' : 'Login first, then open Settings.',
+      navigateTo: isLoggedIn ? '/settings?panel=password' : '/login'
+    },
+    'settings-danger': {
+      reply: isLoggedIn ? 'Opening Settings and focusing the danger zone.' : 'Login first, then open Settings.',
+      navigateTo: isLoggedIn ? '/settings?panel=danger' : '/login'
+    },
+    'my-posts': {
+      reply: isLoggedIn ? 'Opening My Posts.' : 'Login first, then open My Posts.',
+      navigateTo: isLoggedIn ? '/my-posts' : '/login'
+    },
+    following: {
+      reply: isLoggedIn ? 'Opening the Following page.' : 'Login first, then open your network page.',
+      navigateTo: isLoggedIn ? '/following?tab=following' : '/login'
+    },
+    followers: {
+      reply: isLoggedIn ? 'Opening your Followers tab.' : 'Login first, then open your network page.',
+      navigateTo: isLoggedIn ? '/following?tab=followers' : '/login'
+    },
+    analytics: {
+      reply: isAdmin ? 'Opening Analytics.' : 'Analytics is admin-only. Returning to the forum.',
+      navigateTo: isAdmin ? '/analytics' : '/forum'
+    },
+    moderation: {
+      reply: isAdmin ? 'Opening the Moderation Queue.' : 'Moderation is admin-only. Returning to the forum.',
+      navigateTo: isAdmin ? '/moderation' : '/forum'
+    },
+    login: {
+      reply: 'Opening Login.',
+      navigateTo: '/login'
+    }
+  };
+
+  const resolved = responses[normalized] || responses.forum;
+  return {
+    intent: 'navigate',
+    reply: resolved.reply,
+    navigateTo: resolved.navigateTo,
+    autoNavigate: true,
+    actions: [
+      {
+        label: 'Open',
+        to: resolved.navigateTo
+      }
+    ],
+    quickActions: ['search-posts', 'draft-post']
+  };
+}
+
+async function consumeDailyAiUsage(client, user) {
+  if (!user?.sub) {
+    return {
+      allowed: true,
+      remaining: null,
+      limit: null
+    };
+  }
+
+  if (user.isAdmin) {
+    return {
+      allowed: true,
+      remaining: null,
+      limit: null
+    };
+  }
+
+  const normalizedLimit = Number.isFinite(dailyAiUsageLimit) && dailyAiUsageLimit > 0
+    ? Math.trunc(dailyAiUsageLimit)
+    : 5;
+
+  const result = await client.query(
+    `INSERT INTO ai_daily_usage (user_id, usage_date, usage_count, last_used_at)
+     VALUES ($1, CURRENT_DATE, 1, NOW())
+     ON CONFLICT (user_id, usage_date) DO UPDATE
+     SET usage_count = ai_daily_usage.usage_count + 1,
+         last_used_at = NOW()
+     RETURNING usage_count`,
+    [user.sub]
+  );
+
+  const usageCount = Number(result.rows[0]?.usage_count || 0);
+  if (usageCount > normalizedLimit) {
+    await client.query(
+      `UPDATE ai_daily_usage
+       SET usage_count = GREATEST(usage_count - 1, 0), last_used_at = NOW()
+       WHERE user_id = $1 AND usage_date = CURRENT_DATE`,
+      [user.sub]
+    );
+    return {
+      allowed: false,
+      remaining: 0,
+      limit: normalizedLimit
+    };
+  }
+
+  return {
+    allowed: true,
+    remaining: Math.max(0, normalizedLimit - usageCount),
+    limit: normalizedLimit
+  };
+}
+
+function getTopEntries(counter, limit) {
+  return [...counter.entries()]
+    .sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+      return left[0].localeCompare(right[0]);
+    })
+    .slice(0, limit)
+    .map(([value]) => value);
+}
+
+function detectOpeningStyle(content) {
+  const firstParagraph = String(content || '')
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .find(Boolean) || '';
+
+  if (!firstParagraph) {
+    return 'direct';
+  }
+  if (/\?/.test(firstParagraph) || /^(why|how|what|when)\b/i.test(firstParagraph)) {
+    return 'question-led';
+  }
+  if (/^(i|we|recently|lately|after|while)\b/i.test(firstParagraph)) {
+    return 'personal';
+  }
+  if (/(problem|issue|challenge|pain point)/i.test(firstParagraph)) {
+    return 'problem-first';
+  }
+  return 'direct';
+}
+
+function detectClosingStyle(content) {
+  const paragraphs = String(content || '')
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const lastParagraph = paragraphs[paragraphs.length - 1] || '';
+
+  if (!lastParagraph) {
+    return 'takeaway';
+  }
+  if (/(next|follow-up|would improve|future work|next step)/i.test(lastParagraph)) {
+    return 'next-steps';
+  }
+  if (/(curious|what do you think|how are you|would love to hear)/i.test(lastParagraph)) {
+    return 'discussion';
+  }
+  if (/(takeaway|lesson|in summary|overall|bottom line)/i.test(lastParagraph)) {
+    return 'takeaway';
+  }
+  return 'practical';
+}
+
+function detectTitlePattern(posts) {
+  if (!posts.length) {
+    return 'statement';
+  }
+
+  let questionCount = 0;
+  let colonCount = 0;
+  let howToCount = 0;
+  for (const post of posts) {
+    const title = String(post.title || '').trim();
+    if (!title) {
+      continue;
+    }
+    if (title.includes('?')) {
+      questionCount += 1;
+    }
+    if (title.includes(':')) {
+      colonCount += 1;
+    }
+    if (/^how\b/i.test(title)) {
+      howToCount += 1;
+    }
+  }
+
+  if (questionCount / posts.length >= 0.34) {
+    return 'question';
+  }
+  if (howToCount / posts.length >= 0.25) {
+    return 'how-to';
+  }
+  if (colonCount / posts.length >= 0.34) {
+    return 'label-colon';
+  }
+  return 'statement';
+}
+
+function buildWritingStyleProfile(posts) {
+  if (!posts.length) {
+    return null;
+  }
+
+  const sectionCounts = new Map();
+  const tagCounts = new Map();
+  const structureCounts = new Map();
+  const titleWordCounts = [];
+  const bodyWordCounts = [];
+  const tokenCounts = new Map();
+  let firstPersonHits = 0;
+  let analyticalHits = 0;
+  let tutorialHits = 0;
+  let questionCloseHits = 0;
+  let personalOpeningHits = 0;
+  let questionOpeningHits = 0;
+  let problemOpeningHits = 0;
+  let nextStepCloseHits = 0;
+  let takeawayCloseHits = 0;
+
+  for (const post of posts) {
+    const content = String(post.content || '');
+    const plainText = stripMarkdownToText(content);
+    const wordCount = countWords(content);
+    const titleWordCount = countWords(post.title);
+    bodyWordCounts.push(wordCount);
+    titleWordCounts.push(titleWordCount);
+
+    sectionCounts.set(post.section, (sectionCounts.get(post.section) || 0) + 1);
+    for (const tag of post.tags || []) {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    }
+
+    if (/^#{1,3}\s/m.test(content)) {
+      structureCounts.set('headings', (structureCounts.get('headings') || 0) + 1);
+    }
+    if (/^\s*([-*]|\d+\.)\s+/m.test(content)) {
+      structureCounts.set('lists', (structureCounts.get('lists') || 0) + 1);
+    }
+    if (/```/.test(content)) {
+      structureCounts.set('code-blocks', (structureCounts.get('code-blocks') || 0) + 1);
+    }
+    if (/\n\s*\n/.test(content)) {
+      structureCounts.set('multi-section', (structureCounts.get('multi-section') || 0) + 1);
+    }
+
+    if (/\b(i|we|my|our)\b/i.test(plainText)) {
+      firstPersonHits += 1;
+    }
+    if (/\b(tradeoff|latency|benchmark|result|metric|because|compared|compare)\b/i.test(plainText)) {
+      analyticalHits += 1;
+    }
+    if (/\b(step|guide|walkthrough|implementation|setup|pattern|example)\b/i.test(plainText)) {
+      tutorialHits += 1;
+    }
+    if (/\?\s*$/.test(String(post.title || '').trim()) || /\?/.test(plainText.slice(-180))) {
+      questionCloseHits += 1;
+    }
+
+    const openingStyle = detectOpeningStyle(content);
+    if (openingStyle === 'personal') {
+      personalOpeningHits += 1;
+    } else if (openingStyle === 'question-led') {
+      questionOpeningHits += 1;
+    } else if (openingStyle === 'problem-first') {
+      problemOpeningHits += 1;
+    }
+
+    const closingStyle = detectClosingStyle(content);
+    if (closingStyle === 'next-steps') {
+      nextStepCloseHits += 1;
+    } else if (closingStyle === 'takeaway') {
+      takeawayCloseHits += 1;
+    }
+
+    for (const token of tokenizeText(`${post.title} ${content}`)) {
+      tokenCounts.set(token, (tokenCounts.get(token) || 0) + 1);
+    }
+  }
+
+  const sampleSize = posts.length;
+  const avgWordCount = Math.round(bodyWordCounts.reduce((sum, value) => sum + value, 0) / sampleSize);
+  const avgTitleLength = Math.round(titleWordCounts.reduce((sum, value) => sum + value, 0) / sampleSize);
+  const preferredSections = getTopEntries(sectionCounts, 3);
+  const commonTags = getTopEntries(tagCounts, 6);
+  const structure = getTopEntries(structureCounts, 4);
+  const recurringTerms = getTopEntries(
+    new Map(
+      [...tokenCounts.entries()].filter(([token, count]) => {
+        if (count < 2) {
+          return false;
+        }
+        return ![
+          'that',
+          'this',
+          'with',
+          'from',
+          'have',
+          'your',
+          'about',
+          'there',
+          'their',
+          'when',
+          'what',
+          'which',
+          'into',
+          'while',
+          'using',
+          'after',
+          'before'
+        ].includes(token);
+      })
+    ),
+    8
+  );
+
+  const tone = [];
+  if (avgWordCount <= 160) {
+    tone.push('concise');
+  } else if (avgWordCount >= 320) {
+    tone.push('in-depth');
+  } else {
+    tone.push('balanced');
+  }
+  if (tutorialHits / sampleSize >= 0.4) {
+    tone.push('instructional');
+  }
+  if (analyticalHits / sampleSize >= 0.34) {
+    tone.push('analytical');
+  }
+  if (firstPersonHits / sampleSize >= 0.34) {
+    tone.push('personal');
+  } else {
+    tone.push('direct');
+  }
+
+  let openerStyle = 'direct';
+  if (personalOpeningHits >= questionOpeningHits && personalOpeningHits >= problemOpeningHits && personalOpeningHits > 0) {
+    openerStyle = 'personal';
+  } else if (questionOpeningHits >= problemOpeningHits && questionOpeningHits > 0) {
+    openerStyle = 'question-led';
+  } else if (problemOpeningHits > 0) {
+    openerStyle = 'problem-first';
+  }
+
+  let closingStyle = 'practical';
+  if (nextStepCloseHits >= takeawayCloseHits && nextStepCloseHits > 0) {
+    closingStyle = 'next-steps';
+  } else if (questionCloseHits > 0) {
+    closingStyle = 'discussion';
+  } else if (takeawayCloseHits > 0) {
+    closingStyle = 'takeaway';
+  }
+
+  const sectionSummary = preferredSections.length ? preferredSections.join(', ') : 'general engineering topics';
+  const structureSummary = structure.length ? structure.join(', ') : 'short narrative paragraphs';
+  const tagSummary = commonTags.length ? ` Common tags: ${commonTags.join(', ')}.` : '';
+
+  return {
+    sampleSize,
+    avgWordCount,
+    avgTitleLength,
+    preferredSections,
+    commonTags,
+    tone,
+    structure,
+    openerStyle,
+    closingStyle,
+    titlePattern: detectTitlePattern(posts),
+    recurringTerms,
+    summary: `Usually writes ${tone.join(', ')} posts in ${sectionSummary} with ${structureSummary}.${tagSummary}`,
+    referencePostIds: posts.slice(0, 5).map((post) => post.id)
+  };
+}
+
+function scoreReferencePost(post, topicTokens) {
+  if (!topicTokens.length) {
+    return 0;
+  }
+
+  const titleTokens = new Set(tokenizeText(post.title));
+  const contentTokens = new Set(tokenizeText(post.content));
+  const tagTokens = new Set((post.tags || []).map((tag) => String(tag || '').toLowerCase()));
+  let score = 0;
+
+  for (const token of topicTokens) {
+    if (titleTokens.has(token)) {
+      score += 4;
+    }
+    if (tagTokens.has(token)) {
+      score += 3;
+    }
+    if (contentTokens.has(token)) {
+      score += 1;
+    }
+  }
+
+  return score;
+}
+
+function pickReferencePosts(posts, topic) {
+  if (!posts.length) {
+    return [];
+  }
+
+  const topicTokens = tokenizeText(topic);
+  const ranked = posts
+    .map((post) => ({ post, score: scoreReferencePost(post, topicTokens) }))
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      return right.post.createdAt - left.post.createdAt;
+    });
+
+  const matches = ranked.filter((entry) => entry.score > 0).slice(0, 3).map((entry) => entry.post);
+  if (matches.length > 0) {
+    return matches;
+  }
+  return posts.slice(0, 3);
+}
+
+function composeDraftTitle(topic, styleProfile) {
+  const cleanTopic = String(topic || 'a practical engineering lesson').trim();
+  const readableTopic = cleanTopic.charAt(0).toUpperCase() + cleanTopic.slice(1);
+
+  if (!styleProfile) {
+    return `Practical notes on ${readableTopic}`;
+  }
+  if (styleProfile.titlePattern === 'question') {
+    return `What actually helps with ${cleanTopic}?`;
+  }
+  if (styleProfile.titlePattern === 'how-to') {
+    return `How I approach ${cleanTopic}`;
+  }
+  if (styleProfile.titlePattern === 'label-colon') {
+    return `${readableTopic}: what changed for me`;
+  }
+  return `Practical notes on ${readableTopic}`;
+}
+
+function buildDraftTags(explicitTags, styleProfile, topic) {
+  const topicTokens = tokenizeText(topic);
+  const profileTags = (styleProfile?.commonTags || []).filter((tag) => topicTokens.includes(tag));
+  return normalizeTags([
+    ...explicitTags,
+    ...profileTags,
+    ...(explicitTags.length ? [] : (styleProfile?.commonTags || []).slice(0, 3))
+  ]).slice(0, 4);
+}
+
+function buildPersonalizedDraftContent({ topic, styleProfile, referencePosts }) {
+  const cleanTopic = String(topic || 'a practical engineering lesson').trim();
+  const intro = styleProfile?.openerStyle === 'personal'
+    ? `I've been revisiting ${cleanTopic} lately, and this is the pattern that keeps proving reliable.`
+    : styleProfile?.openerStyle === 'question-led'
+      ? `What does a dependable ${cleanTopic} workflow actually look like when you need to ship it?`
+      : styleProfile?.openerStyle === 'problem-first'
+        ? `${cleanTopic.charAt(0).toUpperCase()}${cleanTopic.slice(1)} usually breaks down when the implementation details get fuzzy.`
+        : `Here is a practical breakdown of ${cleanTopic} based on what has worked well so far.`;
+
+  const referenceLine = referencePosts.length > 0
+    ? `This draft leans on patterns from earlier posts like "${referencePosts[0].title}"${referencePosts[1] ? ` and "${referencePosts[1].title}"` : ''}.`
+    : `This draft stays grounded in practical details instead of broad theory.`;
+
+  const usesLists = styleProfile?.structure?.includes('lists');
+  const usesCodeBlocks = styleProfile?.structure?.includes('code-blocks');
+  const usesHeadings = styleProfile ? styleProfile.structure?.includes('headings') : true;
+  const close = styleProfile?.closingStyle === 'discussion'
+    ? `Curious how other teams are handling ${cleanTopic} right now.`
+    : styleProfile?.closingStyle === 'next-steps'
+      ? `Next I want to tighten the rough edges and see how this holds up under heavier usage.`
+      : styleProfile?.closingStyle === 'takeaway'
+        ? `The main takeaway is that ${cleanTopic} gets easier once the workflow is explicit and repeatable.`
+        : `The useful part was keeping the solution concrete enough that someone else could repeat it.`;
+
+  if (!usesHeadings) {
+    return [
+      intro,
+      '',
+      referenceLine,
+      '',
+      `The context was straightforward: I needed a repeatable way to handle ${cleanTopic} without adding unnecessary process.`,
+      '',
+      usesLists
+        ? `What mattered most:\n- make the workflow explicit\n- remove avoidable handoffs\n- keep the output easy to review\n- document the tradeoffs`
+        : `What mattered most was making the workflow explicit, removing avoidable handoffs, and keeping the result easy to review.`,
+      '',
+      usesCodeBlocks ? `A lightweight implementation sketch:\n\n\`\`\`txt\ninput -> decision rules -> generated draft -> human review\n\`\`\`\n` : '',
+      close
+    ].filter(Boolean).join('\n');
+  }
+
+  return [
+    intro,
+    '',
+    '## Context',
+    referenceLine,
+    '',
+    `The immediate goal was to make ${cleanTopic} easier to execute without losing the reasoning behind the decision.`,
+    '',
+    '## Approach',
+    usesLists
+      ? [
+          '- define the workflow in one place',
+          '- keep the decision points visible',
+          '- generate a draft that is already close to publishable',
+          '- leave room for fast human review before posting'
+        ].join('\n')
+      : `I kept the workflow narrow: define the decision points, generate a draft that is close to publishable, and leave a fast review step before publishing.`,
+    '',
+    '## What worked',
+    `The biggest gain was consistency. The draft stays aligned with the usual tone, section choices, and level of detail instead of starting from a blank page every time.`,
+    '',
+    usesCodeBlocks ? '```txt\nhistory -> style profile -> topic request -> draft -> publish\n```' : '',
+    usesCodeBlocks ? '' : '',
+    styleProfile?.closingStyle === 'next-steps' ? '## What I would improve next' : '## Takeaway',
+    close
+  ].filter(Boolean).join('\n');
+}
+
+async function storeUserWritingProfile(client, userId, profile) {
+  if (!userId || !profile) {
+    return null;
+  }
+
+  await client.query(
+    `INSERT INTO user_writing_profile (user_id, sample_size, reference_post_ids, profile_json, updated_at)
+     VALUES ($1, $2, $3, $4::jsonb, NOW())
+     ON CONFLICT (user_id) DO UPDATE
+     SET sample_size = EXCLUDED.sample_size,
+         reference_post_ids = EXCLUDED.reference_post_ids,
+         profile_json = EXCLUDED.profile_json,
+         updated_at = NOW()`,
+    [userId, profile.sampleSize, profile.referencePostIds, JSON.stringify(profile)]
+  );
+
+  return {
+    ...profile,
+    updatedAt: Date.now()
+  };
+}
+
+async function refreshUserWritingProfile(client, userId) {
+  if (!userId) {
+    return { styleProfile: null, posts: [] };
+  }
+
+  const posts = (await getPostsByAuthor(client, userId)).slice(0, 12);
+  const profile = buildWritingStyleProfile(posts);
+
+  if (!profile) {
+    await client.query(`DELETE FROM user_writing_profile WHERE user_id = $1`, [userId]);
+    return { styleProfile: null, posts };
+  }
+
+  const storedProfile = await storeUserWritingProfile(client, userId, profile);
+  return {
+    styleProfile: storedProfile,
+    posts
+  };
+}
+
+async function buildDraftWithUserStyle(message, user) {
+  const client = await pool.connect();
+  try {
+    const { styleProfile, posts } = await refreshUserWritingProfile(client, user?.sub);
+    const fallbackDraft = buildDraftFromMessage(message);
+
+    if (!styleProfile || posts.length === 0) {
+      return {
+        draft: fallbackDraft,
+        styleProfile: null,
+        referencePosts: [],
+        personalized: false,
+        generation: {
+          mode: 'template',
+          provider: 'local',
+          model: null,
+          fallback: false
+        }
+      };
+    }
+
+    const explicitTitle = extractQuotedValue(message, 'title');
+    const explicitSection = extractQuotedValue(message, 'section') || pickSectionFromMessage(message);
+    const explicitTopic = extractQuotedValue(message, 'topic') || String(message || '')
+      .replace(/^(write|generate|draft|compose|help me post|create a post|publish|post this|submit this|请|帮我|写一篇|生成|发一个)\s*/i, '')
+      .trim();
+    const topic = explicitTopic || 'a practical engineering lesson';
+    const referencePosts = pickReferencePosts(posts, topic);
+    let generation = {
+      mode: 'template',
+      provider: 'local',
+      model: null,
+      fallback: false
+    };
+    let draft = {
+      title: explicitTitle || composeDraftTitle(topic, styleProfile),
+      section: explicitSection || styleProfile.preferredSections[0] || fallbackDraft.section,
+      tags: buildDraftTags(extractTagsFromMessage(message), styleProfile, topic),
+      content: buildPersonalizedDraftContent({ topic, styleProfile, referencePosts })
+    };
+
+    if (openAiDraftService.isEnabled()) {
+      try {
+        const aiResult = await openAiDraftService.createDraft({
+          message,
+          styleProfile,
+          referencePosts,
+          fallbackDraft: {
+            ...fallbackDraft,
+            ...draft
+          },
+          currentUserName: user?.name || ''
+        });
+        if (aiResult?.draft) {
+          draft = aiResult.draft;
+          generation = {
+            mode: 'llm',
+            provider: aiResult.provider || 'openai',
+            model: aiResult.model || openAiDraftService.getModel(),
+            fallback: false,
+            rationale: aiResult.rationale || ''
+          };
+        }
+      } catch (error) {
+        console.error('OpenAI personalized drafting failed. Falling back to template draft.', error);
+        generation = {
+          mode: 'template',
+          provider: 'local',
+          model: openAiDraftService.getModel(),
+          fallback: true
+        };
+      }
+    }
+
+    return {
+      draft,
+      styleProfile,
+      referencePosts,
+      personalized: true,
+      generation
+    };
+  } finally {
+    client.release();
+  }
+}
+
 function detectAgentIntent(message) {
   const text = String(message || '').toLowerCase();
-  if (/(publish|post this|submit this|create post from|send this)/.test(text)) {
+  if (/(most recent|latest|newest|recent).*(post|posts)|最近.*post|最近.*帖子|最新.*post|最新.*帖子/.test(text)) {
+    return 'latest-posts';
+  }
+  if (/(most recent|latest|newest|recent).*(announcement|announcements|update|updates)|what is the most recent announcement|最新.*公告|最近.*公告|最新.*更新|最近.*更新/.test(text)) {
+    return 'latest-announcement';
+  }
+  if (/(go to|open|take me to|bring me to|navigate to|show me the).*(home|homepage|home page|about|settings|password|forum|analytics|moderation|followers|following|my posts|login|sign in|create post)|change my password|open about page|go to about page|go home|bring me home|带我去|打开.*页面|跳转到/.test(text)) {
+    return 'navigate';
+  }
+  if (/(rewrite|improve|polish|refine|edit|make it shorter|make it longer|expand|shorten).*(post|article)|help me improve my post|帮我改帖子|润色我的帖子|修改我的帖子/.test(text)) {
+    return 'rewrite';
+  }
+  if (/(publish|post this|submit this|create post from|send this|发布|发帖|直接发)/.test(text)) {
     return 'publish';
   }
-  if (/(draft|write|generate|compose|help me post|create a post)/.test(text)) {
+  if (/(learn|study|understand|get started|recommend.*posts?|what should i read|want to learn|想学习|学习一下|推荐.*帖子|推荐.*文章)/.test(text)) {
+    return 'learn';
+  }
+  if (/(draft|write|generate|compose|help me post|create a post|草稿|写一篇|帮我写|生成帖子|生成一个帖子)/.test(text)) {
     return 'draft';
   }
-  if (/(hot|popular|top author|top authors|trending|best posts|best authors)/.test(text)) {
+  if (/(hot|popular|top author|top authors|trending|best posts|best authors|热门|趋势|活跃作者)/.test(text)) {
     return 'trending';
   }
-  if (/(search|find|look for|related post|related posts|posts about|query)/.test(text)) {
+  if (/(search|find|look for|related post|related posts|posts about|query|搜索|查找|相关文章|相关帖子)/.test(text)) {
     return 'search';
   }
   return 'help';
@@ -847,30 +1637,7 @@ function extractQuotedValue(message, key) {
 
 function pickSectionFromMessage(message) {
   const normalized = normalizeSection(message);
-  const candidates = [
-    'frontend',
-    'backend',
-    'algorithms',
-    'system-design',
-    'ui-ux',
-    'devops-cloud',
-    'mobile',
-    'testing-qa',
-    'security',
-    'sde-general',
-    'ai-llm',
-    'mle',
-    'deep-learning',
-    'data-engineering',
-    'statistics',
-    'analytics',
-    'experimentation',
-    'visualization',
-    'ds-general',
-    'announcements',
-    'system-update'
-  ];
-  return candidates.find((section) => normalized.includes(section)) || '';
+  return SECTION_ENUM.find((section) => normalized.includes(section)) || '';
 }
 
 function extractTagsFromMessage(message) {
@@ -910,14 +1677,181 @@ function buildDraftFromMessage(message) {
   };
 }
 
+function normalizeAgentSearchQuery(message) {
+  return String(message || '')
+    .replace(/^(search|find|look for|show|recommend)\s+/i, '')
+    .replace(/^(posts?|articles?)\s+(about|on)\s+/i, '')
+    .replace(/^(related\s+posts?)\s+/i, '')
+    .replace(/^(i\s+want\s+to\s+learn|i\s+want\s+to\s+study|i\s+want\s+to\s+understand)\s+/i, '')
+    .replace(/^(learn|study|understand|get started with|read about)\s+/i, '')
+    .replace(/^(about|on)\s+/i, '')
+    .replace(/^(some|more)\s+/i, '')
+    .trim();
+}
+
+function buildAgentSearchProfile(message) {
+  const normalizedMessage = String(message || '').trim();
+  const cleanedQuery = normalizeAgentSearchQuery(normalizedMessage);
+  const topic = cleanedQuery || normalizedMessage;
+  const rawTokens = tokenizeText(topic);
+  const phraseTerms = [];
+  const suggestedSections = new Set();
+  let canonicalTopic = topic;
+
+  for (const hint of AGENT_TOPIC_HINTS) {
+    if (hint.patterns.some((pattern) => pattern.test(normalizedMessage) || pattern.test(topic))) {
+      canonicalTopic = hint.canonical;
+      hint.terms.forEach((term) => phraseTerms.push(term));
+      hint.sections.forEach((section) => suggestedSections.add(section));
+    }
+  }
+
+  const tokens = new Set(rawTokens);
+  for (const term of phraseTerms) {
+    tokenizeText(term).forEach((token) => tokens.add(token));
+  }
+
+  const searchPhrases = [...new Set([
+    topic,
+    canonicalTopic,
+    ...phraseTerms
+  ].map((value) => String(value || '').trim()).filter(Boolean))];
+
+  return {
+    topic: topic || 'recent forum topics',
+    canonicalTopic,
+    tokens: [...tokens],
+    searchPhrases,
+    suggestedSections: [...suggestedSections]
+  };
+}
+
+function taxonomyEntryMatchesQuery(entry, queryText, queryTokens) {
+  const normalizedEntry = normalizeTaxonomyTerm(entry);
+  if (!normalizedEntry) {
+    return false;
+  }
+
+  if (queryText === normalizedEntry) {
+    return true;
+  }
+
+  if (queryText.length >= 4 && (queryText.includes(normalizedEntry) || normalizedEntry.includes(queryText))) {
+    return true;
+  }
+
+  const entryTokens = tokenizeText(normalizedEntry);
+  if (!entryTokens.length || !queryTokens.length) {
+    return false;
+  }
+
+  return entryTokens.every((token) => queryTokens.includes(token));
+}
+
+async function getAgentSearchTaxonomy(client) {
+  if (agentTaxonomyCache.loadedAt && Date.now() - agentTaxonomyCache.loadedAt < AGENT_TAXONOMY_CACHE_TTL_MS) {
+    return agentTaxonomyCache;
+  }
+
+  const [tagsResult, sectionsResult] = await Promise.all([
+    client.query(`SELECT name FROM tag ORDER BY name ASC LIMIT 500`),
+    client.query(
+      `SELECT DISTINCT section
+       FROM post
+       WHERE is_published = TRUE
+         AND deleted_by_admin_at IS NULL
+       ORDER BY section ASC`
+    )
+  ]);
+
+  agentTaxonomyCache.loadedAt = Date.now();
+  agentTaxonomyCache.tags = tagsResult.rows.map((row) => String(row.name || '').trim()).filter(Boolean);
+  agentTaxonomyCache.sections = sectionsResult.rows.map((row) => String(row.section || '').trim()).filter(Boolean);
+  return agentTaxonomyCache;
+}
+
+async function enrichAgentSearchProfile(client, searchProfile) {
+  const taxonomy = await getAgentSearchTaxonomy(client);
+  const queryText = normalizeTaxonomyTerm(searchProfile.topic);
+  const queryTokens = tokenizeText(queryText);
+  const matchedTags = taxonomy.tags.filter((tag) => taxonomyEntryMatchesQuery(tag, queryText, queryTokens));
+  const matchedSections = taxonomy.sections.filter((section) => taxonomyEntryMatchesQuery(section, queryText, queryTokens));
+
+  if (!matchedTags.length && !matchedSections.length) {
+    return searchProfile;
+  }
+
+  const tokens = new Set(searchProfile.tokens);
+  const searchPhrases = new Set(searchProfile.searchPhrases);
+  const suggestedSections = new Set(searchProfile.suggestedSections);
+
+  for (const tag of matchedTags) {
+    searchPhrases.add(tag);
+    tokenizeText(tag).forEach((token) => tokens.add(token));
+  }
+
+  for (const section of matchedSections) {
+    suggestedSections.add(section);
+    searchPhrases.add(section);
+    searchPhrases.add(normalizeTaxonomyTerm(section));
+    tokenizeText(section).forEach((token) => tokens.add(token));
+  }
+
+  return {
+    ...searchProfile,
+    tokens: [...tokens],
+    searchPhrases: [...searchPhrases],
+    suggestedSections: [...suggestedSections]
+  };
+}
+
+function scoreAgentSearchPost(post, searchProfile) {
+  const titleText = String(post.title || '').toLowerCase();
+  const bodyText = stripMarkdownToText(post.content).toLowerCase();
+  const tags = (post.tags || []).map((tag) => String(tag || '').toLowerCase());
+  const titleTokens = new Set(tokenizeText(post.title));
+  const contentTokens = new Set(tokenizeText(post.content));
+  let score = 0;
+
+  for (const phrase of searchProfile.searchPhrases) {
+    if (!phrase) {
+      continue;
+    }
+    const phraseText = phrase.toLowerCase();
+    if (titleText.includes(phraseText)) {
+      score += 8;
+    }
+    if (bodyText.includes(phraseText)) {
+      score += 3;
+    }
+    if (tags.some((tag) => tag.includes(phraseText))) {
+      score += 6;
+    }
+  }
+
+  for (const token of searchProfile.tokens) {
+    if (titleTokens.has(token)) {
+      score += 4;
+    }
+    if (contentTokens.has(token)) {
+      score += 1;
+    }
+    if (tags.includes(token)) {
+      score += 5;
+    }
+  }
+
+  if (searchProfile.suggestedSections.includes(post.section)) {
+    score += 5;
+  }
+
+  return score;
+}
+
 async function searchPublicPostsForAgent(message, limit = 5) {
   const client = await pool.connect();
   try {
-    const rawQuery = String(message || '')
-      .replace(/^(search|find|look for|posts about|related posts?|query)\s*/i, '')
-      .trim();
-    const query = rawQuery || String(message || '').trim();
-    const like = `%${query}%`;
+    const searchProfile = await enrichAgentSearchProfile(client, buildAgentSearchProfile(message));
     const result = await client.query(
       `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
@@ -929,24 +1863,191 @@ async function searchPublicPostsForAgent(message, limit = 5) {
        LEFT JOIN tag t ON t.id = pt.tag_id
        WHERE p.is_published = TRUE
          AND p.deleted_by_admin_at IS NULL
-         AND (
-           p.title ILIKE $1
-           OR p.content_markdown ILIKE $1
-           OR p.section ILIKE $1
-           OR EXISTS (
-             SELECT 1
-             FROM post_tag pt2
-             JOIN tag t2 ON t2.id = pt2.tag_id
-             WHERE pt2.post_id = p.id
-               AND t2.name ILIKE $1
-           )
-         )
+       GROUP BY p.id, u.username, u.email
+       ORDER BY p.created_at DESC
+       LIMIT 150`
+    );
+    return result.rows
+      .map(mapPostRow)
+      .map((post) => ({ post, score: scoreAgentSearchPost(post, searchProfile) }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+        return right.post.createdAt - left.post.createdAt;
+      })
+      .slice(0, limit)
+      .map((entry) => entry.post);
+  } finally {
+    client.release();
+  }
+}
+
+async function getLatestAnnouncementPosts(limit = 3) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
+              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
+              u.username AS author_name, u.email AS author_email,
+              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+       FROM post p
+       JOIN app_user u ON u.id = p.author_id
+       LEFT JOIN post_tag pt ON pt.post_id = p.id
+       LEFT JOIN tag t ON t.id = pt.tag_id
+       WHERE p.is_published = TRUE
+         AND p.deleted_by_admin_at IS NULL
+         AND p.section = ANY($1)
        GROUP BY p.id, u.username, u.email
        ORDER BY p.created_at DESC
        LIMIT $2`,
-      [like, limit]
+      [['announcements', 'system-update'], limit]
     );
     return result.rows.map(mapPostRow);
+  } finally {
+    client.release();
+  }
+}
+
+async function getLatestPublicPosts(limit = 5) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
+              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
+              u.username AS author_name, u.email AS author_email,
+              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+       FROM post p
+       JOIN app_user u ON u.id = p.author_id
+       LEFT JOIN post_tag pt ON pt.post_id = p.id
+       LEFT JOIN tag t ON t.id = pt.tag_id
+       WHERE p.is_published = TRUE
+         AND p.deleted_by_admin_at IS NULL
+         AND p.section <> ALL($1)
+       GROUP BY p.id, u.username, u.email
+       ORDER BY p.created_at DESC
+       LIMIT $2`,
+      [['announcements', 'system-update'], limit]
+    );
+    return result.rows.map(mapPostRow);
+  } finally {
+    client.release();
+  }
+}
+
+function buildRewriteEditorPath(postId) {
+  const params = new URLSearchParams({
+    postId,
+    mode: 'ai-rewrite'
+  });
+  return `/my-posts?${params.toString()}`;
+}
+
+function scoreUserPostForRewrite(post, query) {
+  const tokens = tokenizeText(query);
+  if (!tokens.length) {
+    return 0;
+  }
+
+  const titleTokens = new Set(tokenizeText(post.title));
+  const contentTokens = new Set(tokenizeText(post.content));
+  let score = 0;
+  for (const token of tokens) {
+    if (titleTokens.has(token)) {
+      score += 5;
+    }
+    if (contentTokens.has(token)) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
+async function buildRewriteWorkspaceResponse(query, user) {
+  if (!user?.sub) {
+    return {
+      intent: 'rewrite',
+      reply: 'Login first, then open My Posts to use AI Rewrite on one of your posts.',
+      actions: [
+        {
+          label: 'Login',
+          to: '/login'
+        }
+      ],
+      quickActions: ['draft-post']
+    };
+  }
+
+  const client = await pool.connect();
+  try {
+    const { posts } = await refreshUserWritingProfile(client, user.sub);
+    const activePosts = posts.filter((post) => !post.moderation?.isDeleted);
+    if (!activePosts.length) {
+      return {
+        intent: 'rewrite',
+        reply: 'You do not have any active posts to rewrite yet. Publish a post first, then AI Rewrite will be available in My Posts.',
+        actions: [
+          {
+            label: 'Go to Forum',
+            to: '/forum'
+          }
+        ],
+        quickActions: ['draft-post']
+      };
+    }
+
+    const ranked = activePosts
+      .map((post) => ({ post, score: scoreUserPostForRewrite(post, query) }))
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+        return right.post.createdAt - left.post.createdAt;
+      });
+
+    const bestMatch = ranked[0];
+    if (bestMatch && bestMatch.score >= 5) {
+      return {
+        intent: 'rewrite',
+        reply: `Open AI Rewrite for "${bestMatch.post.title}" in My Posts. I linked it below so you can jump straight into the rewrite panel.`,
+        actions: [
+          {
+            label: 'Open AI Rewrite',
+            to: buildRewriteEditorPath(bestMatch.post.id)
+          }
+        ],
+        workspacePosts: [
+          {
+            id: bestMatch.post.id,
+            title: bestMatch.post.title,
+            section: bestMatch.post.section,
+            to: buildRewriteEditorPath(bestMatch.post.id)
+          }
+        ],
+        quickActions: ['draft-post', 'search-posts']
+      };
+    }
+
+    const options = ranked.slice(0, 4).map(({ post }) => ({
+      id: post.id,
+      title: post.title,
+      section: post.section,
+      to: buildRewriteEditorPath(post.id)
+    }));
+
+    return {
+      intent: 'rewrite',
+      reply: 'Choose one of your posts below to open AI Rewrite in My Posts.',
+      workspacePosts: options,
+      actions: [
+        {
+          label: 'Open My Posts',
+          to: '/my-posts'
+        }
+      ],
+      quickActions: ['draft-post', 'search-posts']
+    };
   } finally {
     client.release();
   }
@@ -961,18 +2062,86 @@ async function getTrendingAgentSnapshot() {
   };
 }
 
-async function runAgentCommand(message, user) {
+async function runRuleBasedAgentCommand(message, user) {
   const intent = detectAgentIntent(message);
 
-  if (intent === 'search') {
+  if (intent === 'navigate') {
+    const text = String(message || '').toLowerCase();
+    let destination = 'forum';
+    if (/(^home$|home page|homepage|landing page|go home|bring me home)/.test(text)) {
+      destination = 'home';
+    } else if (/(about)/.test(text)) {
+      destination = 'about';
+    } else if (/(change my password|password)/.test(text)) {
+      destination = 'settings-password';
+    } else if (/(settings|profile)/.test(text)) {
+      destination = 'settings-profile';
+    } else if (/(delete account|danger)/.test(text)) {
+      destination = 'settings-danger';
+    } else if (/(my posts|my post)/.test(text)) {
+      destination = 'my-posts';
+    } else if (/(followers)/.test(text)) {
+      destination = 'followers';
+    } else if (/(following)/.test(text)) {
+      destination = 'following';
+    } else if (/(analytics)/.test(text)) {
+      destination = 'analytics';
+    } else if (/(moderation)/.test(text)) {
+      destination = 'moderation';
+    } else if (/(login|sign in)/.test(text)) {
+      destination = 'login';
+    } else if (/(create post|write post|new post|composer)/.test(text)) {
+      destination = 'forum-create-post';
+    }
+    return buildNavigationResponse(destination, user);
+  }
+
+  if (intent === 'latest-announcement') {
+    const posts = await getLatestAnnouncementPosts(3);
+    const latestPost = posts[0] || null;
+    return {
+      intent,
+      reply: latestPost
+        ? `The most recent announcement is "${latestPost.title}", published on ${formatAgentDate(latestPost.createdAt)}. I also included the next recent updates below.`
+        : 'I could not find any announcement posts yet.',
+      posts,
+      quickActions: ['search-posts', 'show-trending']
+    };
+  }
+
+  if (intent === 'latest-posts') {
+    const posts = await getLatestPublicPosts(5);
+    const latestPost = posts[0] || null;
+    return {
+      intent,
+      reply: latestPost
+        ? `The most recent forum post is "${latestPost.title}", published on ${formatAgentDate(latestPost.createdAt)}. I also included a few more recent posts below.`
+        : 'I could not find any recent forum posts yet.',
+      posts,
+      quickActions: ['search-posts', 'show-trending']
+    };
+  }
+
+  if (intent === 'rewrite') {
+    return buildRewriteWorkspaceResponse(message, user);
+  }
+
+  if (intent === 'search' || intent === 'learn') {
+    const searchProfile = buildAgentSearchProfile(message);
     const posts = await searchPublicPostsForAgent(message, 6);
     return {
       intent,
       reply: posts.length
-        ? `I found ${posts.length} related posts.`
-        : 'I could not find matching posts. Try a tag, section, or a more specific phrase.',
+        ? intent === 'learn'
+          ? `If you want to learn ${searchProfile.canonicalTopic}, these posts are a strong place to start.`
+          : `I found ${posts.length} related posts about ${searchProfile.canonicalTopic}.`
+        : intent === 'learn'
+          ? `I could not find good starter posts for ${searchProfile.canonicalTopic}. Try a more specific topic like "MLOps", "feature engineering", or "supervised learning".`
+          : 'I could not find matching posts. Try a tag, section, or a more specific phrase.',
       posts,
-      quickActions: ['show-trending', 'draft-post']
+      quickActions: intent === 'learn'
+        ? ['search-posts', 'draft-post']
+        : ['show-trending', 'draft-post']
     };
   }
 
@@ -988,22 +2157,201 @@ async function runAgentCommand(message, user) {
   }
 
   if (intent === 'draft' || intent === 'publish') {
-    const draft = buildDraftFromMessage(message);
+    const { draft, styleProfile, referencePosts, personalized, generation } = user
+      ? await buildDraftWithUserStyle(message, user)
+      : {
+          draft: buildDraftFromMessage(message),
+          styleProfile: null,
+          referencePosts: [],
+          personalized: false,
+          generation: {
+            mode: 'template',
+            provider: 'local',
+            model: null,
+            fallback: false
+          }
+        };
     return {
       intent,
-      reply: intent === 'publish'
-        ? 'I prepared a publish-ready draft. Review it before posting.'
-        : 'I drafted a post outline you can review, edit, or publish.',
+      reply: personalized
+        ? intent === 'publish'
+          ? `I prepared a publish-ready draft using your last ${styleProfile.sampleSize} posts as a style reference${generation?.provider === 'openai' ? ` and ${generation.model}` : ''}.`
+          : `I drafted this in your usual style based on your last ${styleProfile.sampleSize} posts${generation?.provider === 'openai' ? ` with ${generation.model}` : ''}.`
+        : intent === 'publish'
+          ? 'I prepared a publish-ready draft. Review it before posting.'
+          : user
+            ? 'I drafted a post outline. Publish a few more posts and I will match your forum style more closely.'
+            : 'I drafted a post outline you can review, edit, or publish.',
       draft,
+      styleProfile,
+      referencePosts,
+      generation,
       quickActions: user ? ['publish-draft', 'search-posts'] : ['login-to-publish', 'search-posts']
     };
   }
 
   return {
     intent: 'help',
-    reply: 'I can search related posts, show active authors, draft a new post, or help you publish a draft. Try: "find posts about mongodb", "show top authors", or "draft a post about password reset".',
+    reply: user
+      ? 'I can search related posts, show active authors, and draft a new post in your usual forum style. Try: "draft a post in my style about password reset".'
+      : 'I can search related posts, show active authors, draft a new post, or help you publish a draft. Try: "find posts about mongodb", "show top authors", or "draft a post about password reset".',
     quickActions: ['search-posts', 'show-trending', 'draft-post']
   };
+}
+
+async function executeAgentRoute(route, originalMessage, user) {
+  const safeRoute = route || {};
+
+  if (safeRoute.tool === 'latest_posts') {
+    const posts = await getLatestPublicPosts(Math.min(Math.max(safeRoute.limit || 5, 1), 5));
+    const latestPost = posts[0] || null;
+    return {
+      intent: 'latest-posts',
+      reply: latestPost
+        ? `The most recent forum post is "${latestPost.title}", published on ${formatAgentDate(latestPost.createdAt)}.`
+        : 'I could not find any recent forum posts yet.',
+      posts,
+      quickActions: ['search-posts', 'show-trending'],
+      routing: {
+        provider: safeRoute.provider || 'openai',
+        model: safeRoute.model || openAiModel,
+        rationale: safeRoute.rationale || ''
+      }
+    };
+  }
+
+  if (safeRoute.tool === 'latest_announcements') {
+    const posts = await getLatestAnnouncementPosts(Math.min(Math.max(safeRoute.limit || 3, 1), 5));
+    const latestPost = posts[0] || null;
+    return {
+      intent: 'latest-announcement',
+      reply: latestPost
+        ? `The most recent announcement is "${latestPost.title}", published on ${formatAgentDate(latestPost.createdAt)}.`
+        : 'I could not find any announcement posts yet.',
+      posts,
+      quickActions: ['search-posts', 'show-trending'],
+      routing: {
+        provider: safeRoute.provider || 'openai',
+        model: safeRoute.model || openAiModel,
+        rationale: safeRoute.rationale || ''
+      }
+    };
+  }
+
+  if (safeRoute.tool === 'trending_authors') {
+    const snapshot = await getTrendingAgentSnapshot();
+    return {
+      intent: 'trending',
+      reply: 'Here are the most active authors and a few recent posts worth checking.',
+      posts: snapshot.posts,
+      authors: snapshot.authors,
+      quickActions: ['search-posts', 'draft-post'],
+      routing: {
+        provider: safeRoute.provider || 'openai',
+        model: safeRoute.model || openAiModel,
+        rationale: safeRoute.rationale || ''
+      }
+    };
+  }
+
+  if (safeRoute.tool === 'draft_post') {
+    const draftRequest = safeRoute.query || originalMessage;
+    const { draft, styleProfile, referencePosts, personalized, generation } = user
+      ? await buildDraftWithUserStyle(draftRequest, user)
+      : {
+          draft: buildDraftFromMessage(draftRequest),
+          styleProfile: null,
+          referencePosts: [],
+          personalized: false,
+          generation: {
+            mode: 'template',
+            provider: 'local',
+            model: null,
+            fallback: false
+          }
+        };
+    return {
+      intent: detectAgentIntent(originalMessage) === 'publish' ? 'publish' : 'draft',
+      reply: personalized
+        ? `I drafted this in your usual style based on your recent posts${generation?.provider === 'openai' ? ` with ${generation.model}` : ''}.`
+        : user
+          ? 'I drafted a post outline. Publish a few more posts and I will match your forum style more closely.'
+          : 'I drafted a post outline you can review, edit, or publish.',
+      draft,
+      styleProfile,
+      referencePosts,
+      generation,
+      quickActions: user ? ['publish-draft', 'search-posts'] : ['login-to-publish', 'search-posts'],
+      routing: {
+        provider: safeRoute.provider || 'openai',
+        model: safeRoute.model || openAiModel,
+        rationale: safeRoute.rationale || ''
+      }
+    };
+  }
+
+  if (safeRoute.tool === 'rewrite_existing_post') {
+    const response = await buildRewriteWorkspaceResponse(safeRoute.query || originalMessage, user);
+    return {
+      ...response,
+      routing: {
+        provider: safeRoute.provider || 'openai',
+        model: safeRoute.model || openAiModel,
+        rationale: safeRoute.rationale || ''
+      }
+    };
+  }
+
+  if (safeRoute.tool === 'navigate_page') {
+    const response = buildNavigationResponse(safeRoute.query || 'forum', user);
+    return {
+      ...response,
+      routing: {
+        provider: safeRoute.provider || 'openai',
+        model: safeRoute.model || openAiModel,
+        rationale: safeRoute.rationale || ''
+      }
+    };
+  }
+
+  if (safeRoute.tool === 'search_posts') {
+    const query = safeRoute.query || originalMessage;
+    const searchProfile = buildAgentSearchProfile(query);
+    const isLearning = /(learn|study|understand|get started|what should i read|want to learn|推荐|学习)/i.test(originalMessage);
+    const posts = await searchPublicPostsForAgent(query, Math.min(Math.max(safeRoute.limit || 6, 1), 8));
+    return {
+      intent: isLearning ? 'learn' : 'search',
+      reply: posts.length
+        ? isLearning
+          ? `If you want to learn ${searchProfile.canonicalTopic}, these posts are a strong place to start.`
+          : `I found ${posts.length} related posts about ${searchProfile.canonicalTopic}.`
+        : isLearning
+          ? `I could not find good starter posts for ${searchProfile.canonicalTopic}. Try a more specific topic like "MLOps", "feature engineering", or "supervised learning".`
+          : 'I could not find matching posts. Try a tag, section, or a more specific phrase.',
+      posts,
+      quickActions: isLearning ? ['search-posts', 'draft-post'] : ['show-trending', 'draft-post'],
+      routing: {
+        provider: safeRoute.provider || 'openai',
+        model: safeRoute.model || openAiModel,
+        rationale: safeRoute.rationale || ''
+      }
+    };
+  }
+
+  return runRuleBasedAgentCommand(originalMessage, user);
+}
+
+async function runAgentCommand(message, user) {
+  if (openAiAgentRouter.isEnabled()) {
+    try {
+      const route = await openAiAgentRouter.routeMessage({ message, user });
+      return await executeAgentRoute(route, message, user);
+    } catch (error) {
+      console.error('OpenAI agent routing failed. Falling back to rule-based routing.', error);
+    }
+  }
+
+  return runRuleBasedAgentCommand(message, user);
 }
 
 function slugify(title) {
@@ -1811,6 +3159,24 @@ app.post('/api/agent/chat', optionalAuth, agentRateLimit, async (req, res) => {
   }
 
   try {
+    if (req.user?.sub && !req.user?.isAdmin) {
+      const client = await pool.connect();
+      try {
+        const usage = await consumeDailyAiUsage(client, req.user);
+        if (!usage.allowed) {
+          await recordActivity('ai.daily_limit_reached', {
+            userId: req.user.sub,
+            limit: usage.limit
+          });
+          return res.status(429).json({
+            message: `Daily AI limit reached. Non-admin accounts can use AI ${usage.limit} times per day.`
+          });
+        }
+      } finally {
+        client.release();
+      }
+    }
+
     const result = await runAgentCommand(message, req.user);
     await recordActivity('agent.chat', {
       userId: req.user?.sub || null,
@@ -1855,6 +3221,7 @@ app.post('/api/admin/posts/:postId/remove', authRequired, adminRequired, async (
        WHERE id = $3`,
       [req.user.sub, reason, req.params.postId]
     );
+    await refreshUserWritingProfile(client, existing.rows[0].author_id);
     await recordActivity('post.moderated_removed', {
       userId: existing.rows[0].author_id,
       postId: req.params.postId,
@@ -1895,6 +3262,7 @@ app.post('/api/admin/posts/:postId/restore', authRequired, adminRequired, async 
        WHERE id = $1`,
       [req.params.postId]
     );
+    await refreshUserWritingProfile(client, existing.rows[0].author_id);
     await recordActivity('post.moderated_restored', {
       userId: existing.rows[0].author_id,
       postId: req.params.postId,
@@ -1998,6 +3366,97 @@ app.post('/api/posts/:postId/comments', authRequired, async (req, res) => {
   }
 });
 
+app.post('/api/posts/:postId/ai-rewrite', authRequired, async (req, res) => {
+  if (!openAiPostRewriter.isEnabled()) {
+    return res.status(503).json({ message: 'AI Rewrite is not configured for this server.' });
+  }
+
+  const instruction = String(req.body?.instruction || '').trim();
+  if (!instruction) {
+    return res.status(400).json({ message: 'A rewrite instruction is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const usage = await consumeDailyAiUsage(client, req.user);
+    if (!usage.allowed) {
+      await recordActivity('ai.daily_limit_reached', {
+        userId: req.user.sub,
+        limit: usage.limit
+      });
+      return res.status(429).json({
+        message: `Daily AI limit reached. Non-admin accounts can use AI ${usage.limit} times per day.`
+      });
+    }
+
+    const existing = await client.query(
+      `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
+              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
+              u.username AS author_name, u.email AS author_email,
+              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+       FROM post p
+       JOIN app_user u ON u.id = p.author_id
+       LEFT JOIN post_tag pt ON pt.post_id = p.id
+       LEFT JOIN tag t ON t.id = pt.tag_id
+       WHERE p.id = $1
+       GROUP BY p.id, u.username, u.email`,
+      [req.params.postId]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    const post = mapPostRow(existing.rows[0]);
+    if (post.authorId !== req.user.sub) {
+      return res.status(403).json({ message: 'You can only rewrite your own posts.' });
+    }
+    if (post.moderation?.isDeleted) {
+      return res.status(403).json({ message: 'This post is under moderation and cannot be rewritten.' });
+    }
+
+    const draftInput = req.body?.draft || {};
+    const rewriteSource = {
+      title: String(draftInput.title || post.title).trim(),
+      content: String(draftInput.content || post.content).trim(),
+      section: normalizeSection(draftInput.section || post.section) || post.section,
+      tags: normalizeTags(Array.isArray(draftInput.tags) ? draftInput.tags : draftInput.tags || post.tags || [])
+    };
+
+    const { styleProfile } = await refreshUserWritingProfile(client, req.user.sub);
+    const rewritten = await openAiPostRewriter.rewritePost({
+      post: rewriteSource,
+      instruction,
+      styleProfile,
+      currentUserName: req.user.name || ''
+    });
+
+    await recordActivity('post.ai_rewrite_requested', {
+      userId: req.user.sub,
+      postId: req.params.postId,
+      instruction,
+      provider: rewritten.provider,
+      model: rewritten.model
+    });
+
+    return res.json({
+      draft: rewritten.draft,
+      generation: {
+        mode: 'llm',
+        provider: rewritten.provider,
+        model: rewritten.model,
+        fallback: false,
+        rationale: rewritten.summary
+      }
+    });
+  } catch (error) {
+    console.error('Failed to rewrite post with AI.', error);
+    return res.status(500).json({ message: 'Failed to rewrite post with AI.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/api/posts', authRequired, async (req, res) => {
   const { title, content, section, tags } = req.body || {};
   const cleanTitle = String(title || '').trim();
@@ -2030,6 +3489,7 @@ app.post('/api/posts', authRequired, async (req, res) => {
     );
     await attachTags(client, created.rows[0].id, cleanTags);
     await client.query('COMMIT');
+    await refreshUserWritingProfile(client, req.user.sub);
     await recordActivity('post.created', {
       userId: req.user.sub,
       postId: created.rows[0].id,
@@ -2107,6 +3567,7 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
     );
     await attachTags(client, req.params.postId, cleanTags);
     await client.query('COMMIT');
+    await refreshUserWritingProfile(client, req.user.sub);
     await recordActivity('post.updated', {
       userId: req.user.sub,
       postId: req.params.postId,
@@ -2152,6 +3613,7 @@ app.delete('/api/posts/:postId', authRequired, async (req, res) => {
       return res.status(403).json({ message: 'This post is under moderation and cannot be deleted by the author.' });
     }
     await client.query(`DELETE FROM post WHERE id = $1`, [req.params.postId]);
+    await refreshUserWritingProfile(client, req.user.sub);
     await recordActivity('post.deleted', {
       userId: req.user.sub,
       postId: req.params.postId

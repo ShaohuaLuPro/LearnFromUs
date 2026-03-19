@@ -129,6 +129,7 @@ export default function AppRoutes() {
               <MyPosts
                 currentUser={auth.currentUser}
                 onUpdatePost={posts.updatePost}
+                onAiRewritePost={posts.aiRewritePost}
                 onDeletePost={posts.deletePost}
                 onAppealPost={posts.appealPost}
                 onGetMyPosts={posts.getMyPosts}

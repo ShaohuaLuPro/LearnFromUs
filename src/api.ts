@@ -1,4 +1,17 @@
-import type { AnalyticsReport, Comment, NetworkUser, Post, PostListFilters, PostListResponse, User } from './types';
+import type {
+  AnalyticsReport,
+  AgentAction,
+  AgentNavigation,
+  Comment,
+  DraftGeneration,
+  NetworkUser,
+  Post,
+  PostListFilters,
+  PostListResponse,
+  User,
+  WorkspacePostLink,
+  WritingStyleProfile
+} from './types';
 import { TOKEN_KEY } from './lib/authStorage';
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
@@ -28,7 +41,12 @@ type AgentResponse = {
   posts?: Post[];
   authors?: Array<Record<string, unknown>>;
   draft?: PostPayload;
-};
+  styleProfile?: WritingStyleProfile | null;
+  referencePosts?: Post[];
+  generation?: DraftGeneration;
+  actions?: AgentAction[];
+  workspacePosts?: WorkspacePostLink[];
+} & AgentNavigation;
 
 function buildQuery(params: Record<string, string | number | string[] | undefined>) {
   const search = new URLSearchParams();
@@ -49,9 +67,10 @@ function buildQuery(params: Record<string, string | number | string[] | undefine
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const { headers: optionHeaders = {}, ...restOptions } = options;
+  const { headers: optionHeaders = {}, signal, ...restOptions } = options;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...restOptions,
+    signal,
     headers: {
       'Content-Type': 'application/json',
       ...optionHeaders
@@ -112,9 +131,10 @@ export async function apiGetComments(postId: string) {
   return request<{ comments: Comment[] }>(`/api/posts/${postId}/comments`);
 }
 
-export async function apiAgentChat(message: string, token?: string) {
+export async function apiAgentChat(message: string, token?: string, signal?: AbortSignal) {
   return request<AgentResponse>('/api/agent/chat', {
     method: 'POST',
+    signal,
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: JSON.stringify({ message })
   });
@@ -201,6 +221,23 @@ export async function apiCreatePost(input: PostPayload, token: string) {
 export async function apiUpdatePost(postId: string, input: PostPayload, token: string) {
   return request<{ post: Post }>(`/api/posts/${postId}`, {
     method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiAiRewritePost(
+  postId: string,
+  input: {
+    instruction: string;
+    draft?: PostPayload;
+  },
+  token: string,
+  signal?: AbortSignal
+) {
+  return request<{ draft: PostPayload; generation: DraftGeneration }>(`/api/posts/${postId}/ai-rewrite`, {
+    method: 'POST',
+    signal,
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(input)
   });

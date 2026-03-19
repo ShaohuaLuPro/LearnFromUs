@@ -9,14 +9,18 @@ function parseSections(input) {
 }
 
 function parsePostListFilters(input = {}) {
-  const page = Math.max(1, Math.trunc(Number(input.page) || 1));
-  const pageSize = Math.min(24, Math.max(1, Math.trunc(Number(input.pageSize) || 12)));
+  const rawPageSize = String(input.pageSize || '').trim().toLowerCase();
+  const isAll = rawPageSize === 'all';
+  const page = isAll ? 1 : Math.max(1, Math.trunc(Number(input.page) || 1));
+  const pageSize = isAll
+    ? 'all'
+    : Math.min(20, Math.max(1, Math.trunc(Number(input.pageSize) || 10)));
   const query = String(input.q || '').trim();
   const sections = parseSections(input.section);
   return {
     page,
     pageSize,
-    offset: (page - 1) * pageSize,
+    offset: pageSize === 'all' ? 0 : (page - 1) * pageSize,
     query,
     sections
   };
@@ -71,9 +75,15 @@ async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
       params
     );
 
-    const queryParams = [...params, filters.pageSize, filters.offset];
-    const limitIndex = queryParams.length - 1;
-    const offsetIndex = queryParams.length;
+    const queryParams = [...params];
+    let limitOffsetSql = '';
+    if (filters.pageSize !== 'all') {
+      queryParams.push(filters.pageSize, filters.offset);
+      const limitIndex = queryParams.length - 1;
+      const offsetIndex = queryParams.length;
+      limitOffsetSql = `\n       LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+    }
+
     const result = await client.query(
       `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
@@ -85,17 +95,18 @@ async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
        LEFT JOIN tag t ON t.id = pt.tag_id
        WHERE ${whereSql}
        GROUP BY p.id, u.username, u.email
-       ORDER BY p.created_at DESC
-       LIMIT $${limitIndex} OFFSET $${offsetIndex}`,
+       ORDER BY p.created_at DESC${limitOffsetSql}`,
       queryParams
     );
 
     const total = countResult.rows[0]?.count || 0;
-    const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
+    const totalPages = filters.pageSize === 'all'
+      ? 1
+      : Math.max(1, Math.ceil(total / filters.pageSize));
     return {
       posts: result.rows.map(mapPostRow),
       pagination: {
-        page: filters.page,
+        page: filters.pageSize === 'all' ? 1 : filters.page,
         pageSize: filters.pageSize,
         total,
         totalPages

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
+import MarkdownBlock from '../components/MarkdownBlock';
 import Select from '../components/Select';
 import {
   defaultSection,
@@ -15,6 +16,29 @@ const codeLanguageOptions = codeLanguages.map((language) => ({
   value: language,
   label: language
 }));
+
+const AI_REWRITE_PRESETS = [
+  {
+    id: 'polish',
+    label: 'Polish',
+    instruction: 'Polish this post for clarity and flow while preserving my original meaning and voice.'
+  },
+  {
+    id: 'shorter',
+    label: 'Shorter',
+    instruction: 'Make this post shorter and tighter while keeping the key ideas and examples.'
+  },
+  {
+    id: 'expand',
+    label: 'More Detailed',
+    instruction: 'Expand this post with more explanation, smoother transitions, and one or two concrete examples.'
+  },
+  {
+    id: 'formal',
+    label: 'More Formal',
+    instruction: 'Rewrite this post in a more formal, professional tone without making it stiff.'
+  }
+];
 
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
@@ -32,13 +56,22 @@ function getAppealDeadline(moderation) {
   return moderation.deletedAt + 15 * 24 * 60 * 60 * 1000;
 }
 
+function hasExpandablePreview(content) {
+  const text = String(content || '').trim();
+  const nonEmptyLines = text.split(/\r?\n/).filter((line) => line.trim()).length;
+  return text.length > 260 || nonEmptyLines > 4;
+}
+
 export default function MyPosts({
   currentUser,
   onUpdatePost,
+  onAiRewritePost,
   onDeletePost,
   onAppealPost,
   onGetMyPosts
 }) {
+  const location = useLocation();
+  const [rewriteAbortController, setRewriteAbortController] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
   const [message, setMessage] = useState('');
@@ -46,6 +79,12 @@ export default function MyPosts({
   const [editorLanguage, setEditorLanguage] = useState('javascript');
   const [myPosts, setMyPosts] = useState([]);
   const [appealNotes, setAppealNotes] = useState({});
+  const [aiRewriteOpen, setAiRewriteOpen] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState('');
+  const [aiRewriteMessage, setAiRewriteMessage] = useState('');
+  const [aiRewriteLoading, setAiRewriteLoading] = useState(false);
+  const [expandedPosts, setExpandedPosts] = useState({});
+  const [showPreview, setShowPreview] = useState(false);
 
   const loadPosts = async () => {
     const result = await onGetMyPosts();
@@ -76,7 +115,9 @@ export default function MyPosts({
     [myPosts, currentUser]
   );
 
-  const startEdit = (post) => {
+  const startEdit = (post, options = {}) => {
+    rewriteAbortController?.abort();
+    setRewriteAbortController(null);
     setEditingId(post.id);
     setEditForm({
       title: post.title,
@@ -84,9 +125,34 @@ export default function MyPosts({
       section: post.section || defaultSection.value,
       tags: (post.tags || []).join(', ')
     });
+    setAiRewriteOpen(Boolean(options.openAiPanel));
+    setAiInstruction('');
+    setAiRewriteMessage('');
+    setAiRewriteLoading(false);
+    setShowPreview(false);
     setMessage('');
     setError('');
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const targetPostId = params.get('postId');
+    const mode = params.get('mode');
+    if (!targetPostId) {
+      return;
+    }
+    const targetPost = visiblePosts.find((post) => post.id === targetPostId);
+    if (!targetPost) {
+      return;
+    }
+    if (editingId !== targetPostId) {
+      startEdit(targetPost, { openAiPanel: mode === 'ai-rewrite' });
+      return;
+    }
+    if (mode === 'ai-rewrite' && !aiRewriteOpen) {
+      setAiRewriteOpen(true);
+    }
+  }, [location.search, visiblePosts, editingId, aiRewriteOpen]);
 
   const submitEdit = async (event) => {
     event.preventDefault();
@@ -98,6 +164,9 @@ export default function MyPosts({
       return;
     }
     setEditingId(null);
+    setShowPreview(false);
+    setAiRewriteOpen(false);
+    setAiRewriteMessage('');
     setMessage('Post updated.');
     await loadPosts();
   };
@@ -112,6 +181,9 @@ export default function MyPosts({
     }
     if (editingId === postId) {
       setEditingId(null);
+      setShowPreview(false);
+      setAiRewriteOpen(false);
+      setAiRewriteMessage('');
     }
     setMessage('Post deleted.');
     await loadPosts();
@@ -136,6 +208,74 @@ export default function MyPosts({
       content: `${String(prev.content || '').trimEnd()}${snippet}`
     }));
   };
+
+  const runAiRewrite = async (instructionOverride) => {
+    const instruction = String(instructionOverride || aiInstruction).trim();
+    if (!editingId) {
+      return;
+    }
+    if (!instruction) {
+      setError('Add a rewrite instruction first.');
+      return;
+    }
+
+    setError('');
+    setAiRewriteMessage('');
+    setAiRewriteLoading(true);
+    const controller = new AbortController();
+    setRewriteAbortController(controller);
+    const result = await onAiRewritePost(editingId, {
+      instruction,
+      draft: {
+        title: editForm.title,
+        content: editForm.content,
+        section: editForm.section,
+        tags: editForm.tags
+      }
+    }, controller.signal);
+    setRewriteAbortController(null);
+    setAiRewriteLoading(false);
+
+    if (!result.ok) {
+      if (result.message === 'Request cancelled.') {
+        setAiRewriteMessage('AI rewrite stopped.');
+        return;
+      }
+      setError(result.message);
+      return;
+    }
+
+    const rewrittenDraft = result.data?.draft;
+    if (!rewrittenDraft) {
+      setError('AI rewrite did not return a draft.');
+      return;
+    }
+
+    setEditForm({
+      title: rewrittenDraft.title || editForm.title,
+      content: rewrittenDraft.content || editForm.content,
+      section: rewrittenDraft.section || editForm.section,
+      tags: Array.isArray(rewrittenDraft.tags) ? rewrittenDraft.tags.join(', ') : editForm.tags
+    });
+    setAiRewriteMessage(result.data?.generation?.rationale || 'AI rewrite applied to the editor. Review it, then save when you are ready.');
+  };
+
+  const stopAiRewrite = () => {
+    rewriteAbortController?.abort();
+    setRewriteAbortController(null);
+    setAiRewriteLoading(false);
+  };
+
+  const togglePostExpansion = (postId) => {
+    setExpandedPosts((current) => ({
+      ...current,
+      [postId]: !current[postId]
+    }));
+  };
+
+  useEffect(() => () => {
+    rewriteAbortController?.abort();
+  }, [rewriteAbortController]);
 
   if (!currentUser) {
     return (
@@ -228,6 +368,20 @@ export default function MyPosts({
                         <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
                           Insert Code Block
                         </button>
+                        <button
+                          type="button"
+                          className="forum-secondary-btn"
+                          onClick={() => setAiRewriteOpen((current) => !current)}
+                        >
+                          {aiRewriteOpen ? 'Hide AI Rewrite' : 'Open AI Rewrite'}
+                        </button>
+                        <button
+                          type="button"
+                          className="forum-secondary-btn"
+                          onClick={() => setShowPreview((current) => !current)}
+                        >
+                          {showPreview ? 'Hide Preview' : 'Show Preview'}
+                        </button>
                       </div>
                       <div data-color-mode="dark" className="markdown-editor-shell">
                         <MDEditor
@@ -237,10 +391,108 @@ export default function MyPosts({
                           height={280}
                         />
                       </div>
+
+                      {showPreview && (
+                        <section className="settings-card mt-3 my-posts-preview-shell">
+                          <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                            <div>
+                              <h4 className="mb-1">Post Preview</h4>
+                              <p className="muted mb-0">This is how the post will roughly look after publishing.</p>
+                            </div>
+                            <span className="forum-tag">{getSectionLabel(editForm.section)}</span>
+                          </div>
+
+                          <h3 className="post-detail-title my-posts-preview-title">{editForm.title || 'Untitled draft'}</h3>
+
+                          {!!String(editForm.tags || '').trim() && (
+                            <div className="post-tag-row mb-3">
+                              {String(editForm.tags)
+                                .split(',')
+                                .map((tag) => tag.trim())
+                                .filter(Boolean)
+                                .map((tag) => (
+                                  <span key={`preview-${tag}`} className="post-tag-pill">#{tag}</span>
+                                ))}
+                            </div>
+                          )}
+
+                          <MarkdownBlock content={editForm.content} className="post-detail-content my-posts-preview-content" />
+                        </section>
+                      )}
                     </div>
+
+                    {aiRewriteOpen && (
+                      <section className="settings-card mb-3">
+                        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                          <div>
+                            <h4 className="mb-1">AI Rewrite</h4>
+                            <p className="muted mb-0">Use OpenAI to polish, shorten, expand, or restyle this post draft.</p>
+                          </div>
+                          <span className="muted">Works on the current editor content</span>
+                        </div>
+
+                        <div className="forum-actions mb-3">
+                          {AI_REWRITE_PRESETS.map((preset) => (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              className="forum-secondary-btn"
+                              disabled={aiRewriteLoading}
+                              onClick={() => {
+                                setAiInstruction(preset.instruction);
+                                runAiRewrite(preset.instruction);
+                              }}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <label className="form-label">Custom instruction</label>
+                        <textarea
+                          className="form-control forum-input"
+                          rows={3}
+                          value={aiInstruction}
+                          onChange={(event) => setAiInstruction(event.target.value)}
+                          placeholder="Example: tighten the intro, keep the technical details, and make the conclusion more actionable."
+                        />
+                        <div className="forum-actions mt-3">
+                          {aiRewriteLoading && (
+                            <button
+                              type="button"
+                              className="forum-secondary-btn"
+                              onClick={stopAiRewrite}
+                            >
+                              Stop
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="forum-primary-btn"
+                            disabled={aiRewriteLoading}
+                            onClick={() => runAiRewrite()}
+                          >
+                            {aiRewriteLoading ? 'Rewriting...' : 'Rewrite with AI'}
+                          </button>
+                        </div>
+                        {aiRewriteMessage && <p className="muted mt-3 mb-0">{aiRewriteMessage}</p>}
+                      </section>
+                    )}
+
                     <div className="forum-actions">
                       <button type="submit" className="forum-primary-btn">Save</button>
-                      <button type="button" className="forum-secondary-btn" onClick={() => setEditingId(null)}>Cancel</button>
+                      <button
+                        type="button"
+                        className="forum-secondary-btn"
+                        onClick={() => {
+                          setEditingId(null);
+                          setShowPreview(false);
+                          setAiRewriteOpen(false);
+                          setAiRewriteMessage('');
+                        }}
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </form>
                 ) : (
@@ -253,7 +505,20 @@ export default function MyPosts({
                         ))}
                       </div>
                     )}
-                    <p className="mb-2">{post.content}</p>
+                    <div className="mb-2">
+                      <p className={`forum-post-preview ${expandedPosts[post.id] ? 'is-expanded' : 'is-clamped'}`}>
+                        {post.content}
+                      </p>
+                      {hasExpandablePreview(post.content) && (
+                        <button
+                          type="button"
+                          className="forum-inline-toggle"
+                          onClick={() => togglePostExpansion(post.id)}
+                        >
+                          {expandedPosts[post.id] ? 'Collapse' : 'Expand'}
+                        </button>
+                      )}
+                    </div>
                     <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                       <small className="muted">
                         {isModerated ? 'Hidden from public forum' : 'Published by you'}
@@ -261,6 +526,7 @@ export default function MyPosts({
                       {!isModerated && (
                         <div className="forum-actions">
                           <button type="button" className="forum-secondary-btn" onClick={() => startEdit(post)}>Edit</button>
+                          <button type="button" className="forum-secondary-btn" onClick={() => startEdit(post, { openAiPanel: true })}>AI Improve</button>
                           <button type="button" className="forum-danger-btn" onClick={() => handleDelete(post.id)}>Delete</button>
                         </div>
                       )}

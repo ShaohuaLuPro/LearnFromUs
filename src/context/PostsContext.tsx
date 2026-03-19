@@ -3,6 +3,7 @@ import {
   apiAdminRemovePost,
   apiAdminRestorePost,
   apiAgentChat,
+  apiAiRewritePost,
   apiAppealPost,
   apiCreateComment,
   apiCreatePost,
@@ -42,6 +43,11 @@ type PostsContextValue = {
   refreshPosts: () => Promise<ActionResult<Post[]>>;
   createPost: (input: { title: string; content: string; section: string; tags?: string | string[] }) => Promise<ActionResult>;
   updatePost: (postId: string, input: { title: string; content: string; section: string; tags?: string | string[] }) => Promise<ActionResult>;
+  aiRewritePost: (
+    postId: string,
+    input: { instruction: string; draft?: { title: string; content: string; section: string; tags?: string | string[] } },
+    signal?: AbortSignal
+  ) => Promise<ActionResult<Record<string, unknown>>>;
   deletePost: (postId: string) => Promise<ActionResult>;
   getPostDetail: (postId: string) => Promise<ActionResult<Post>>;
   getComments: (postId: string) => Promise<ActionResult<Comment[]>>;
@@ -51,7 +57,7 @@ type PostsContextValue = {
   getModerationPosts: () => Promise<ActionResult<Post[]>>;
   adminRemovePost: (postId: string, reason: string) => Promise<ActionResult>;
   adminRestorePost: (postId: string) => Promise<ActionResult>;
-  agentChat: (message: string) => Promise<ActionResult<Record<string, unknown>>>;
+  agentChat: (message: string, signal?: AbortSignal) => Promise<ActionResult<Record<string, unknown>>>;
   getAdminAnalytics: (filters?: Record<string, string | number>) => Promise<ActionResult<AnalyticsReport>>;
   queryAdminAnalytics: (filters?: Record<string, string | number>) => Promise<ActionResult<AnalyticsReport>>;
   getAdminParquetDatasets: () => Promise<ActionResult>;
@@ -62,7 +68,7 @@ type PostsContextValue = {
 
 const DEFAULT_PAGINATION: Pagination = {
   page: 1,
-  pageSize: 12,
+  pageSize: 10,
   total: 0,
   totalPages: 1
 };
@@ -71,7 +77,7 @@ const DEFAULT_FILTERS: Required<PostListFilters> = {
   q: '',
   section: [],
   page: 1,
-  pageSize: 12
+  pageSize: 10
 };
 
 const PostsContext = createContext<PostsContextValue | null>(null);
@@ -94,7 +100,9 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
           ? nextFilters.section ? [nextFilters.section] : []
           : filtersRef.current.section,
       page: typeof nextFilters.page === 'number' ? nextFilters.page : filtersRef.current.page,
-      pageSize: typeof nextFilters.pageSize === 'number' ? nextFilters.pageSize : filtersRef.current.pageSize
+      pageSize: nextFilters.pageSize === 'all' || typeof nextFilters.pageSize === 'number'
+        ? nextFilters.pageSize
+        : filtersRef.current.pageSize
     };
 
     setLoadingPosts(true);
@@ -148,6 +156,26 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to update post.' };
     }
   }, [getToken, refreshPosts]);
+
+  const aiRewritePost = useCallback(async (
+    postId: string,
+    input: { instruction: string; draft?: { title: string; content: string; section: string; tags?: string | string[] } },
+    signal?: AbortSignal
+  ) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiAiRewritePost(postId, input, token, signal);
+      return { ok: true, data };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return { ok: false, message: 'Request cancelled.' };
+      }
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to rewrite post with AI.' };
+    }
+  }, [getToken]);
 
   const deletePost = useCallback(async (postId: string) => {
     const token = getToken();
@@ -261,11 +289,14 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [getToken, refreshPosts]);
 
-  const agentChat = useCallback(async (message: string) => {
+  const agentChat = useCallback(async (message: string, signal?: AbortSignal) => {
     try {
-      const data = await apiAgentChat(message, getToken() || undefined);
+      const data = await apiAgentChat(message, getToken() || undefined, signal);
       return { ok: true, data };
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return { ok: false, message: 'Request cancelled.' };
+      }
       return { ok: false, message: error instanceof Error ? error.message : 'Agent request failed.' };
     }
   }, [getToken]);
@@ -350,6 +381,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     refreshPosts,
     createPost,
     updatePost,
+    aiRewritePost,
     deletePost,
     getPostDetail,
     getComments,
@@ -376,6 +408,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     refreshPosts,
     createPost,
     updatePost,
+    aiRewritePost,
     deletePost,
     getPostDetail,
     getComments,

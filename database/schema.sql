@@ -76,9 +76,28 @@ CREATE TABLE IF NOT EXISTS user_follow (
   CHECK (follower_id <> following_id)
 );
 
+CREATE TABLE IF NOT EXISTS user_writing_profile (
+  user_id UUID PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+  sample_size INTEGER NOT NULL DEFAULT 0,
+  reference_post_ids UUID[] NOT NULL DEFAULT '{}',
+  profile_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_daily_usage (
+  user_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  usage_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  usage_count INTEGER NOT NULL DEFAULT 0,
+  last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, usage_date),
+  CHECK (usage_count >= 0)
+);
+
 CREATE INDEX IF NOT EXISTS idx_post_author_created ON post(author_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_created ON post(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_deleted_by_admin_at ON post(deleted_by_admin_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comment_post_created ON comment(post_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vote_post ON post_vote(post_id);
 CREATE INDEX IF NOT EXISTS idx_user_follow_following ON user_follow(following_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_writing_profile_updated_at ON user_writing_profile(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_daily_usage_usage_date ON ai_daily_usage(usage_date DESC, usage_count DESC);

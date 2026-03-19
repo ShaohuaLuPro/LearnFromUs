@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { getExternalLinkProps } from '../lib/links';
 
 export default function Login({
   onLogin,
@@ -216,7 +217,7 @@ export default function Login({
             {notice && <p className="text-success mt-3 mb-0">{notice}</p>}
             {resetUrl && (
               <p className="mt-3 mb-0">
-                <a className="auth-inline-link" href={resetUrl}>
+                <a className="auth-inline-link" href={resetUrl} {...getExternalLinkProps(resetUrl)}>
                   Open reset link
                 </a>
               </p>

@@ -54,12 +54,12 @@ export type PostListFilters = {
   q?: string;
   section?: string | string[];
   page?: number;
-  pageSize?: number;
+  pageSize?: number | 'all';
 };
 
 export type Pagination = {
   page: number;
-  pageSize: number;
+  pageSize: number | 'all';
   total: number;
   totalPages: number;
 };
@@ -89,4 +89,45 @@ export type AnalyticsReport = {
     sections?: string[];
     tags?: string[];
   };
+};
+
+export type WritingStyleProfile = {
+  summary: string;
+  sampleSize: number;
+  avgWordCount: number;
+  avgTitleLength: number;
+  preferredSections: string[];
+  commonTags: string[];
+  tone: string[];
+  structure: string[];
+  openerStyle: string;
+  closingStyle: string;
+  titlePattern: string;
+  recurringTerms: string[];
+  updatedAt?: number | null;
+};
+
+export type DraftGeneration = {
+  mode: string;
+  provider: string;
+  model?: string | null;
+  fallback?: boolean;
+  rationale?: string;
+};
+
+export type AgentAction = {
+  label: string;
+  to: string;
+};
+
+export type WorkspacePostLink = {
+  id: string;
+  title: string;
+  section: string;
+  to: string;
+};
+
+export type AgentNavigation = {
+  navigateTo?: string;
+  autoNavigate?: boolean;
 };

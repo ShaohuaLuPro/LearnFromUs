@@ -1,7 +1,7 @@
-# Database Setup (GitHub Pages + Neon)
+# Database Setup (Render + Neon)
 
 ## Why Neon
-GitHub Pages only hosts static frontend files. Your login and post data must be served by an API/backend and a hosted database. Neon is a good fit for PostgreSQL in this setup.
+LearnFromUs runs with a Render-hosted frontend and backend. User accounts, posts, follows, and related transactional data live in PostgreSQL, and Neon is a good fit for that setup.
 
 ## 1) Create Neon project
 1. Create a Neon project and database (for example `learnfromus`).
@@ -40,8 +40,8 @@ npm run migrate --prefix server
 ```
 
 ## 5) Deployment note
-- Frontend: GitHub Pages
-- Backend API: Vercel / Railway / Render / Fly.io
+- Frontend: Render Static Site
+- Backend API: Render Web Service
 - Database: Neon
 
 The frontend should call backend APIs, and backend APIs read/write Neon.

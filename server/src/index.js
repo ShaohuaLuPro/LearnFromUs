@@ -34,7 +34,7 @@ const adminEmails = new Set(
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean)
 );
-const passwordResetBaseUrl = process.env.PASSWORD_RESET_BASE_URL || `${allowedOrigins[0] || 'http://localhost:3000'}/#/login`;
+const passwordResetBaseUrl = process.env.PASSWORD_RESET_BASE_URL || `${allowedOrigins[0] || 'http://localhost:3000'}/login`;
 const smtpHost = String(process.env.SMTP_HOST || '').trim();
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure = String(process.env.SMTP_SECURE || 'false').trim().toLowerCase() === 'true';

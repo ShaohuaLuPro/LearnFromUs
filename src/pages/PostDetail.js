@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import MarkdownBlock from '../components/MarkdownBlock';
-import { applySeo, buildPageTitle, DEFAULT_DESCRIPTION } from '../lib/seo';
+import { applySeo, buildCanonical, buildPageTitle, DEFAULT_DESCRIPTION } from '../lib/seo';
 
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
@@ -46,7 +46,7 @@ export default function PostDetail({
         title: buildPageTitle('Forum Post'),
         description: 'Read technical posts and community discussion on LearnFromUs.',
         robots: 'index,follow',
-        canonical: 'https://shaohualupro.github.io/LearnFromUs/'
+        canonical: buildCanonical(`/forum/post/${postId}`)
       });
       return;
     }
@@ -60,9 +60,9 @@ export default function PostDetail({
       title: buildPageTitle(post.title),
       description: preview ? preview.slice(0, 160) : DEFAULT_DESCRIPTION,
       robots: 'index,follow',
-      canonical: 'https://shaohualupro.github.io/LearnFromUs/'
+      canonical: buildCanonical(`/forum/post/${post.id}`)
     });
-  }, [post]);
+  }, [post, postId]);
 
   useEffect(() => {
     let cancelled = false;

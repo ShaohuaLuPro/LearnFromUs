@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
 import { matchPath, useLocation } from 'react-router-dom';
-import { applySeo, buildPageTitle, DEFAULT_DESCRIPTION } from '../lib/seo';
-
-const BASE_URL = 'https://shaohualupro.github.io/LearnFromUs/';
+import { applySeo, buildCanonical, buildPageTitle, DEFAULT_DESCRIPTION } from '../lib/seo';
 
 function routeConfig(pathname) {
   if (matchPath('/forum/post/:postId', pathname)) {
@@ -10,7 +8,7 @@ function routeConfig(pathname) {
       title: buildPageTitle('Forum Post'),
       description: 'Read technical posts, practical implementation notes, and community discussion on LearnFromUs.',
       robots: 'index,follow',
-      canonical: BASE_URL
+      canonical: buildCanonical(pathname)
     };
   }
 
@@ -19,7 +17,7 @@ function routeConfig(pathname) {
       title: buildPageTitle('Forum'),
       description: 'Browse engineering, AI, machine learning, analytics, and product posts organized by section and tags.',
       robots: 'index,follow',
-      canonical: BASE_URL
+      canonical: buildCanonical(pathname)
     };
   }
 
@@ -28,7 +26,7 @@ function routeConfig(pathname) {
       title: buildPageTitle('About'),
       description: 'Meet Shaohua Lu and learn why LearnFromUs was built for practical technical learning.',
       robots: 'index,follow',
-      canonical: BASE_URL
+      canonical: buildCanonical(pathname)
     };
   }
 
@@ -37,7 +35,7 @@ function routeConfig(pathname) {
       title: buildPageTitle('Login'),
       description: 'Login or create an account to publish posts, follow builders, and join the LearnFromUs forum.',
       robots: 'noindex,follow',
-      canonical: BASE_URL
+      canonical: buildCanonical(pathname)
     };
   }
 
@@ -54,7 +52,7 @@ function routeConfig(pathname) {
       title: buildPageTitle('LearnFromUs'),
       description: DEFAULT_DESCRIPTION,
       robots: 'noindex,follow',
-      canonical: BASE_URL
+      canonical: buildCanonical(pathname)
     };
   }
 
@@ -62,7 +60,7 @@ function routeConfig(pathname) {
     title: buildPageTitle('Technical Forum for Builders'),
     description: DEFAULT_DESCRIPTION,
     robots: 'index,follow',
-    canonical: BASE_URL
+    canonical: buildCanonical(pathname)
   };
 }
 

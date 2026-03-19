@@ -1,6 +1,7 @@
 const SITE_NAME = 'LearnFromUs';
 const DEFAULT_TITLE = `${SITE_NAME} | Technical Forum for Builders`;
 const DEFAULT_DESCRIPTION = 'LearnFromUs is a technical forum for engineers, AI builders, and data scientists to share practical posts, project lessons, debugging notes, and real implementation details.';
+const SITE_BASE_URL = 'https://shaohualupro.github.io/LearnFromUs';
 
 function upsertMeta(selector, attributes) {
   let element = document.head.querySelector(selector);
@@ -30,7 +31,7 @@ export function applySeo({
   title = DEFAULT_TITLE,
   description = DEFAULT_DESCRIPTION,
   robots = 'index,follow',
-  canonical = 'https://shaohualupro.github.io/LearnFromUs/'
+  canonical = `${SITE_BASE_URL}/`
 } = {}) {
   document.title = title;
   upsertMeta('meta[name="description"]', { name: 'description', content: description });
@@ -47,4 +48,9 @@ export function buildPageTitle(pageTitle) {
   return pageTitle ? `${pageTitle} | ${SITE_NAME}` : DEFAULT_TITLE;
 }
 
-export { DEFAULT_DESCRIPTION, DEFAULT_TITLE, SITE_NAME };
+export function buildCanonical(pathname = '/') {
+  const normalized = String(pathname || '/').startsWith('/') ? String(pathname || '/') : `/${pathname}`;
+  return normalized === '/' ? `${SITE_BASE_URL}/` : `${SITE_BASE_URL}${normalized}`;
+}
+
+export { DEFAULT_DESCRIPTION, DEFAULT_TITLE, SITE_BASE_URL, SITE_NAME };

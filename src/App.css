@@ -305,6 +305,14 @@ a {
   margin-top: 0.25rem;
 }
 
+.about-page-shell {
+  max-width: min(1800px, 96vw);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: clamp(0.75rem, 2vw, 1.5rem);
+  padding-right: clamp(0.75rem, 2vw, 1.5rem);
+}
+
 /* Shared Surfaces */
 .glass-card {
   background: var(--surface-card-bg);
@@ -318,6 +326,39 @@ a {
   display: grid;
   gap: 1.1rem;
   align-content: start;
+}
+
+.about-sidebar-panel {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  position: sticky;
+  top: 96px;
+}
+
+.about-sidebar-btn {
+  width: 100%;
+  border: 1px solid #d4dfef;
+  background: #fff;
+  color: #244572;
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  font-weight: 700;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.about-sidebar-btn:hover {
+  border-color: #aac4eb;
+  background: #f1f7ff;
+  color: #153a67;
+}
+
+.about-sidebar-btn.is-active {
+  border-color: transparent;
+  background: linear-gradient(130deg, var(--brand), #2a81ff);
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(20, 80, 180, 0.2);
 }
 
 .about-story-panel {
@@ -428,6 +469,10 @@ a {
   color: #5f7088;
 }
 
+.about-connect-value {
+  color: #c6e9f7;
+}
+
 .founder-link-row {
   display: flex;
   flex-wrap: wrap;
@@ -448,6 +493,20 @@ a {
   color: #fff;
   background: linear-gradient(130deg, var(--brand), #2a81ff);
   border-color: transparent;
+}
+
+.about-portrait-panel {
+  display: flex;
+  align-items: stretch;
+}
+
+.about-portrait-image {
+  width: 100%;
+  height: clamp(420px, 62vh, 720px);
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 16px;
+  box-shadow: 0 16px 36px rgba(12, 28, 56, 0.16);
 }
 
 .hero-card {
@@ -2274,6 +2333,23 @@ h5 {
   background: var(--brand-wash);
 }
 
+.about-sidebar-btn {
+  border-color: var(--brand-border);
+  background: var(--brand-wash);
+  color: var(--text-link);
+}
+
+.about-sidebar-btn:hover {
+  border-color: var(--brand-border);
+  background: rgba(0, 240, 255, 0.14);
+  color: var(--text-link);
+}
+
+.about-sidebar-btn.is-active {
+  background: linear-gradient(130deg, var(--brand), var(--brand-2));
+  color: var(--bg);
+}
+
 .founder-link-pill:hover {
   background: linear-gradient(130deg, var(--brand), var(--brand-2));
   color: var(--bg);
@@ -2344,6 +2420,23 @@ h5 {
 .form-help,
 .tag-toolbar .muted {
   color: var(--text-subtle) !important;
+}
+
+.about-detail-panel .about-story-title {
+  font-size: clamp(1.35rem, 2.35vw, 2rem);
+  font-weight: 620;
+  line-height: 1.22;
+  letter-spacing: -0.012em;
+  color: #c6e9f7 !important;
+  text-shadow: none;
+}
+
+.about-detail-panel .about-story-copy {
+  font-size: clamp(1.1rem, 1.75vw, 1.45rem);
+  font-weight: 560;
+  line-height: 1.58;
+  letter-spacing: -0.006em;
+  color: #c6e9f7 !important;
 }
 
 .auth-card h2,
@@ -2432,6 +2525,16 @@ h5 {
 
 /* Responsive */
 @media (max-width: 768px) {
+  .about-sidebar-panel {
+    position: static;
+    top: auto;
+  }
+
+  .about-portrait-image {
+    height: auto;
+    aspect-ratio: 4 / 5;
+  }
+
   .app-loading-card {
     padding: 1.3rem;
   }

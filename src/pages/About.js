@@ -1,5 +1,7 @@
 import React from 'react';
 
+// This is a simple modification to the About.js file without affecting existing content
+
 export default function About() {
   return (
     <div className="container page-shell">

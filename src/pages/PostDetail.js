@@ -23,6 +23,7 @@ function getSectionLabel(value) {
 export default function PostDetail({
   currentUser,
   onAdminRemovePost,
+  onOwnerRemovePost,
   onGetPostDetail,
   onGetComments,
   onCreateComment
@@ -108,7 +109,9 @@ export default function PostDetail({
   const removePost = async () => {
     setError('');
     setMessage('');
-    const result = await onAdminRemovePost(postId, reason);
+    const result = currentUser?.isAdmin
+      ? await onAdminRemovePost(postId, reason)
+      : await onOwnerRemovePost(post.forum?.id || '', postId, reason);
     if (!result.ok) {
       setError(result.message);
       return;
@@ -165,11 +168,16 @@ export default function PostDetail({
     );
   }
 
+  const canModeratePost = Boolean(
+    currentUser && post?.forum?.ownerId && (currentUser.isAdmin || post.forum.ownerId === currentUser.id)
+  );
+  const backToForumPath = post?.forum?.slug ? `/forum/${post.forum.slug}` : '/forum';
+
   return (
     <div className="container page-shell">
       <section className="panel post-detail-shell">
         <div className="post-detail-topbar">
-          <Link to="/forum" className="forum-secondary-btn text-decoration-none">
+          <Link to={backToForumPath} className="forum-secondary-btn text-decoration-none">
             Back to Forum
           </Link>
           <span className="muted">{formatTime(post.createdAt)}</span>
@@ -273,10 +281,12 @@ export default function PostDetail({
           </div>
         </section>
 
-        {currentUser?.isAdmin && (
+        {canModeratePost && (
           <section className="settings-card settings-danger-card mt-4">
-            <h4 className="mb-2">Admin Moderation</h4>
-            <p className="muted mb-3">Remove this post from public view. The author will have 15 days to request restoration.</p>
+            <h4 className="mb-2">{currentUser?.isAdmin ? 'Admin Moderation' : 'Forum Owner Moderation'}</h4>
+            <p className="muted mb-3">
+              Remove this post from public view. The author will have 15 days to request restoration.
+            </p>
             <div className="mb-3">
               <label className="form-label">Moderation reason</label>
               <textarea

@@ -12,7 +12,11 @@ function routeConfig(pathname) {
     };
   }
 
-  if (matchPath('/forum/section/:sectionId', pathname) || pathname === '/forum') {
+  if (
+    matchPath('/forum/:forumSlug', pathname)
+    || matchPath('/forum/:forumSlug/section/:sectionId', pathname)
+    || pathname === '/forum'
+  ) {
     return {
       title: buildPageTitle('Forum'),
       description: 'Browse engineering, AI, machine learning, analytics, and product posts organized by section and tags.',
@@ -45,6 +49,7 @@ function routeConfig(pathname) {
     pathname === '/moderation' ||
     pathname === '/analytics' ||
     pathname === '/following' ||
+    pathname === '/forums/request' ||
     pathname === '/goodbye' ||
     matchPath('/users/:userId', pathname)
   ) {

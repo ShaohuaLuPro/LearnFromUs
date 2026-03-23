@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AgentChatbox from './components/AgentChatbox';
 import Footer from './components/Footer';
 import Header from './components/Header';
@@ -9,6 +9,7 @@ import { usePosts } from './context/PostsContext';
 import About from './pages/About';
 import Analytics from './pages/Analytics';
 import Following from './pages/Following';
+import ForumRequestPage from './pages/ForumRequestPage';
 import Goodbye from './pages/Goodbye';
 import Home from './pages/Home';
 import Landing from './pages/Landing';
@@ -45,6 +46,18 @@ function LoadingShell() {
   );
 }
 
+function ForumRootRedirect({ forumSlug }: { forumSlug: string }) {
+  const location = useLocation();
+
+  return (
+    <Navigate
+      to={`/forum/${forumSlug}${location.search || ''}`}
+      replace
+      state={location.state}
+    />
+  );
+}
+
 export default function AppRoutes() {
   const auth = useAuth();
   const posts = usePosts();
@@ -73,35 +86,42 @@ export default function AppRoutes() {
   return (
     <div className="app-wrapper d-flex flex-column min-vh-100">
       <RouteSeo />
-      <Header currentUser={auth.currentUser} onLogout={auth.logout} />
+      <Header currentUser={auth.currentUser} forums={posts.forums} onLogout={auth.logout} />
       <main className="app-main">
         <Routes>
           <Route path="/" element={<Landing currentUser={auth.currentUser} />} />
+          <Route path="/forum" element={<ForumRootRedirect forumSlug={posts.forums[0]?.slug || 'software-engineering'} />} />
           <Route
-            path="/forum"
+            path="/forum/:forumSlug"
             element={(
               <Home
                 posts={posts.posts}
+                forums={posts.forums}
                 pagination={posts.pagination}
                 currentFilters={posts.filters}
                 loadingPosts={posts.loadingPosts}
                 currentUser={auth.currentUser}
                 onLoadPosts={posts.loadPosts}
+                onLoadForums={posts.loadForums}
                 onCreatePost={posts.createPost}
+                onOwnerRemovePost={posts.ownerRemovePost}
               />
             )}
           />
           <Route
-            path="/forum/section/:sectionId"
+            path="/forum/:forumSlug/section/:sectionId"
             element={(
               <Home
                 posts={posts.posts}
+                forums={posts.forums}
                 pagination={posts.pagination}
                 currentFilters={posts.filters}
                 loadingPosts={posts.loadingPosts}
                 currentUser={auth.currentUser}
                 onLoadPosts={posts.loadPosts}
+                onLoadForums={posts.loadForums}
                 onCreatePost={posts.createPost}
+                onOwnerRemovePost={posts.ownerRemovePost}
               />
             )}
           />
@@ -111,6 +131,20 @@ export default function AppRoutes() {
           <Route
             path="/following"
             element={auth.currentUser ? <Following /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/forums/request"
+            element={auth.currentUser ? (
+              <ForumRequestPage
+                currentUser={auth.currentUser}
+                forumWorkspace={posts.forumWorkspace}
+                onRequestForum={posts.requestForum}
+                onApproveForumRequest={posts.approveForumRequest}
+                onRejectForumRequest={posts.rejectForumRequest}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
           />
           <Route
             path="/settings"
@@ -182,6 +216,7 @@ export default function AppRoutes() {
               <PostDetail
                 currentUser={auth.currentUser}
                 onAdminRemovePost={posts.adminRemovePost}
+                onOwnerRemovePost={posts.ownerRemovePost}
                 onGetPostDetail={posts.getPostDetail}
                 onGetComments={posts.getComments}
                 onCreateComment={posts.createComment}

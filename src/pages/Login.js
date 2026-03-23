@@ -21,12 +21,20 @@ export default function Login({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [resetUrl, setResetUrl] = useState('');
+  const [visiblePasswords, setVisiblePasswords] = useState({
+    password: false,
+    confirmPassword: false
+  });
 
   useEffect(() => {
     setMode(resetToken ? 'reset' : 'login');
     setError('');
     setNotice('');
     setResetUrl('');
+    setVisiblePasswords({
+      password: false,
+      confirmPassword: false
+    });
   }, [resetToken]);
 
   const updateField = (key, value) => {
@@ -41,6 +49,14 @@ export default function Login({
     setError('');
     setNotice('');
     setResetUrl('');
+    setVisiblePasswords({
+      password: false,
+      confirmPassword: false
+    });
+  };
+
+  const togglePasswordVisibility = (key) => {
+    setVisiblePasswords((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const submit = async (event) => {
@@ -183,26 +199,48 @@ export default function Login({
             {(mode === 'login' || mode === 'register' || mode === 'reset') && (
               <div className="mb-2">
                 <label className="form-label">{mode === 'reset' ? 'New Password' : 'Password'}</label>
-                <input
-                  type="password"
-                  className="form-control forum-input"
-                  value={form.password}
-                  onChange={(e) => updateField('password', e.target.value)}
-                  placeholder="At least 6 characters recommended"
-                />
+                <div className="password-input-shell">
+                  <input
+                    type={visiblePasswords.password ? 'text' : 'password'}
+                    className="form-control forum-input password-input"
+                    value={form.password}
+                    onChange={(e) => updateField('password', e.target.value)}
+                    placeholder="At least 6 characters recommended"
+                  />
+                  <button
+                    type="button"
+                    className="password-visibility-btn"
+                    onClick={() => togglePasswordVisibility('password')}
+                    aria-label={visiblePasswords.password ? 'Hide password' : 'Show password'}
+                    aria-pressed={visiblePasswords.password}
+                  >
+                    {visiblePasswords.password ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
             )}
 
             {mode === 'reset' && (
               <div className="mb-2">
                 <label className="form-label">Confirm New Password</label>
-                <input
-                  type="password"
-                  className="form-control forum-input"
-                  value={form.confirmPassword}
-                  onChange={(e) => updateField('confirmPassword', e.target.value)}
-                  placeholder="Re-enter your new password"
-                />
+                <div className="password-input-shell">
+                  <input
+                    type={visiblePasswords.confirmPassword ? 'text' : 'password'}
+                    className="form-control forum-input password-input"
+                    value={form.confirmPassword}
+                    onChange={(e) => updateField('confirmPassword', e.target.value)}
+                    placeholder="Re-enter your new password"
+                  />
+                  <button
+                    type="button"
+                    className="password-visibility-btn"
+                    onClick={() => togglePasswordVisibility('confirmPassword')}
+                    aria-label={visiblePasswords.confirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                    aria-pressed={visiblePasswords.confirmPassword}
+                  >
+                    {visiblePasswords.confirmPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
             )}
 

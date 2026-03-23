@@ -14,6 +14,15 @@ const { createOpenAIDraftService, SECTION_ENUM } = require('./lib/openai-drafts'
 const { createOpenAIPostRewriter } = require('./lib/openai-post-rewriter');
 const { createHybridRateLimitStore, createRateLimitMiddleware } = require('./lib/rate-limit');
 const { listPublicPosts, getPublicPostById } = require('./lib/post-queries');
+const {
+  CORE_FORUM_SEEDS,
+  getDefaultForumSlugForSection,
+  normalizeForumDescription,
+  normalizeForumName,
+  normalizeForumRationale,
+  normalizeForumSlug,
+  normalizeSectionScope
+} = require('./lib/forum-config');
 const { runMigrations } = require('./lib/run-migrations');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -2395,6 +2404,252 @@ function normalizeTags(input) {
   )].slice(0, 8);
 }
 
+function mapForumRow(row) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description || '',
+    ownerId: row.owner_id || null,
+    ownerName: row.owner_name || '',
+    sectionScope: row.section_scope || [],
+    postCount: Number(row.post_count || 0),
+    livePostCount: Number(row.live_post_count || 0),
+    moderatedCount: Number(row.moderated_count || 0),
+    isCore: Boolean(row.is_core)
+  };
+}
+
+function mapForumRequestRow(row) {
+  return {
+    id: row.id,
+    requesterId: row.requester_id,
+    requesterName: row.requester_name || '',
+    forumId: row.forum_id || null,
+    forumSlug: row.forum_slug || '',
+    forumName: row.forum_name || '',
+    slug: row.slug,
+    name: row.name,
+    description: row.description || '',
+    sectionScope: row.section_scope || [],
+    rationale: row.rationale || '',
+    status: row.status,
+    reviewNote: row.review_note || '',
+    reviewedById: row.reviewed_by_id || null,
+    reviewedByName: row.reviewed_by_name || '',
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
+    reviewedAt: row.reviewed_at ? new Date(row.reviewed_at).getTime() : null
+  };
+}
+
+function canManageForum(user, forumOwnerId) {
+  return Boolean(user?.isAdmin || (user?.sub && forumOwnerId && user.sub === forumOwnerId));
+}
+
+async function getFirstAdminOwnerId(client) {
+  if (adminEmails.size === 0) {
+    return null;
+  }
+
+  const result = await client.query(
+    `SELECT id
+     FROM app_user
+     WHERE LOWER(email) = ANY($1::text[])
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [[...adminEmails]]
+  );
+
+  return result.rows[0]?.id || null;
+}
+
+async function ensureCoreForums(client) {
+  const ownerId = await getFirstAdminOwnerId(client);
+
+  for (const forum of CORE_FORUM_SEEDS) {
+    await client.query(
+      `INSERT INTO forum (slug, name, description, section_scope, owner_id, created_by_id, is_core)
+       VALUES ($1, $2, $3, $4::text[], $5, $5, TRUE)
+       ON CONFLICT (slug) DO UPDATE
+         SET name = EXCLUDED.name,
+             description = EXCLUDED.description,
+             section_scope = EXCLUDED.section_scope,
+             is_core = TRUE,
+             owner_id = COALESCE(forum.owner_id, EXCLUDED.owner_id),
+             updated_at = NOW()`,
+      [forum.slug, forum.name, forum.description, forum.sectionScope, ownerId]
+    );
+  }
+
+  const forumsResult = await client.query(
+    `SELECT id, slug
+     FROM forum
+     WHERE slug = ANY($1::text[])`,
+    [CORE_FORUM_SEEDS.map((forum) => forum.slug)]
+  );
+
+  const forumIdsBySlug = Object.fromEntries(forumsResult.rows.map((row) => [row.slug, row.id]));
+  for (const forum of CORE_FORUM_SEEDS) {
+    const forumId = forumIdsBySlug[forum.slug];
+    if (!forumId) {
+      continue;
+    }
+
+    await client.query(
+      `UPDATE post
+       SET forum_id = $1
+       WHERE forum_id IS NULL
+         AND section = ANY($2::text[])`,
+      [forumId, forum.sectionScope]
+    );
+  }
+}
+
+async function getForumById(client, forumId) {
+  const result = await client.query(
+    `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
+            COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count
+     FROM forum f
+     LEFT JOIN app_user owner ON owner.id = f.owner_id
+     LEFT JOIN post p ON p.forum_id = f.id
+     WHERE f.id = $1
+     GROUP BY f.id, owner.username`,
+    [forumId]
+  );
+
+  return result.rows[0] ? mapForumRow(result.rows[0]) : null;
+}
+
+async function getForumBySlug(client, slug) {
+  const result = await client.query(
+    `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
+            COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count
+     FROM forum f
+     LEFT JOIN app_user owner ON owner.id = f.owner_id
+     LEFT JOIN post p ON p.forum_id = f.id
+     WHERE f.slug = $1
+     GROUP BY f.id, owner.username`,
+    [slug]
+  );
+
+  return result.rows[0] ? mapForumRow(result.rows[0]) : null;
+}
+
+async function resolveWritableForum(client, forumId, section, fallbackForumId = '') {
+  await ensureCoreForums(client);
+
+  const requestedForumId = String(forumId || fallbackForumId || '').trim();
+  if (requestedForumId) {
+    const forum = await getForumById(client, requestedForumId);
+    if (!forum) {
+      throw new Error('Selected forum was not found.');
+    }
+    if (forum.sectionScope.length > 0 && !forum.sectionScope.includes(section)) {
+      throw new Error('This forum does not accept posts for the selected section.');
+    }
+    return forum;
+  }
+
+  const fallbackForum = await getForumBySlug(client, getDefaultForumSlugForSection(section));
+  if (!fallbackForum) {
+    throw new Error('No forum is available for the selected section.');
+  }
+  return fallbackForum;
+}
+
+async function getForumWorkspace(client, user) {
+  await ensureCoreForums(client);
+
+  const forumsResult = await client.query(
+    `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
+            COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count
+     FROM forum f
+     LEFT JOIN app_user owner ON owner.id = f.owner_id
+     LEFT JOIN post p ON p.forum_id = f.id
+     GROUP BY f.id, owner.username
+     ORDER BY f.is_core DESC, live_post_count DESC, f.name ASC`
+  );
+
+  const forums = forumsResult.rows.map(mapForumRow);
+
+  if (!user?.sub) {
+    return { forums, workspace: null };
+  }
+
+  const [requestRows, moderatedRows, pendingRows] = await Promise.all([
+    client.query(
+      `SELECT fr.id, fr.requester_id, requester.username AS requester_name, fr.forum_id,
+              forum.slug AS forum_slug, forum.name AS forum_name,
+              fr.slug, fr.name, fr.description, COALESCE(fr.section_scope, '{}') AS section_scope,
+              fr.rationale, fr.status, fr.review_note, fr.reviewed_by_id, reviewer.username AS reviewed_by_name,
+              fr.created_at, fr.reviewed_at
+       FROM forum_request fr
+       JOIN app_user requester ON requester.id = fr.requester_id
+       LEFT JOIN forum ON forum.id = fr.forum_id
+       LEFT JOIN app_user reviewer ON reviewer.id = fr.reviewed_by_id
+       WHERE fr.requester_id = $1
+       ORDER BY fr.created_at DESC`,
+      [user.sub]
+    ),
+    client.query(
+      `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
+              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
+              u.username AS author_name, u.email AS author_email,
+              f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
+              owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope, f.is_core AS forum_is_core,
+              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+       FROM post p
+       JOIN app_user u ON u.id = p.author_id
+       JOIN forum f ON f.id = p.forum_id
+       LEFT JOIN app_user owner ON owner.id = f.owner_id
+       LEFT JOIN post_tag pt ON pt.post_id = p.id
+       LEFT JOIN tag t ON t.id = pt.tag_id
+       WHERE p.is_published = TRUE
+         AND p.deleted_by_admin_at IS NOT NULL
+         AND ($1::boolean = TRUE OR f.owner_id = $2)
+       GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
+       ORDER BY p.deleted_by_admin_at DESC, p.created_at DESC
+       LIMIT 8`,
+      [Boolean(user.isAdmin), user.sub]
+    ),
+    user.isAdmin
+      ? client.query(
+          `SELECT fr.id, fr.requester_id, requester.username AS requester_name, fr.forum_id,
+                  forum.slug AS forum_slug, forum.name AS forum_name,
+                  fr.slug, fr.name, fr.description, COALESCE(fr.section_scope, '{}') AS section_scope,
+                  fr.rationale, fr.status, fr.review_note, fr.reviewed_by_id, reviewer.username AS reviewed_by_name,
+                  fr.created_at, fr.reviewed_at
+           FROM forum_request fr
+           JOIN app_user requester ON requester.id = fr.requester_id
+           LEFT JOIN forum ON forum.id = fr.forum_id
+           LEFT JOIN app_user reviewer ON reviewer.id = fr.reviewed_by_id
+           WHERE fr.status = 'pending'
+           ORDER BY fr.created_at DESC`,
+          []
+        )
+      : Promise.resolve({ rows: [] })
+  ]);
+
+  return {
+    forums,
+    workspace: {
+      ownedForums: forums.filter((forum) => forum.ownerId === user.sub),
+      myRequests: requestRows.rows.map(mapForumRequestRow),
+      pendingRequests: pendingRows.rows.map(mapForumRequestRow),
+      moderatedPosts: moderatedRows.rows.map(mapPostRow)
+    }
+  };
+}
+
 function mapPostRow(row) {
   return {
     id: row.id,
@@ -2405,6 +2660,16 @@ function mapPostRow(row) {
     authorId: row.author_id,
     authorName: row.author_name,
     authorEmail: row.author_email,
+    forum: row.forum_id || row.forum_slug ? {
+      id: row.forum_id || null,
+      slug: row.forum_slug || '',
+      name: row.forum_name || '',
+      description: row.forum_description || '',
+      ownerId: row.forum_owner_id || null,
+      ownerName: row.forum_owner_name || '',
+      sectionScope: row.forum_section_scope || [],
+      isCore: Boolean(row.forum_is_core)
+    } : null,
     section: row.section || 'sde-general',
     tags: row.tags || [],
     moderation: {
@@ -2450,16 +2715,20 @@ async function attachTags(client, postId, tags) {
 
 async function getPostsByAuthor(client, userId) {
   const result = await client.query(
-    `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
+    `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
             p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
             u.username AS author_name, u.email AS author_email,
+            f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
+            owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope, f.is_core AS forum_is_core,
             COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
      FROM post p
      JOIN app_user u ON u.id = p.author_id
+     LEFT JOIN forum f ON f.id = p.forum_id
+     LEFT JOIN app_user owner ON owner.id = f.owner_id
      LEFT JOIN post_tag pt ON pt.post_id = p.id
      LEFT JOIN tag t ON t.id = pt.tag_id
      WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL AND p.author_id = $1
-     GROUP BY p.id, u.username, u.email
+     GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
      ORDER BY p.created_at DESC`,
     [userId]
   );
@@ -2733,20 +3002,230 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
   }
 });
 
+app.get('/api/forums', optionalAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const data = await getForumWorkspace(client, req.user);
+    return res.json(data);
+  } catch (error) {
+    console.error('Failed to load forums.', error);
+    return res.status(500).json({ message: 'Failed to load forums.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/forums/requests', authRequired, async (req, res) => {
+  const cleanName = normalizeForumName(req.body?.name);
+  const cleanDescription = normalizeForumDescription(req.body?.description);
+  const cleanRationale = normalizeForumRationale(req.body?.rationale);
+  const cleanScope = normalizeSectionScope(req.body?.sectionScope);
+  const cleanSlug = normalizeForumSlug(req.body?.slug || cleanName);
+
+  if (!cleanName) {
+    return res.status(400).json({ message: 'Forum name is required.' });
+  }
+  if (cleanName.length < 4) {
+    return res.status(400).json({ message: 'Forum name must be at least 4 characters.' });
+  }
+  if (!cleanDescription) {
+    return res.status(400).json({ message: 'Forum description is required.' });
+  }
+  if (!cleanRationale) {
+    return res.status(400).json({ message: 'Please explain why this forum should exist.' });
+  }
+  if (!cleanSlug) {
+    return res.status(400).json({ message: 'Forum slug could not be generated.' });
+  }
+  if (cleanScope.length === 0) {
+    return res.status(400).json({ message: 'Choose at least one section for this forum.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await ensureCoreForums(client);
+
+    const [existingForum, existingRequest] = await Promise.all([
+      client.query(`SELECT id FROM forum WHERE slug = $1`, [cleanSlug]),
+      client.query(`SELECT id FROM forum_request WHERE slug = $1`, [cleanSlug])
+    ]);
+
+    if (existingForum.rows[0]) {
+      return res.status(400).json({ message: 'A forum with this slug already exists.' });
+    }
+    if (existingRequest.rows[0]) {
+      return res.status(400).json({ message: 'A forum request with this slug already exists.' });
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO forum_request (requester_id, slug, name, description, section_scope, rationale)
+       VALUES ($1, $2, $3, $4, $5::text[], $6)
+       RETURNING id, requester_id, forum_id, slug, name, description, section_scope, rationale, status, review_note,
+                 reviewed_by_id, created_at, reviewed_at`,
+      [req.user.sub, cleanSlug, cleanName, cleanDescription, cleanScope, cleanRationale]
+    );
+
+    await recordActivity('forum.requested', {
+      requestId: inserted.rows[0].id,
+      requesterId: req.user.sub,
+      slug: cleanSlug
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Forum request submitted. An owner or admin can review it next.',
+      request: mapForumRequestRow({
+        ...inserted.rows[0],
+        requester_name: req.user.name || ''
+      })
+    });
+  } catch (error) {
+    console.error('Failed to create forum request.', error);
+    return res.status(500).json({ message: 'Failed to create forum request.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/forums/requests/:requestId/approve', authRequired, adminRequired, async (req, res) => {
+  const reviewNote = normalizeForumRationale(req.body?.reviewNote);
+  const client = await pool.connect();
+  try {
+    await ensureCoreForums(client);
+    await client.query('BEGIN');
+
+    const existing = await client.query(
+      `SELECT id, requester_id, slug, name, description, section_scope, rationale, status
+       FROM forum_request
+       WHERE id = $1
+       FOR UPDATE`,
+      [req.params.requestId]
+    );
+
+    if (!existing.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Forum request not found.' });
+    }
+    if (existing.rows[0].status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'This forum request has already been reviewed.' });
+    }
+
+    const createdForum = await client.query(
+      `INSERT INTO forum (slug, name, description, section_scope, owner_id, created_by_id, is_core)
+       VALUES ($1, $2, $3, $4::text[], $5, $6, FALSE)
+       RETURNING id, slug, name, description, owner_id, created_at, updated_at, is_core, section_scope`,
+      [
+        existing.rows[0].slug,
+        existing.rows[0].name,
+        existing.rows[0].description,
+        existing.rows[0].section_scope || [],
+        existing.rows[0].requester_id,
+        req.user.sub
+      ]
+    );
+
+    await client.query(
+      `UPDATE forum_request
+       SET status = 'approved',
+           forum_id = $1,
+           reviewed_by_id = $2,
+           reviewed_at = NOW(),
+           review_note = $3,
+           updated_at = NOW()
+       WHERE id = $4`,
+      [createdForum.rows[0].id, req.user.sub, reviewNote || null, req.params.requestId]
+    );
+
+    await client.query('COMMIT');
+
+    await recordActivity('forum.request_approved', {
+      requestId: req.params.requestId,
+      forumId: createdForum.rows[0].id,
+      approvedBy: req.user.sub
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Forum request approved and forum created.',
+      forum: mapForumRow({
+        ...createdForum.rows[0],
+        owner_name: '',
+        post_count: 0,
+        live_post_count: 0,
+        moderated_count: 0
+      })
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to approve forum request.', error);
+    return res.status(500).json({ message: 'Failed to approve forum request.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/forums/requests/:requestId/reject', authRequired, adminRequired, async (req, res) => {
+  const reviewNote = normalizeForumRationale(req.body?.reviewNote);
+  const client = await pool.connect();
+  try {
+    const existing = await client.query(
+      `SELECT id, status
+       FROM forum_request
+       WHERE id = $1`,
+      [req.params.requestId]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Forum request not found.' });
+    }
+    if (existing.rows[0].status !== 'pending') {
+      return res.status(400).json({ message: 'This forum request has already been reviewed.' });
+    }
+
+    await client.query(
+      `UPDATE forum_request
+       SET status = 'rejected',
+           reviewed_by_id = $1,
+           reviewed_at = NOW(),
+           review_note = $2,
+           updated_at = NOW()
+       WHERE id = $3`,
+      [req.user.sub, reviewNote || null, req.params.requestId]
+    );
+
+    await recordActivity('forum.request_rejected', {
+      requestId: req.params.requestId,
+      reviewedBy: req.user.sub
+    });
+
+    return res.json({ ok: true, message: 'Forum request rejected.' });
+  } catch (error) {
+    console.error('Failed to reject forum request.', error);
+    return res.status(500).json({ message: 'Failed to reject forum request.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/api/account/posts', authRequired, async (req, res) => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
+      `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
               u.username AS author_name, u.email AS author_email,
+              f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
+              owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope, f.is_core AS forum_is_core,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
        FROM post p
        JOIN app_user u ON u.id = p.author_id
+       LEFT JOIN forum f ON f.id = p.forum_id
+       LEFT JOIN app_user owner ON owner.id = f.owner_id
        LEFT JOIN post_tag pt ON pt.post_id = p.id
        LEFT JOIN tag t ON t.id = pt.tag_id
        WHERE p.author_id = $1
-       GROUP BY p.id, u.username, u.email
+       GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
        ORDER BY p.created_at DESC`,
       [req.user.sub]
     );
@@ -3266,6 +3745,59 @@ app.post('/api/admin/posts/:postId/remove', authRequired, adminRequired, async (
   }
 });
 
+app.post('/api/forums/:forumId/posts/:postId/remove', authRequired, async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) {
+    return res.status(400).json({ message: 'A moderation reason is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const existing = await client.query(
+      `SELECT p.id, p.forum_id, p.deleted_by_admin_at, f.owner_id
+       FROM post p
+       JOIN forum f ON f.id = p.forum_id
+       WHERE p.id = $1
+         AND p.forum_id = $2`,
+      [req.params.postId, req.params.forumId]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Post not found in this forum.' });
+    }
+    if (!canManageForum(req.user, existing.rows[0].owner_id)) {
+      return res.status(403).json({ message: 'Only the forum owner or an admin can moderate this post.' });
+    }
+    if (existing.rows[0].deleted_by_admin_at) {
+      return res.status(400).json({ message: 'This post is already under moderation.' });
+    }
+
+    await client.query(
+      `UPDATE post
+       SET deleted_by_admin_at = NOW(),
+           deleted_by_admin_id = $1,
+           deleted_reason = $2,
+           appeal_requested_at = NULL,
+           appeal_note = NULL
+       WHERE id = $3`,
+      [req.user.sub, reason, req.params.postId]
+    );
+
+    await recordActivity('forum.post_removed', {
+      forumId: req.params.forumId,
+      postId: req.params.postId,
+      moderatorId: req.user.sub
+    });
+
+    return res.json({ ok: true, message: 'Post removed from public view.' });
+  } catch (error) {
+    console.error('Failed to moderate forum post.', error);
+    return res.status(500).json({ message: 'Failed to moderate forum post.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/api/admin/posts/:postId/restore', authRequired, adminRequired, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -3301,6 +3833,56 @@ app.post('/api/admin/posts/:postId/restore', authRequired, adminRequired, async 
       moderatorId: req.user.sub
     });
     return res.json({ ok: true, message: 'Post restored.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/forums/:forumId/posts/:postId/restore', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const existing = await client.query(
+      `SELECT p.id, p.forum_id, p.deleted_by_admin_at, f.owner_id
+       FROM post p
+       JOIN forum f ON f.id = p.forum_id
+       WHERE p.id = $1
+         AND p.forum_id = $2`,
+      [req.params.postId, req.params.forumId]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Post not found in this forum.' });
+    }
+    if (!canManageForum(req.user, existing.rows[0].owner_id)) {
+      return res.status(403).json({ message: 'Only the forum owner or an admin can restore this post.' });
+    }
+    if (!existing.rows[0].deleted_by_admin_at) {
+      return res.status(400).json({ message: 'This post is not currently under moderation.' });
+    }
+
+    await client.query(
+      `UPDATE post
+       SET deleted_by_admin_at = NULL,
+           deleted_by_admin_id = NULL,
+           deleted_reason = NULL,
+           appeal_requested_at = NULL,
+           appeal_note = NULL,
+           restored_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [req.params.postId]
+    );
+
+    await recordActivity('forum.post_restored', {
+      forumId: req.params.forumId,
+      postId: req.params.postId,
+      moderatorId: req.user.sub
+    });
+
+    return res.json({ ok: true, message: 'Post restored.' });
+  } catch (error) {
+    console.error('Failed to restore forum post.', error);
+    return res.status(500).json({ message: 'Failed to restore forum post.' });
   } finally {
     client.release();
   }
@@ -3490,7 +4072,7 @@ app.post('/api/posts/:postId/ai-rewrite', authRequired, async (req, res) => {
 });
 
 app.post('/api/posts', authRequired, async (req, res) => {
-  const { title, content, section, tags } = req.body || {};
+  const { title, content, section, tags, forumId } = req.body || {};
   const cleanTitle = String(title || '').trim();
   const cleanContent = String(content || '').trim();
   const cleanSection = normalizeSection(section);
@@ -3512,12 +4094,13 @@ app.post('/api/posts', authRequired, async (req, res) => {
   }
   const client = await pool.connect();
   try {
+    const forum = await resolveWritableForum(client, forumId, cleanSection);
     await client.query('BEGIN');
     const created = await client.query(
-      `INSERT INTO post (author_id, section, title, content_markdown, slug)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, section, title, content_markdown, created_at`,
-      [req.user.sub, cleanSection, cleanTitle, cleanContent, slugify(cleanTitle)]
+      `INSERT INTO post (author_id, forum_id, section, title, content_markdown, slug)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, forum_id, section, title, content_markdown, created_at`,
+      [req.user.sub, forum.id, cleanSection, cleanTitle, cleanContent, slugify(cleanTitle)]
     );
     await attachTags(client, created.rows[0].id, cleanTags);
     await client.query('COMMIT');
@@ -3526,6 +4109,7 @@ app.post('/api/posts', authRequired, async (req, res) => {
       userId: req.user.sub,
       postId: created.rows[0].id,
       title: created.rows[0].title,
+      forumId: forum.id,
       section: created.rows[0].section,
       tags: cleanTags
     });
@@ -3537,20 +4121,23 @@ app.post('/api/posts', authRequired, async (req, res) => {
         createdAt: new Date(created.rows[0].created_at).getTime(),
         authorId: req.user.sub,
         authorName: req.user.name,
+        forum,
         section: created.rows[0].section,
         tags: cleanTags
       }
     });
-  } catch {
-    await client.query('ROLLBACK');
-    return res.status(500).json({ message: 'Failed to create post.' });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    const message = error instanceof Error ? error.message : 'Failed to create post.';
+    const status = /forum|section/i.test(message) ? 400 : 500;
+    return res.status(status).json({ message });
   } finally {
     client.release();
   }
 });
 
 app.put('/api/posts/:postId', authRequired, async (req, res) => {
-  const { title, content, section, tags } = req.body || {};
+  const { title, content, section, tags, forumId } = req.body || {};
   const cleanTitle = String(title || '').trim();
   const cleanContent = String(content || '').trim();
   const cleanSection = normalizeSection(section);
@@ -3575,7 +4162,7 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
   try {
     await client.query('BEGIN');
     const existing = await client.query(
-      `SELECT id, author_id, created_at, deleted_by_admin_at FROM post WHERE id = $1`,
+      `SELECT id, author_id, forum_id, created_at, deleted_by_admin_at FROM post WHERE id = $1`,
       [req.params.postId]
     );
     if (!existing.rows[0]) {
@@ -3590,12 +4177,13 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({ message: 'This post is under moderation and cannot be edited.' });
     }
+    const forum = await resolveWritableForum(client, forumId, cleanSection, existing.rows[0].forum_id || '');
     const updated = await client.query(
       `UPDATE post
-       SET section = $1, title = $2, content_markdown = $3, updated_at = NOW()
-       WHERE id = $4
-       RETURNING id, section, title, content_markdown, created_at`,
-      [cleanSection, cleanTitle, cleanContent, req.params.postId]
+       SET forum_id = $1, section = $2, title = $3, content_markdown = $4, updated_at = NOW()
+       WHERE id = $5
+       RETURNING id, forum_id, section, title, content_markdown, created_at`,
+      [forum.id, cleanSection, cleanTitle, cleanContent, req.params.postId]
     );
     await attachTags(client, req.params.postId, cleanTags);
     await client.query('COMMIT');
@@ -3604,6 +4192,7 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
       userId: req.user.sub,
       postId: req.params.postId,
       title: updated.rows[0].title,
+      forumId: forum.id,
       section: updated.rows[0].section,
       tags: cleanTags
     });
@@ -3616,13 +4205,16 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
         createdAt: new Date(updated.rows[0].created_at).getTime(),
         authorId: req.user.sub,
         authorName: req.user.name,
+        forum,
         section: updated.rows[0].section,
         tags: cleanTags
       }
     });
-  } catch {
-    await client.query('ROLLBACK');
-    return res.status(500).json({ message: 'Failed to update post.' });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    const message = error instanceof Error ? error.message : 'Failed to update post.';
+    const status = /forum|section/i.test(message) ? 400 : 500;
+    return res.status(status).json({ message });
   } finally {
     client.release();
   }
@@ -3658,6 +4250,13 @@ app.delete('/api/posts/:postId', authRequired, async (req, res) => {
 
 runMigrations(pool, path.resolve(__dirname, '../migrations'))
   .then(async () => {
+    const forumClient = await pool.connect();
+    try {
+      await ensureCoreForums(forumClient);
+    } finally {
+      forumClient.release();
+    }
+
     if (!isOpenAiConfigured) {
       console.warn('OPENAI_API_KEY is not configured. Agent routing and AI rewrite will be limited, and post drafting will use the local template fallback.');
     }

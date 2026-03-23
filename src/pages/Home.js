@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
+import ForumSidebar from '../components/ForumSidebar';
 import Select from '../components/Select';
 import {
   allSections,
@@ -35,30 +36,79 @@ function getPreview(content) {
   return `${text.slice(0, 180).trimEnd()}...`;
 }
 
+function filterGroupsByScope(scope) {
+  if (!scope || scope.length === 0) {
+    return sectionGroups;
+  }
+
+  return sectionGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => scope.includes(item.value))
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+function buildSectionOptionsForForum(forum) {
+  const scopedGroups = filterGroupsByScope(forum?.sectionScope || []);
+  return scopedGroups.map((group) => ({
+    label: group.title,
+    options: group.items.map((item) => ({ value: item.value, label: item.label }))
+  }));
+}
+
+function getScopedDefaultSection(forum) {
+  return forum?.sectionScope?.[0] || defaultSection.value;
+}
+
 export default function Home({
   posts,
+  forums,
   pagination,
   currentFilters,
   loadingPosts,
   currentUser,
   onLoadPosts,
-  onCreatePost
+  onLoadForums,
+  onCreatePost,
+  onOwnerRemovePost
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { sectionId } = useParams();
+  const { sectionId, forumSlug } = useParams();
   const [searchParams] = useSearchParams();
-
-  const [form, setForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
+  const selectedForumSlug = String(forumSlug || '').trim().toLowerCase();
+  const selectedForum = useMemo(
+    () => forums.find((forum) => forum.slug === selectedForumSlug) || null,
+    [forums, selectedForumSlug]
+  );
+  const selectedForumOption = selectedForum || null;
+  const visibleSectionGroups = useMemo(
+    () => filterGroupsByScope(selectedForum?.sectionScope || []),
+    [selectedForum]
+  );
+  const visibleSectionValues = useMemo(
+    () => visibleSectionGroups.flatMap((group) => group.items.map((item) => item.value)),
+    [visibleSectionGroups]
+  );
+  const [form, setForm] = useState({
+    title: '',
+    content: '',
+    forumId: '',
+    section: defaultSection.value,
+    tags: ''
+  });
   const [message, setMessage] = useState('');
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(currentFilters?.q || '');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [selectedSections, setSelectedSections] = useState(
     sectionId ? [sectionId] : (currentFilters?.section || [])
   );
   const [composerLanguage, setComposerLanguage] = useState('javascript');
+  const shouldRedirectToDefaultForum = forums.length > 0 && !selectedForum;
 
-  const applyComposerDraft = (draft) => {
+  const applyComposerDraft = useCallback((draft) => {
     if (!draft) {
       return;
     }
@@ -66,12 +116,13 @@ export default function Home({
     setForm({
       title: String(draft.title || ''),
       content: String(draft.content || ''),
-      section: String(draft.section || defaultSection.value) || defaultSection.value,
+      forumId: String(draft.forumId || selectedForumOption?.id || ''),
+      section: String(draft.section || getScopedDefaultSection(selectedForumOption)) || getScopedDefaultSection(selectedForumOption),
       tags: Array.isArray(draft.tags) ? draft.tags.join(', ') : String(draft.tags || '')
     });
     setMessage('');
     setIsComposerOpen(true);
-  };
+  }, [selectedForumOption]);
 
   const sectionCounts = useMemo(() => {
     const counts = Object.fromEntries(allSections.map((item) => [item.value, 0]));
@@ -85,12 +136,12 @@ export default function Home({
   const groupCounts = useMemo(
     () =>
       Object.fromEntries(
-        sectionGroups.map((group) => [
+        visibleSectionGroups.map((group) => [
           group.title,
           group.items.reduce((sum, item) => sum + (sectionCounts[item.value] || 0), 0)
         ])
       ),
-    [sectionCounts]
+    [sectionCounts, visibleSectionGroups]
   );
 
   useEffect(() => {
@@ -126,12 +177,13 @@ export default function Home({
       replace: true,
       state: null
     });
-  }, [currentUser, location.pathname, location.search, location.state, navigate]);
+  }, [applyComposerDraft, currentUser, location.pathname, location.search, location.state, navigate]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       onLoadPosts({
-        q: searchQuery.trim(),
+        q: deferredSearchQuery.trim(),
+        forum: selectedForumSlug,
         section: selectedSections,
         page: 1,
         pageSize: 'all'
@@ -141,12 +193,40 @@ export default function Home({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [onLoadPosts, searchQuery, selectedSections]);
+  }, [deferredSearchQuery, onLoadPosts, selectedForumSlug, selectedSections]);
+
+  useEffect(() => {
+    if (!selectedForumOption) {
+      return;
+    }
+
+    setForm((current) => {
+      const nextForumId = current.forumId || selectedForumOption.id;
+      const activeForum = forums.find((forum) => forum.id === nextForumId) || selectedForumOption;
+      const nextSection = activeForum.sectionScope.includes(current.section)
+        ? current.section
+        : getScopedDefaultSection(activeForum);
+
+      if (current.forumId === nextForumId && current.section === nextSection) {
+        return current;
+      }
+
+      return {
+        ...current,
+        forumId: nextForumId,
+        section: nextSection
+      };
+    });
+  }, [forums, selectedForumOption]);
+
+  useEffect(() => {
+    if (visibleSectionValues.length === 0) {
+      return;
+    }
+    setSelectedSections((current) => current.filter((value) => visibleSectionValues.includes(value)));
+  }, [visibleSectionValues]);
 
   const toggleSection = (sectionValue) => {
-    if (sectionId) {
-      navigate('/forum');
-    }
     setSelectedSections((current) =>
       current.includes(sectionValue)
         ? current.filter((value) => value !== sectionValue)
@@ -155,9 +235,6 @@ export default function Home({
   };
 
   const clearSections = () => {
-    if (sectionId) {
-      navigate('/forum');
-    }
     setSelectedSections([]);
   };
 
@@ -173,13 +250,19 @@ export default function Home({
       setMessage(result.message);
       return;
     }
-    setForm({ title: '', content: '', section: defaultSection.value, tags: '' });
+    setForm({
+      title: '',
+      content: '',
+      forumId: selectedForumOption?.id || '',
+      section: getScopedDefaultSection(selectedForumOption),
+      tags: ''
+    });
     setSearchQuery('');
     setSelectedSections([]);
-    if (sectionId) {
-      navigate('/forum');
-    }
-    await onLoadPosts({ q: '', section: [], page: 1, pageSize: 'all' });
+    await Promise.all([
+      onLoadPosts({ q: '', forum: selectedForumSlug, section: [], page: 1, pageSize: 'all' }),
+      onLoadForums()
+    ]);
     setIsComposerOpen(false);
     setMessage('Post published.');
   };
@@ -196,81 +279,116 @@ export default function Home({
     }));
   };
 
+  const moderatePost = async (post) => {
+    const forumId = post.forum?.id;
+    if (!forumId) {
+      setMessage('This post is not attached to a forum yet.');
+      return;
+    }
+
+    const reason = window.prompt('Why are you removing this post from the forum?', 'Needs review');
+    if (!reason || !reason.trim()) {
+      return;
+    }
+
+    const result = await onOwnerRemovePost(forumId, post.id, reason.trim());
+    setMessage(result.message || (result.ok ? 'Post removed.' : 'Failed to remove post.'));
+  };
+
+  const activeForumForComposer = forums.find((forum) => forum.id === form.forumId) || selectedForumOption;
+  const activeSectionOptions = buildSectionOptionsForForum(activeForumForComposer);
+  const canManagePost = (post) => Boolean(
+    currentUser && post.forum?.ownerId && (currentUser.isAdmin || post.forum.ownerId === currentUser.id)
+  );
+
+  if (shouldRedirectToDefaultForum) {
+    return <Navigate to={`/forum/${forums[0].slug}`} replace />;
+  }
+
   return (
     <div className="container page-shell">
       <section className="hero-card mb-4">
-        <h1 className="hero-title">LearnFromUs Community Forum</h1>
+        <h1 className="hero-title">{selectedForum?.name || 'Forum'}</h1>
         <p className="hero-copy mb-0">
-          Share practical ideas across software engineering and data science, filter by section, and drill
-          down further with tag search.
+          {selectedForum?.description || 'Browse posts, discussions, and practical writeups from this forum only.'}
         </p>
       </section>
 
-      <section className="panel mb-4">
-        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-          <div>
-            <h3 className="mb-1 type-title-md">Sections</h3>
-            <p className="type-body mb-0">Browse the forum by discipline, then narrow by tags.</p>
-          </div>
-          <span className="muted">{pagination?.total || 0} matching posts</span>
+      <div className="forum-workspace-float">
+        <div id="forum-workspace-panel" className="forum-workspace-panel">
+          <ForumSidebar currentUser={currentUser} />
         </div>
+      </div>
 
-        <div className="section-grid">
-          {sectionGroups.map((group) => (
-            <div key={group.title} className="section-card is-open">
-              <div className="section-group-toggle">
-                <span className="section-group-copy">
-                  <span className="section-card-title mb-0">{group.title}</span>
-                  <span className="section-group-summary">
-                    {groupCounts[group.title] || 0} posts on this page across {group.items.length} sections
-                  </span>
-                </span>
-                <span className="section-group-meta">
-                  <span className="section-group-total">{groupCounts[group.title] || 0}</span>
-                </span>
+      <div className="forum-layout">
+        <div className="forum-main forum-main-full">
+          <section className="panel mb-4">
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+              <div>
+                <h3 className="mb-1 type-title-md">{selectedForum?.name || 'Forum'}</h3>
+                <p className="type-body mb-0">
+                  {selectedForum
+                    ? `${selectedForum.description} ${selectedForum.ownerId === currentUser?.id ? 'You own this forum and can moderate posts here.' : ''}`
+                    : 'Browse posts in this forum.'}
+                </p>
               </div>
-              <div className="section-chip-wrap mt-3">
-                {group.items.map((item) => (
+              <span className="muted">{pagination?.total || 0} matching posts</span>
+            </div>
+
+            <div className="section-grid">
+              {visibleSectionGroups.map((group) => (
+                <div key={group.title} className="section-card is-open">
+                  <div className="section-group-toggle">
+                    <span className="section-group-copy">
+                      <span className="section-card-title mb-0">{group.title}</span>
+                      <span className="section-group-summary">
+                        {groupCounts[group.title] || 0} posts on this page across {group.items.length} sections
+                      </span>
+                    </span>
+                    <span className="section-group-meta">
+                      <span className="section-group-total">{groupCounts[group.title] || 0}</span>
+                    </span>
+                  </div>
+                  <div className="section-chip-wrap mt-3">
+                    {group.items.map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`}
+                        onClick={() => toggleSection(item.value)}
+                      >
+                        <span>{item.label}</span>
+                        <span className="section-count">{sectionCounts[item.value] || 0}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {selectedSections.length > 0 && (
+              <div className="section-filter-row mt-3">
+                <button
+                  type="button"
+                  className="section-filter is-active"
+                  onClick={clearSections}
+                >
+                  Clear Sections
+                </button>
+                {selectedSections.map((sectionValue) => (
                   <button
-                    key={item.value}
+                    key={sectionValue}
                     type="button"
-                    className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`}
-                    onClick={() => toggleSection(item.value)}
+                    className="section-filter"
+                    onClick={() => toggleSection(sectionValue)}
                   >
-                    <span>{item.label}</span>
-                    <span className="section-count">{sectionCounts[item.value] || 0}</span>
+                    {getSectionLabel(sectionValue)}
                   </button>
                 ))}
               </div>
-            </div>
-          ))}
-        </div>
+            )}
+          </section>
 
-        {selectedSections.length > 0 && (
-          <div className="section-filter-row mt-3">
-            <button
-              type="button"
-              className="section-filter is-active"
-              onClick={clearSections}
-            >
-              All Sections
-            </button>
-            {selectedSections.map((sectionValue) => (
-              <button
-                key={sectionValue}
-                type="button"
-                className="section-filter"
-                onClick={() => toggleSection(sectionValue)}
-              >
-                {getSectionLabel(sectionValue)}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <div className="row g-4">
-        <div className="col-12">
           <section className="panel">
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
               <h3 className="mb-0 type-title-md">Latest Posts</h3>
@@ -293,7 +411,7 @@ export default function Home({
                 className="form-control forum-input tag-search-input"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search title, content, tags, section"
+                placeholder="Search title, content, tags, author, section"
               />
               {searchQuery && (
                 <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
@@ -302,13 +420,17 @@ export default function Home({
               )}
             </div>
 
+            {message && <div className="settings-alert is-success mb-3">{message}</div>}
             {loadingPosts && <p className="muted mb-3">Refreshing posts...</p>}
 
             <div className="forum-feed">
               {posts.map((post) => (
                 <article key={post.id} className="forum-post-card">
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <span className="forum-tag">{getSectionLabel(post.section)}</span>
+                  <div className="forum-post-meta-row">
+                    <div className="forum-post-badges">
+                      {post.forum?.name && <span className="forum-tag is-active">{post.forum.name}</span>}
+                      <span className="forum-tag">{getSectionLabel(post.section)}</span>
+                    </div>
                     <span className="muted forum-time">{formatTime(post.createdAt)}</span>
                   </div>
 
@@ -339,15 +461,22 @@ export default function Home({
                         {post.authorName}
                       </Link>
                     </small>
-                    <Link to={`/forum/post/${post.id}`} className="post-read-link">
-                      Read more
-                    </Link>
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                      {canManagePost(post) && (
+                        <button type="button" className="forum-danger-btn" onClick={() => moderatePost(post)}>
+                          Remove
+                        </button>
+                      )}
+                      <Link to={`/forum/post/${post.id}`} className="post-read-link">
+                        Read more
+                      </Link>
+                    </div>
                   </div>
                 </article>
               ))}
 
               {!loadingPosts && posts.length === 0 && (
-                <p className="muted mb-0">No posts match the current section and tag filters.</p>
+                <p className="muted mb-0">No posts match the current forum, section, and tag filters.</p>
               )}
             </div>
           </section>
@@ -367,6 +496,13 @@ export default function Home({
 
             <form onSubmit={submitPost} className="forum-form">
               <div className="mb-3">
+                <label className="form-label">Forum</label>
+                <div className="form-control forum-input d-flex align-items-center">
+                  {selectedForum?.name || 'Current forum'}
+                </div>
+              </div>
+
+              <div className="mb-3">
                 <label className="form-label">Title</label>
                 <input
                   className="form-control forum-input"
@@ -379,7 +515,7 @@ export default function Home({
               <div className="mb-3">
                 <label className="form-label">Section</label>
                 <Select
-                  options={sectionSelectOptions}
+                  options={activeSectionOptions.length > 0 ? activeSectionOptions : sectionSelectOptions}
                   value={form.section}
                   onChange={(nextValue) => setForm((prev) => ({ ...prev, section: nextValue }))}
                 />

@@ -79,6 +79,8 @@ const SECTION_CONTENT = {
   }
 };
 
+// This is a simple modification to the About.js file without affecting existing content
+
 export default function About() {
   const [activeSection, setActiveSection] = useState('story');
   const section = useMemo(() => SECTION_CONTENT[activeSection], [activeSection]);

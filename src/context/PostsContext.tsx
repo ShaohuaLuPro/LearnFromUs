@@ -1,5 +1,6 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  apiApproveForumRequest,
   apiAdminRemovePost,
   apiAdminRestorePost,
   apiAgentChat,
@@ -9,18 +10,23 @@ import {
   apiCreatePost,
   apiDeletePost,
   apiDownloadAdminParquetDataset,
+  apiGetForums,
   apiGetAdminAnalytics,
   apiGetComments,
   apiGetAdminParquetDatasets,
   apiGetModerationPosts,
   apiGetMyPosts,
+  apiOwnerRemovePost,
+  apiOwnerRestorePost,
   apiGetPost,
   apiGetPosts,
   apiQueryAdminAnalytics,
+  apiRejectForumRequest,
+  apiRequestForum,
   apiUpdatePost
 } from '../api';
 import { useAuth } from './AuthContext';
-import type { AnalyticsReport, Comment, Pagination, Post, PostListFilters } from '../types';
+import type { AnalyticsReport, Comment, Forum, ForumRequest, ForumWorkspace, Pagination, Post, PostListFilters } from '../types';
 
 type ActionResult<T = undefined> = {
   ok: boolean;
@@ -30,22 +36,29 @@ type ActionResult<T = undefined> = {
   post?: Post;
   comments?: Comment[];
   comment?: Comment;
+  forums?: Forum[];
+  workspace?: ForumWorkspace | null;
+  request?: ForumRequest;
   datasets?: Array<{ key: string; fileName: string }>;
 };
 
 type PostsContextValue = {
   initialized: boolean;
   loadingPosts: boolean;
+  loadingForums: boolean;
   posts: Post[];
+  forums: Forum[];
+  forumWorkspace: ForumWorkspace | null;
   pagination: Pagination;
   filters: Required<PostListFilters>;
   loadPosts: (filters?: PostListFilters) => Promise<ActionResult<Post[]>>;
   refreshPosts: () => Promise<ActionResult<Post[]>>;
-  createPost: (input: { title: string; content: string; section: string; tags?: string | string[] }) => Promise<ActionResult>;
-  updatePost: (postId: string, input: { title: string; content: string; section: string; tags?: string | string[] }) => Promise<ActionResult>;
+  loadForums: () => Promise<ActionResult<Forum[]>>;
+  createPost: (input: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] }) => Promise<ActionResult>;
+  updatePost: (postId: string, input: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] }) => Promise<ActionResult>;
   aiRewritePost: (
     postId: string,
-    input: { instruction: string; draft?: { title: string; content: string; section: string; tags?: string | string[] } },
+    input: { instruction: string; draft?: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] } },
     signal?: AbortSignal
   ) => Promise<ActionResult<Record<string, unknown>>>;
   deletePost: (postId: string) => Promise<ActionResult>;
@@ -57,6 +70,11 @@ type PostsContextValue = {
   getModerationPosts: () => Promise<ActionResult<Post[]>>;
   adminRemovePost: (postId: string, reason: string) => Promise<ActionResult>;
   adminRestorePost: (postId: string) => Promise<ActionResult>;
+  ownerRemovePost: (forumId: string, postId: string, reason: string) => Promise<ActionResult>;
+  ownerRestorePost: (forumId: string, postId: string) => Promise<ActionResult>;
+  requestForum: (input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string }) => Promise<ActionResult>;
+  approveForumRequest: (requestId: string, reviewNote?: string) => Promise<ActionResult>;
+  rejectForumRequest: (requestId: string, reviewNote?: string) => Promise<ActionResult>;
   agentChat: (message: string, signal?: AbortSignal) => Promise<ActionResult<Record<string, unknown>>>;
   getAdminAnalytics: (filters?: Record<string, string | number>) => Promise<ActionResult<AnalyticsReport>>;
   queryAdminAnalytics: (filters?: Record<string, string | number>) => Promise<ActionResult<AnalyticsReport>>;
@@ -75,6 +93,7 @@ const DEFAULT_PAGINATION: Pagination = {
 
 const DEFAULT_FILTERS: Required<PostListFilters> = {
   q: '',
+  forum: '',
   section: [],
   page: 1,
   pageSize: 10
@@ -83,17 +102,21 @@ const DEFAULT_FILTERS: Required<PostListFilters> = {
 const PostsContext = createContext<PostsContextValue | null>(null);
 
 export function PostsProvider({ children }: { children: React.ReactNode }) {
-  const { getToken } = useAuth();
+  const { getToken, currentUser } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
+  const [forums, setForums] = useState<Forum[]>([]);
+  const [forumWorkspace, setForumWorkspace] = useState<ForumWorkspace | null>(null);
   const [pagination, setPagination] = useState<Pagination>(DEFAULT_PAGINATION);
   const [filters, setFilters] = useState<Required<PostListFilters>>(DEFAULT_FILTERS);
   const [loadingPosts, setLoadingPosts] = useState(true);
+  const [loadingForums, setLoadingForums] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const filtersRef = useRef<Required<PostListFilters>>(DEFAULT_FILTERS);
 
   const loadPosts = useCallback(async (nextFilters: PostListFilters = {}) => {
     const mergedFilters: Required<PostListFilters> = {
       q: typeof nextFilters.q === 'string' ? nextFilters.q : filtersRef.current.q,
+      forum: typeof nextFilters.forum === 'string' ? nextFilters.forum : filtersRef.current.forum,
       section: Array.isArray(nextFilters.section)
         ? nextFilters.section
         : typeof nextFilters.section === 'string'
@@ -127,35 +150,55 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     loadPosts(DEFAULT_FILTERS);
   }, [loadPosts]);
 
+  const loadForums = useCallback(async () => {
+    setLoadingForums(true);
+    try {
+      const data = await apiGetForums(getToken() || undefined);
+      startTransition(() => {
+        setForums(data.forums || []);
+        setForumWorkspace(data.workspace || null);
+      });
+      return { ok: true, forums: data.forums || [], workspace: data.workspace || null };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to load forums.' };
+    } finally {
+      setLoadingForums(false);
+    }
+  }, [getToken]);
+
+  useEffect(() => {
+    loadForums();
+  }, [loadForums, currentUser?.id]);
+
   const refreshPosts = useCallback(() => loadPosts(filtersRef.current), [loadPosts]);
 
-  const createPost = useCallback(async (input: { title: string; content: string; section: string; tags?: string | string[] }) => {
+  const createPost = useCallback(async (input: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] }) => {
     const token = getToken();
     if (!token) {
       return { ok: false, message: 'Please login first.' };
     }
     try {
       await apiCreatePost(input, token);
-      await refreshPosts();
+      await Promise.all([refreshPosts(), loadForums()]);
       return { ok: true };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to create post.' };
     }
-  }, [getToken, refreshPosts]);
+  }, [getToken, loadForums, refreshPosts]);
 
-  const updatePost = useCallback(async (postId: string, input: { title: string; content: string; section: string; tags?: string | string[] }) => {
+  const updatePost = useCallback(async (postId: string, input: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] }) => {
     const token = getToken();
     if (!token) {
       return { ok: false, message: 'Please login first.' };
     }
     try {
       await apiUpdatePost(postId, input, token);
-      await refreshPosts();
+      await Promise.all([refreshPosts(), loadForums()]);
       return { ok: true };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to update post.' };
     }
-  }, [getToken, refreshPosts]);
+  }, [getToken, loadForums, refreshPosts]);
 
   const aiRewritePost = useCallback(async (
     postId: string,
@@ -184,12 +227,12 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       await apiDeletePost(postId, token);
-      await refreshPosts();
+      await Promise.all([refreshPosts(), loadForums()]);
       return { ok: true };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to delete post.' };
     }
-  }, [getToken, refreshPosts]);
+  }, [getToken, loadForums, refreshPosts]);
 
   const getPostDetail = useCallback(async (postId: string) => {
     try {
@@ -268,12 +311,12 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const data = await apiAdminRemovePost(postId, { reason }, token);
-      await refreshPosts();
+      await Promise.all([refreshPosts(), loadForums()]);
       return { ok: true, message: data.message };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to remove post.' };
     }
-  }, [getToken, refreshPosts]);
+  }, [getToken, loadForums, refreshPosts]);
 
   const adminRestorePost = useCallback(async (postId: string) => {
     const token = getToken();
@@ -282,12 +325,82 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const data = await apiAdminRestorePost(postId, token);
-      await refreshPosts();
+      await Promise.all([refreshPosts(), loadForums()]);
       return { ok: true, message: data.message };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to restore post.' };
     }
-  }, [getToken, refreshPosts]);
+  }, [getToken, loadForums, refreshPosts]);
+
+  const ownerRemovePost = useCallback(async (forumId: string, postId: string, reason: string) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiOwnerRemovePost(forumId, postId, { reason }, token);
+      await Promise.all([refreshPosts(), loadForums()]);
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to moderate post.' };
+    }
+  }, [getToken, loadForums, refreshPosts]);
+
+  const ownerRestorePost = useCallback(async (forumId: string, postId: string) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiOwnerRestorePost(forumId, postId, token);
+      await Promise.all([refreshPosts(), loadForums()]);
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to restore post.' };
+    }
+  }, [getToken, loadForums, refreshPosts]);
+
+  const requestForum = useCallback(async (input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string }) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiRequestForum(input, token);
+      await loadForums();
+      return { ok: true, message: data.message, request: data.request };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to request forum.' };
+    }
+  }, [getToken, loadForums]);
+
+  const approveForumRequest = useCallback(async (requestId: string, reviewNote = '') => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiApproveForumRequest(requestId, { reviewNote }, token);
+      await Promise.all([refreshPosts(), loadForums()]);
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to approve forum request.' };
+    }
+  }, [getToken, loadForums, refreshPosts]);
+
+  const rejectForumRequest = useCallback(async (requestId: string, reviewNote = '') => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiRejectForumRequest(requestId, { reviewNote }, token);
+      await loadForums();
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to reject forum request.' };
+    }
+  }, [getToken, loadForums]);
 
   const agentChat = useCallback(async (message: string, signal?: AbortSignal) => {
     try {
@@ -374,11 +487,15 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<PostsContextValue>(() => ({
     initialized,
     loadingPosts,
+    loadingForums,
     posts,
+    forums,
+    forumWorkspace,
     pagination,
     filters,
     loadPosts,
     refreshPosts,
+    loadForums,
     createPost,
     updatePost,
     aiRewritePost,
@@ -391,6 +508,11 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     getModerationPosts,
     adminRemovePost,
     adminRestorePost,
+    ownerRemovePost,
+    ownerRestorePost,
+    requestForum,
+    approveForumRequest,
+    rejectForumRequest,
     agentChat,
     getAdminAnalytics,
     queryAdminAnalytics,
@@ -401,11 +523,15 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
   }), [
     initialized,
     loadingPosts,
+    loadingForums,
     posts,
+    forums,
+    forumWorkspace,
     pagination,
     filters,
     loadPosts,
     refreshPosts,
+    loadForums,
     createPost,
     updatePost,
     aiRewritePost,
@@ -418,6 +544,11 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     getModerationPosts,
     adminRemovePost,
     adminRestorePost,
+    ownerRemovePost,
+    ownerRestorePost,
+    requestForum,
+    approveForumRequest,
+    rejectForumRequest,
     agentChat,
     getAdminAnalytics,
     queryAdminAnalytics,

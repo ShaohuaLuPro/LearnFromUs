@@ -4,6 +4,9 @@ import type {
   AgentNavigation,
   Comment,
   DraftGeneration,
+  Forum,
+  ForumRequest,
+  ForumWorkspace,
   NetworkUser,
   Post,
   PostListFilters,
@@ -59,6 +62,7 @@ type PostPayload = {
   title: string;
   content: string;
   section: string;
+  forumId?: string;
   tags?: string[] | string;
 };
 
@@ -151,6 +155,15 @@ export async function apiGetPosts(filters: PostListFilters = {}) {
   return request<PostListResponse>(`/api/posts${buildQuery(filters as Record<string, string | number | string[] | undefined>)}`);
 }
 
+export async function apiGetForums(token?: string) {
+  return request<{
+    forums: Forum[];
+    workspace: ForumWorkspace | null;
+  }>('/api/forums', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+}
+
 export async function apiGetPost(postId: string) {
   return request<{ post: Post }>(`/api/posts/${postId}`);
 }
@@ -240,6 +253,33 @@ export async function apiDeleteAccount(token: string) {
 
 export async function apiCreatePost(input: PostPayload, token: string) {
   return request<{ post: Post }>('/api/posts', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiRequestForum(
+  input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string },
+  token: string
+) {
+  return request<{ ok: boolean; message?: string; request: ForumRequest }>('/api/forums/requests', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiApproveForumRequest(requestId: string, input: { reviewNote?: string }, token: string) {
+  return request<{ ok: boolean; message?: string; forum: Forum }>(`/api/forums/requests/${requestId}/approve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiRejectForumRequest(requestId: string, input: { reviewNote?: string }, token: string) {
+  return request<{ ok: boolean; message?: string }>(`/api/forums/requests/${requestId}/reject`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(input)
@@ -345,6 +385,21 @@ export async function apiAdminRemovePost(postId: string, input: { reason: string
 
 export async function apiAdminRestorePost(postId: string, token: string) {
   return request<MessageResponse>(`/api/admin/posts/${postId}/restore`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiOwnerRemovePost(forumId: string, postId: string, input: { reason: string }, token: string) {
+  return request<MessageResponse>(`/api/forums/${forumId}/posts/${postId}/remove`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiOwnerRestorePost(forumId: string, postId: string, token: string) {
+  return request<MessageResponse>(`/api/forums/${forumId}/posts/${postId}/restore`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` }
   });

@@ -5,6 +5,47 @@ export type User = {
   isAdmin?: boolean;
 };
 
+export type Forum = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  ownerId: string | null;
+  ownerName?: string;
+  sectionScope: string[];
+  postCount?: number;
+  livePostCount?: number;
+  moderatedCount?: number;
+  isCore?: boolean;
+};
+
+export type ForumRequest = {
+  id: string;
+  requesterId: string;
+  requesterName?: string;
+  forumId: string | null;
+  forumSlug?: string;
+  forumName?: string;
+  slug: string;
+  name: string;
+  description: string;
+  sectionScope: string[];
+  rationale: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewNote?: string;
+  reviewedById?: string | null;
+  reviewedByName?: string;
+  createdAt: number | null;
+  reviewedAt: number | null;
+};
+
+export type ForumWorkspace = {
+  ownedForums: Forum[];
+  myRequests: ForumRequest[];
+  pendingRequests: ForumRequest[];
+  moderatedPosts: Post[];
+};
+
 export type NetworkUser = {
   id: string;
   name: string;
@@ -34,6 +75,7 @@ export type Post = {
   authorId: string;
   authorName: string;
   authorEmail?: string;
+  forum?: Forum | null;
   section: string;
   tags: string[];
   moderation: ModerationState;
@@ -52,6 +94,7 @@ export type Comment = {
 
 export type PostListFilters = {
   q?: string;
+  forum?: string;
   section?: string | string[];
   page?: number;
   pageSize?: number | 'all';
@@ -69,6 +112,7 @@ export type PostListResponse = {
   pagination: Pagination;
   filters: {
     q: string;
+    forum?: string;
     section: string[];
   };
 };

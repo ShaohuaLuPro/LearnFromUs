@@ -502,10 +502,62 @@ a {
   letter-spacing: -0.02em;
 }
 
+.about-story-title-why {
+  padding-left: 4ch;
+}
+
 .about-story-copy {
   color: var(--text-soft);
   font-size: var(--font-size-body);
   line-height: 1.7;
+}
+
+.about-story-kicker-highlight {
+  font-size: clamp(1rem, 1.35vw, 1.18rem);
+}
+
+.about-story-kicker-xl {
+  font-size: clamp(1.1rem, 1.45vw, 1.28rem);
+}
+
+/* About page unified typography size */
+.about-page-shell .about-story-kicker,
+.about-page-shell .about-story-title,
+.about-page-shell .about-story-copy,
+.about-page-shell .about-connect-label,
+.about-page-shell .about-connect-value,
+.about-page-shell .about-connect-row a {
+  font-size: clamp(1.2rem, 1.6vw, 1.38rem) !important;
+}
+
+.about-story-copy-highlight {
+  font-size: clamp(1.2rem, 1.6vw, 1.38rem);
+}
+
+.about-word-bounce {
+  display: inline-block;
+  animation: aboutWordBounce 1.5s ease-in-out infinite;
+  color: inherit;
+}
+
+.about-word-bounce-delay-0 {
+  animation-delay: 0s;
+}
+
+.about-word-bounce-delay-1 {
+  animation-delay: 0.2s;
+}
+
+@keyframes aboutWordBounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(-4px);
+  }
+  55% {
+    transform: translateY(0);
+  }
 }
 
 .about-focus-grid {
@@ -513,6 +565,119 @@ a {
   flex-wrap: wrap;
   gap: 0.55rem;
   margin-top: 0.85rem;
+}
+
+.leadership-panel {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.leadership-hero {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.leadership-hero-title {
+  font-size: clamp(1.45rem, 2.7vw, 2.2rem);
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+  color: #7dfff1 !important;
+  text-shadow: 0 0 24px rgba(0, 240, 255, 0.16);
+}
+
+.leadership-hero-copy {
+  color: var(--text-subtle);
+  font-size: clamp(1.05rem, 1.4vw, 1.24rem);
+}
+
+.leadership-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.1rem;
+}
+
+.leadership-card {
+  border: 1px solid var(--surface-card-border-strong);
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(8, 22, 35, 0.9), rgba(7, 19, 30, 0.92));
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
+}
+
+.leadership-card-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.4rem;
+  min-height: 220px;
+}
+
+.leadership-card-copy {
+  max-width: min(62%, 26ch);
+}
+
+.leadership-card-name {
+  font-size: clamp(1.45rem, 2.2vw, 2rem);
+  line-height: 1.18;
+  color: var(--text-heading);
+}
+
+.leadership-card-role {
+  font-size: clamp(1rem, 1.35vw, 1.2rem);
+  color: var(--text-subtle);
+}
+
+.leadership-card-image-shell {
+  width: 156px;
+  height: 156px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 240, 255, 0.22);
+  flex-shrink: 0;
+}
+
+.leadership-card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+}
+
+.leadership-card-image-teamMembers {
+  object-position: center 22%;
+  transform: scale(1.2);
+  filter: brightness(0.9) contrast(1.08);
+}
+
+.leadership-card-image-founder {
+  object-position: center 10%;
+  filter: saturate(0.82) brightness(0.94) contrast(1.06);
+}
+
+.leadership-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.8rem;
+  border-top: 1px solid var(--surface-card-border);
+  background: rgba(0, 240, 255, 0.04);
+  padding: 0.9rem 1.4rem 1rem;
+}
+
+.leadership-action-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-decoration: none;
+  color: var(--brand);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: 1rem;
+}
+
+.leadership-action-btn:hover {
+  color: var(--brand-2);
 }
 
 .about-focus-pill {
@@ -570,12 +735,21 @@ a {
   border-bottom: 0;
 }
 
+.about-detail-panel .about-story-block,
+.about-detail-panel .about-connect-row {
+  border-bottom: 0;
+}
+
 .about-connect-label {
   font-size: var(--font-size-kicker);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #5f7088;
+}
+
+.about-connect-label.about-story-kicker-highlight {
+  font-size: clamp(1rem, 1.35vw, 1.18rem);
 }
 
 .about-connect-value {
@@ -610,12 +784,24 @@ a {
 }
 
 .about-portrait-image {
-  width: 100%;
-  height: clamp(420px, 62vh, 720px);
+  width: 70%;
+  max-width: 260px;
+  height: clamp(250px, 39vh, 400px);
+  margin: 0 auto;
   object-fit: cover;
   object-position: center top;
   border-radius: 16px;
   box-shadow: 0 16px 36px rgba(12, 28, 56, 0.16);
+}
+
+@media (min-width: 992px) {
+  .about-detail-col {
+    transform: translateX(46px);
+  }
+
+  .about-portrait-image {
+    transform: translateX(-16px);
+  }
 }
 
 .hero-card {
@@ -2778,12 +2964,64 @@ h5 {
   text-shadow: none;
 }
 
+.about-detail-panel .about-profile-name {
+  font-size: clamp(1.2rem, 1.9vw, 1.7rem);
+  padding-left: 2ch;
+}
+
 .about-detail-panel .about-story-copy {
   font-size: clamp(1.1rem, 1.75vw, 1.45rem);
   font-weight: 560;
   line-height: 1.58;
   letter-spacing: -0.006em;
   color: #c6e9f7 !important;
+}
+
+.about-detail-panel .about-profile-role {
+  font-weight: 420;
+}
+
+.about-page-shell .about-detail-panel .about-profile-role {
+  font-size: clamp(1.1rem, 1.45vw, 1.28rem) !important;
+}
+
+.about-profile-role-inline {
+  display: inline-block;
+  margin-left: 3ch;
+  font-size: clamp(1.1rem, 1.45vw, 1.28rem);
+  font-weight: 420;
+  color: #c6e9f7;
+}
+
+.about-detail-panel .about-story-copy.about-story-copy-story-match {
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: normal;
+  color: var(--text-subtle) !important;
+}
+
+.about-detail-panel .about-story-copy.about-story-copy-plain {
+  font-weight: 400;
+}
+
+.about-detail-panel .about-story-title.about-story-title-story-match {
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: normal;
+  color: var(--text-subtle) !important;
+}
+
+.about-detail-panel .about-story-title.about-team-what-i-bring-title {
+  font-weight: 400;
+}
+
+.about-team-summary-centered {
+  text-align: left;
+}
+
+.about-detail-panel .about-team-summary-centered {
+  font-size: clamp(1.1rem, 1.75vw, 1.45rem) !important;
+  line-height: 1.7;
 }
 
 .auth-card h2,
@@ -2877,7 +3115,27 @@ h5 {
     top: auto;
   }
 
+  .leadership-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .leadership-card-main {
+    min-height: 0;
+    align-items: flex-start;
+  }
+
+  .leadership-card-copy {
+    max-width: none;
+  }
+
+  .leadership-card-image {
+    width: 104px;
+    height: 104px;
+  }
+
   .about-portrait-image {
+    width: 100%;
+    max-width: none;
     height: auto;
     aspect-ratio: 4 / 5;
   }

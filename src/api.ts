@@ -164,6 +164,28 @@ export async function apiGetForums(token?: string) {
   });
 }
 
+export async function apiFollowForum(forumId: string, token: string) {
+  return request<{ ok: boolean }>(`/api/forums/${forumId}/follow`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiUnfollowForum(forumId: string, token: string) {
+  return request<{ ok: boolean }>(`/api/forums/${forumId}/follow`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiUpdateForumSections(forumId: string, input: { sectionScope: string[] }, token: string) {
+  return request<{ ok: boolean; message?: string; forum?: Forum | null }>(`/api/forums/${forumId}/sections`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
 export async function apiGetPost(postId: string) {
   return request<{ post: Post }>(`/api/posts/${postId}`);
 }

@@ -2416,7 +2416,8 @@ function mapForumRow(row) {
     postCount: Number(row.post_count || 0),
     livePostCount: Number(row.live_post_count || 0),
     moderatedCount: Number(row.moderated_count || 0),
-    isCore: Boolean(row.is_core)
+    isCore: Boolean(row.is_core),
+    isFollowing: Boolean(row.is_following)
   };
 }
 
@@ -2473,7 +2474,11 @@ async function ensureCoreForums(client) {
        ON CONFLICT (slug) DO UPDATE
          SET name = EXCLUDED.name,
              description = EXCLUDED.description,
-             section_scope = EXCLUDED.section_scope,
+             section_scope = CASE
+               WHEN forum.section_scope IS NULL OR array_length(forum.section_scope, 1) IS NULL
+                 THEN EXCLUDED.section_scope
+               ELSE forum.section_scope
+             END,
              is_core = TRUE,
              owner_id = COALESCE(forum.owner_id, EXCLUDED.owner_id),
              updated_at = NOW()`,
@@ -2566,18 +2571,39 @@ async function resolveWritableForum(client, forumId, section, fallbackForumId = 
 async function getForumWorkspace(client, user) {
   await ensureCoreForums(client);
 
-  const forumsResult = await client.query(
-    `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
-            COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count
-     FROM forum f
-     LEFT JOIN app_user owner ON owner.id = f.owner_id
-     LEFT JOIN post p ON p.forum_id = f.id
-     GROUP BY f.id, owner.username
-     ORDER BY f.is_core DESC, live_post_count DESC, f.name ASC`
-  );
+  const forumsResult = user?.sub
+    ? await client.query(
+        `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
+                COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+                COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+                COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+                COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
+                EXISTS (
+                  SELECT 1
+                  FROM forum_follow ff
+                  WHERE ff.user_id = $1
+                    AND ff.forum_id = f.id
+                ) AS is_following
+         FROM forum f
+         LEFT JOIN app_user owner ON owner.id = f.owner_id
+         LEFT JOIN post p ON p.forum_id = f.id
+         GROUP BY f.id, owner.username
+         ORDER BY is_following DESC, f.is_core DESC, live_post_count DESC, f.name ASC`,
+        [user.sub]
+      )
+    : await client.query(
+        `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
+                COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+                COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+                COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+                COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
+                FALSE AS is_following
+         FROM forum f
+         LEFT JOIN app_user owner ON owner.id = f.owner_id
+         LEFT JOIN post p ON p.forum_id = f.id
+         GROUP BY f.id, owner.username
+         ORDER BY f.is_core DESC, live_post_count DESC, f.name ASC`
+      );
 
   const forums = forumsResult.rows.map(mapForumRow);
 
@@ -3010,6 +3036,134 @@ app.get('/api/forums', optionalAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to load forums.', error);
     return res.status(500).json({ message: 'Failed to load forums.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/forums/:forumId/follow', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const forumResult = await client.query(
+      `SELECT id, slug FROM forum WHERE id = $1`,
+      [req.params.forumId]
+    );
+
+    if (!forumResult.rows[0]) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+
+    await client.query(
+      `INSERT INTO forum_follow (user_id, forum_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [req.user.sub, req.params.forumId]
+    );
+
+    await recordActivity('social.followed_forum', {
+      userId: req.user.sub,
+      forumId: req.params.forumId,
+      forumSlug: forumResult.rows[0].slug
+    });
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Failed to follow forum.', error);
+    return res.status(500).json({ message: 'Failed to follow forum.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/forums/:forumId/follow', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `DELETE FROM forum_follow WHERE user_id = $1 AND forum_id = $2`,
+      [req.user.sub, req.params.forumId]
+    );
+
+    await recordActivity('social.unfollowed_forum', {
+      userId: req.user.sub,
+      forumId: req.params.forumId
+    });
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Failed to unfollow forum.', error);
+    return res.status(500).json({ message: 'Failed to unfollow forum.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/forums/:forumId/sections', authRequired, async (req, res) => {
+  const cleanScope = normalizeSectionScope(req.body?.sectionScope);
+  if (cleanScope.length === 0) {
+    return res.status(400).json({ message: 'A forum must keep at least one section.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const forumResult = await client.query(
+      `SELECT id, owner_id, COALESCE(section_scope, '{}') AS section_scope
+       FROM forum
+       WHERE id = $1`,
+      [req.params.forumId]
+    );
+
+    if (!forumResult.rows[0]) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!canManageForum(req.user, forumResult.rows[0].owner_id)) {
+      return res.status(403).json({ message: 'Only the forum owner or an admin can edit sections.' });
+    }
+
+    const currentScope = forumResult.rows[0].section_scope || [];
+    const removedSections = currentScope.filter((section) => !cleanScope.includes(section));
+    if (removedSections.length > 0) {
+      const inUseSections = await client.query(
+        `SELECT section, COUNT(*)::int AS count
+         FROM post
+         WHERE forum_id = $1
+           AND is_published = TRUE
+           AND section = ANY($2::text[])
+         GROUP BY section
+         ORDER BY section ASC`,
+        [req.params.forumId, removedSections]
+      );
+
+      if (inUseSections.rows[0]) {
+        return res.status(400).json({
+          message: `Cannot remove sections that still have posts: ${inUseSections.rows.map((row) => row.section).join(', ')}.`
+        });
+      }
+    }
+
+    await client.query(
+      `UPDATE forum
+       SET section_scope = $1::text[],
+           updated_at = NOW()
+       WHERE id = $2`,
+      [cleanScope, req.params.forumId]
+    );
+
+    await recordActivity('forum.sections_updated', {
+      userId: req.user.sub,
+      forumId: req.params.forumId,
+      sectionScope: cleanScope
+    });
+
+    const updatedForum = await getForumById(client, req.params.forumId);
+
+    return res.json({
+      ok: true,
+      message: 'Forum sections updated.',
+      forum: updatedForum
+    });
+  } catch (error) {
+    console.error('Failed to update forum sections.', error);
+    return res.status(500).json({ message: 'Failed to update forum sections.' });
   } finally {
     client.release();
   }

@@ -86,7 +86,7 @@ export default function AppRoutes() {
   return (
     <div className="app-wrapper d-flex flex-column min-vh-100">
       <RouteSeo />
-      <Header currentUser={auth.currentUser} forums={posts.forums} onLogout={auth.logout} />
+      <Header currentUser={auth.currentUser} forums={posts.forums} posts={posts.posts} onLogout={auth.logout} />
       <main className="app-main">
         <Routes>
           <Route path="/" element={<Landing currentUser={auth.currentUser} />} />
@@ -104,6 +104,7 @@ export default function AppRoutes() {
                 onLoadPosts={posts.loadPosts}
                 onLoadForums={posts.loadForums}
                 onCreatePost={posts.createPost}
+                onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
               />
             )}
@@ -121,6 +122,7 @@ export default function AppRoutes() {
                 onLoadPosts={posts.loadPosts}
                 onLoadForums={posts.loadForums}
                 onCreatePost={posts.createPost}
+                onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
               />
             )}
@@ -130,13 +132,14 @@ export default function AppRoutes() {
           <Route path="/users/:userId" element={<UserProfile currentUser={auth.currentUser} />} />
           <Route
             path="/following"
-            element={auth.currentUser ? <Following /> : <Navigate to="/login" replace />}
+            element={auth.currentUser ? <Following forums={posts.forums} /> : <Navigate to="/login" replace />}
           />
           <Route
             path="/forums/request"
             element={auth.currentUser ? (
               <ForumRequestPage
                 currentUser={auth.currentUser}
+                forums={posts.forums}
                 forumWorkspace={posts.forumWorkspace}
                 onRequestForum={posts.requestForum}
                 onApproveForumRequest={posts.approveForumRequest}
@@ -164,6 +167,7 @@ export default function AppRoutes() {
             element={auth.currentUser ? (
               <MyPosts
                 currentUser={auth.currentUser}
+                forums={posts.forums}
                 onUpdatePost={posts.updatePost}
                 onAiRewritePost={posts.aiRewritePost}
                 onDeletePost={posts.deletePost}

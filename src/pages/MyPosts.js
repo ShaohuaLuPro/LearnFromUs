@@ -6,9 +6,9 @@ import '@uiw/react-markdown-preview/markdown.css';
 import MarkdownBlock from '../components/MarkdownBlock';
 import Select from '../components/Select';
 import {
-  defaultSection,
+  getDefaultSectionValue,
   getSectionLabel,
-  sectionSelectOptions
+  getSectionSelectOptions
 } from '../lib/sections';
 
 const codeLanguages = ['javascript', 'typescript', 'python', 'sql', 'bash', 'json'];
@@ -64,6 +64,7 @@ function hasExpandablePreview(content) {
 
 export default function MyPosts({
   currentUser,
+  forums,
   onUpdatePost,
   onAiRewritePost,
   onDeletePost,
@@ -71,9 +72,10 @@ export default function MyPosts({
   onGetMyPosts
 }) {
   const location = useLocation();
+  const fallbackSectionValue = useMemo(() => getDefaultSectionValue(forums), [forums]);
   const [rewriteAbortController, setRewriteAbortController] = useState(null);
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ title: '', content: '', section: defaultSection.value, tags: '' });
+  const [editForm, setEditForm] = useState({ title: '', content: '', section: fallbackSectionValue, tags: '' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [editorLanguage, setEditorLanguage] = useState('javascript');
@@ -115,6 +117,16 @@ export default function MyPosts({
     [myPosts, currentUser]
   );
 
+  const editingPost = useMemo(
+    () => visiblePosts.find((post) => post.id === editingId) || null,
+    [editingId, visiblePosts]
+  );
+
+  const editSectionOptions = useMemo(() => {
+    const scopedSections = editingPost?.forum?.sectionScope;
+    return getSectionSelectOptions(scopedSections?.length ? scopedSections : forums);
+  }, [editingPost, forums]);
+
   const startEdit = (post, options = {}) => {
     rewriteAbortController?.abort();
     setRewriteAbortController(null);
@@ -122,7 +134,7 @@ export default function MyPosts({
     setEditForm({
       title: post.title,
       content: post.content,
-      section: post.section || defaultSection.value,
+      section: post.section || getDefaultSectionValue(post.forum?.sectionScope || [], forums),
       tags: (post.tags || []).join(', ')
     });
     setAiRewriteOpen(Boolean(options.openAiPanel));
@@ -345,7 +357,7 @@ export default function MyPosts({
                     </div>
                     <div className="mb-2">
                       <Select
-                        options={sectionSelectOptions}
+                        options={editSectionOptions}
                         value={editForm.section}
                         onChange={(nextValue) => setEditForm((prev) => ({ ...prev, section: nextValue }))}
                       />

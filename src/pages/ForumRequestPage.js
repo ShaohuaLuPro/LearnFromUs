@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { defaultSection, getSectionLabel, sectionGroups } from '../lib/sections';
+import { getDefaultSectionValue, getSectionLabel, getSectionOptions } from '../lib/sections';
 
 function formatDate(timestamp) {
   if (!timestamp) {
@@ -18,19 +18,35 @@ function formatDate(timestamp) {
 
 export default function ForumRequestPage({
   currentUser,
+  forums,
   forumWorkspace,
   onRequestForum,
   onApproveForumRequest,
   onRejectForumRequest
 }) {
+  const availableSections = useMemo(() => getSectionOptions(forums), [forums]);
+  const defaultSectionValue = useMemo(() => getDefaultSectionValue(forums), [forums]);
   const [form, setForm] = useState({
     name: '',
     description: '',
     rationale: '',
-    sectionScope: [defaultSection.value]
+    sectionScope: [defaultSectionValue]
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setForm((current) => {
+      if (current.sectionScope.length > 0) {
+        return current;
+      }
+
+      return {
+        ...current,
+        sectionScope: [defaultSectionValue]
+      };
+    });
+  }, [defaultSectionValue]);
 
   const toggleSection = (sectionValue) => {
     setForm((current) => ({
@@ -56,7 +72,7 @@ export default function ForumRequestPage({
       name: '',
       description: '',
       rationale: '',
-      sectionScope: [defaultSection.value]
+      sectionScope: [defaultSectionValue]
     });
     setMessage(result.message || 'Forum request submitted.');
   };
@@ -133,7 +149,7 @@ export default function ForumRequestPage({
               <div className="mb-3">
                 <label className="form-label">Section Scope</label>
                 <div className="section-chip-wrap">
-                  {sectionGroups.map((group) => group.items.map((item) => (
+                  {availableSections.map((item) => (
                     <button
                       key={`forum-request-${item.value}`}
                       type="button"
@@ -142,7 +158,7 @@ export default function ForumRequestPage({
                     >
                       <span>{item.label}</span>
                     </button>
-                  )))}
+                  ))}
                 </div>
                 <div className="form-help">Choose up to 4 sections that belong in this forum.</div>
               </div>

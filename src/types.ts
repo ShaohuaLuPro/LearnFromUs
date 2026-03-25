@@ -17,6 +17,7 @@ export type Forum = {
   livePostCount?: number;
   moderatedCount?: number;
   isCore?: boolean;
+  isFollowing?: boolean;
 };
 
 export type ForumRequest = {

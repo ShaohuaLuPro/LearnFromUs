@@ -1,5 +1,3 @@
-const { SECTION_ENUM } = require('./openai-drafts');
-
 const CORE_FORUM_SEEDS = [
   {
     slug: 'software-engineering',
@@ -63,6 +61,15 @@ function normalizeForumRationale(input) {
   return String(input || '').trim().slice(0, 500);
 }
 
+function normalizeForumSectionValue(input) {
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
 function normalizeSectionScope(input) {
   const raw = Array.isArray(input)
     ? input
@@ -72,9 +79,9 @@ function normalizeSectionScope(input) {
 
   return [...new Set(
     raw
-      .map((value) => String(value || '').trim().toLowerCase())
-      .filter((value) => SECTION_ENUM.includes(value))
-  )].slice(0, 8);
+      .map((value) => normalizeForumSectionValue(value))
+      .filter(Boolean)
+  )].slice(0, 12);
 }
 
 function getDefaultForumSlugForSection(section) {

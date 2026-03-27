@@ -8,6 +8,8 @@ import { useAuth } from './context/AuthContext';
 import { usePosts } from './context/PostsContext';
 import About from './pages/About';
 import AdminAccess from './pages/AdminAccess';
+import AdminAccessDetail from './pages/AdminAccessDetail';
+import AdminPasswordReset from './pages/AdminPasswordReset';
 import Analytics from './pages/Analytics';
 import Explore from './pages/Explore';
 import Following from './pages/Following';
@@ -21,6 +23,8 @@ import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Moderation from './pages/Moderation';
 import MyForums from './pages/MyForums';
+import MyForumInvitations from './pages/MyForumInvitations';
+import MyForumManagers from './pages/MyForumManagers';
 import MyPosts from './pages/MyPosts';
 import PostDetail from './pages/PostDetail';
 import Settings from './pages/Settings';
@@ -59,6 +63,7 @@ export default function AppRoutes() {
   const canModerate = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('moderation'));
   const canViewAnalytics = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('analytics'));
   const canReviewForumRequests = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('forum_requests'));
+  const canResetPasswords = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('password_reset'));
 
   if (auth.authLoading || (!posts.initialized && posts.loadingPosts)) {
     return <LoadingShell />;
@@ -246,6 +251,28 @@ export default function AppRoutes() {
             )}
           />
           <Route
+            path="/my-forums/invitations"
+            element={auth.currentUser ? (
+              <MyForumInvitations
+                onLoadForums={posts.loadForums}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
+            path="/my-forums/:forumId/managers/:managerId"
+            element={auth.currentUser ? (
+              <MyForumManagers
+                currentUser={auth.currentUser}
+                forums={posts.forums}
+                onLoadForums={posts.loadForums}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
             path="/moderation"
             element={canModerate ? (
               <Moderation
@@ -272,6 +299,22 @@ export default function AppRoutes() {
             path="/admin/access"
             element={canManageAdminAccess ? (
               <AdminAccess currentUser={auth.currentUser} />
+            ) : (
+              <Navigate to="/forum" replace />
+            )}
+          />
+          <Route
+            path="/admin/access/:userId"
+            element={canManageAdminAccess ? (
+              <AdminAccessDetail currentUser={auth.currentUser} />
+            ) : (
+              <Navigate to="/forum" replace />
+            )}
+          />
+          <Route
+            path="/admin/password-reset"
+            element={canResetPasswords ? (
+              <AdminPasswordReset />
             ) : (
               <Navigate to="/forum" replace />
             )}

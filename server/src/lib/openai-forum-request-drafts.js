@@ -25,7 +25,7 @@ const FORUM_REQUEST_DRAFT_SCHEMA = {
       minLength: 20,
       maxLength: 500
     },
-    summary: {
+    overview: {
       type: 'string',
       minLength: 1,
       maxLength: 220
@@ -41,7 +41,7 @@ const FORUM_REQUEST_DRAFT_SCHEMA = {
       maxItems: 4
     }
   },
-  required: ['name', 'description', 'rationale', 'sectionScope']
+  required: ['name', 'overview', 'description', 'rationale', 'sectionScope']
 };
 
 function extractJsonString(response) {
@@ -68,7 +68,7 @@ function normalizeForumRequestDraft(payload, fallbackDraft) {
   const name = normalizeForumName(raw?.name || fallbackDraft.name);
   const description = normalizeForumDescription(raw?.description || fallbackDraft.description);
   const rationale = normalizeForumRationale(raw?.rationale || fallbackDraft.rationale);
-  const summary = String(raw?.summary || '').trim().slice(0, 220);
+  const overview = String(raw?.overview || raw?.summary || fallbackDraft.overview || fallbackDraft.summary || '').trim().slice(0, 220);
   const sectionScope = normalizeSectionScope(raw?.sectionScope?.length ? raw.sectionScope : fallbackDraft.sectionScope);
 
   if (name.length < 4) {
@@ -87,11 +87,11 @@ function normalizeForumRequestDraft(payload, fallbackDraft) {
   return {
     draft: {
       name,
+      overview,
       description,
       rationale,
       sectionScope: sectionScope.slice(0, 4)
-    },
-    summary
+    }
   };
 }
 
@@ -104,12 +104,14 @@ function buildDraftPrompt({ message, fallbackDraft }) {
     '',
     'Instructions:',
     '- Draft a forum request, not a forum post.',
-    '- Return a concise forum name.',
+    '- Set name to a concise forum title only.',
+    '- Set overview to a short one-sentence overview of the forum idea.',
     '- Description should explain what kinds of discussion belong in the forum.',
     '- Rationale should explain why the forum should exist and who it helps.',
     '- Recommend 1 to 4 short section scope labels tailored to this forum topic.',
     '- Do not copy existing forum names or broad site-wide taxonomy unless the user explicitly asked for it.',
     '- Prefer focused labels like "mlops-platforms" or "model-deployment" over generic labels like "general".',
+    '- Keep each field distinct. Do not merge title, overview, description, and rationale together.',
     '- Keep the writing practical and ready to submit in the app.'
   ].join('\n');
 }
@@ -126,12 +128,13 @@ function buildRewritePrompt({ instruction, draft, currentUserName }) {
     '- Rewrite the forum request according to the user instruction.',
     '- Preserve the core idea unless the instruction asks to reposition it.',
     '- Make the rewrite visibly different from the input when the instruction asks for improvement.',
+    '- Keep name as the forum title only, and keep overview as a separate short overview sentence.',
     '- Rewrite at least the description and rationale with materially different wording, sentence structure, or specificity.',
     '- Improve clarity, specificity, and submission-readiness.',
     '- Recommend 1 to 4 section scope labels that are tailored to the request.',
     '- Do not reuse existing forum names as section scope labels.',
     '- Return a complete rewritten draft, not commentary.',
-    '- Set summary to one sentence that explains what changed in the rewrite.'
+    '- Set overview to one sentence that explains the rewritten forum concept clearly.'
   ].filter(Boolean).join('\n');
 }
 

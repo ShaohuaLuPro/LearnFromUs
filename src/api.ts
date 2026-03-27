@@ -8,6 +8,7 @@ import type {
   ForumAccessPayload,
   ForumFollower,
   ForumManager,
+  ForumManagerInvite,
   ForumRequestDraft,
   ForumRequest,
   ForumWorkspace,
@@ -193,6 +194,14 @@ export async function apiUpdateForumSections(forumId: string, input: { sectionSc
   });
 }
 
+export async function apiUpdateForumDetails(forumId: string, input: { description: string }, token: string) {
+  return request<{ ok: boolean; message?: string; forum?: Forum | null }>(`/api/forums/${forumId}/details`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
 export async function apiGetPost(postId: string) {
   return request<{ post: Post }>(`/api/posts/${postId}`);
 }
@@ -299,6 +308,17 @@ export async function apiRemoveSiteAdminAccess(userId: string, token: string) {
   });
 }
 
+export async function apiAdminResetUserPassword(
+  input: { identifier: string; newPassword: string },
+  token: string
+) {
+  return request<{ ok: boolean; message?: string }>('/api/admin/users/reset-password', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
 export async function apiGetForumAccess(forumId: string, token: string) {
   return request<ForumAccessPayload>(`/api/forums/${forumId}/access`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -310,7 +330,7 @@ export async function apiUpsertForumManager(
   input: { identifier: string; permissions: string[] },
   token: string
 ) {
-  return request<{ ok: boolean; manager: ForumManager | null; managers: ForumManager[]; message?: string }>(`/api/forums/${forumId}/managers`, {
+  return request<{ ok: boolean; manager: ForumManager | null; managers: ForumManager[]; invite?: ForumManagerInvite | null; message?: string }>(`/api/forums/${forumId}/managers`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(input)
@@ -342,6 +362,26 @@ export async function apiTransferForumOwnership(forumId: string, input: { identi
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(input)
+  });
+}
+
+export async function apiGetForumManagerInvites(token: string) {
+  return request<{ invites: ForumManagerInvite[] }>('/api/account/forum-manager-invites', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiAcceptForumManagerInvite(inviteId: string, token: string) {
+  return request<{ ok: boolean; forum?: Forum | null; message?: string }>(`/api/account/forum-manager-invites/${inviteId}/accept`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiRejectForumManagerInvite(inviteId: string, token: string) {
+  return request<{ ok: boolean; message?: string }>(`/api/account/forum-manager-invites/${inviteId}/reject`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
   });
 }
 

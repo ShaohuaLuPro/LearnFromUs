@@ -178,7 +178,8 @@ const SITE_ADMIN_PERMISSION_ENUM = [
   'manage_admin_access',
   'moderation',
   'analytics',
-  'forum_requests'
+  'forum_requests',
+  'password_reset'
 ];
 
 const SITE_ADMIN_PERMISSION_DETAILS = [
@@ -201,6 +202,11 @@ const SITE_ADMIN_PERMISSION_DETAILS = [
     key: 'forum_requests',
     label: 'Forum Requests',
     description: 'Review and approve or reject forum creation requests.'
+  },
+  {
+    key: 'password_reset',
+    label: 'Password Reset',
+    description: 'Set temporary passwords for users through the admin panel.'
   }
 ];
 
@@ -378,6 +384,13 @@ function siteAdminPermissionRequired(permission) {
     }
     return next();
   };
+}
+
+function rootAdminRequired(req, res, next) {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ message: 'Root admin access required.' });
+  }
+  return next();
 }
 
 function optionalAuth(req, _res, next) {
@@ -1974,6 +1987,7 @@ function buildForumRequestDraftFromMessage(message) {
 
   return {
     name,
+    overview: `A focused community for ${focusSummary}.`,
     description: normalizeForumDescription(
       `A forum for discussions, questions, case studies, and practical workflows related to ${focusSummary}.`
     ),
@@ -2884,6 +2898,20 @@ function mapForumManagerRow(row) {
   };
 }
 
+function mapForumManagerInviteRow(row) {
+  return {
+    id: row.id,
+    forumId: row.forum_id,
+    forumSlug: row.forum_slug || '',
+    forumName: row.forum_name || '',
+    forumDescription: row.forum_description || '',
+    permissions: row.permissions || [],
+    invitedById: row.invited_by_id || null,
+    invitedByName: row.invited_by_name || '',
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null
+  };
+}
+
 function canManageForum(user, forumOwnerId) {
   return Boolean(user?.isAdmin || (user?.sub && forumOwnerId && user.sub === forumOwnerId));
 }
@@ -2993,6 +3021,22 @@ async function listForumManagers(client, forumId) {
   );
 
   return result.rows.map(mapForumManagerRow);
+}
+
+async function listPendingForumManagerInvitesForUser(client, userId) {
+  const result = await client.query(
+    `SELECT fmi.id, fmi.forum_id, fmi.permissions, fmi.invited_by_id, inviter.username AS invited_by_name,
+            fmi.created_at, f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description
+     FROM forum_manager_invite fmi
+     JOIN forum f ON f.id = fmi.forum_id
+     LEFT JOIN app_user inviter ON inviter.id = fmi.invited_by_id
+     WHERE fmi.invitee_user_id = $1
+       AND fmi.status = 'pending'
+     ORDER BY fmi.created_at DESC, f.name ASC`,
+    [userId]
+  );
+
+  return result.rows.map(mapForumManagerInviteRow);
 }
 
 async function ensureForumFollower(client, forumId, userId) {
@@ -3791,6 +3835,54 @@ app.delete('/api/admin/access/:userId', authRequired, siteAdminPermissionRequire
   }
 });
 
+app.post('/api/admin/users/reset-password', authRequired, siteAdminPermissionRequired('password_reset'), async (req, res) => {
+  const identifier = String(req.body?.identifier || '').trim();
+  const newPassword = String(req.body?.newPassword || '');
+
+  if (!identifier) {
+    return res.status(400).json({ message: 'Enter a username, email, or user id.' });
+  }
+  if (!newPassword.trim()) {
+    return res.status(400).json({ message: 'Enter a temporary password.' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: 'Temporary password must be at least 8 characters.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const targetUser = await findUserByIdentifier(client, identifier);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await client.query(
+      `UPDATE app_user
+       SET password_hash = $2,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [targetUser.id, passwordHash]
+    );
+
+    await recordActivity('auth.admin_password_reset', {
+      adminUserId: req.user.sub,
+      targetUserId: targetUser.id,
+      targetEmail: targetUser.email
+    });
+
+    return res.json({
+      ok: true,
+      message: `Temporary password updated for ${targetUser.username || targetUser.email}.`
+    });
+  } catch (error) {
+    console.error('Failed to reset user password as admin.', error);
+    return res.status(500).json({ message: 'Failed to reset user password.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/api/forums', optionalAuth, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -3892,6 +3984,20 @@ app.get('/api/forums/:forumId/followers', authRequired, async (req, res) => {
   }
 });
 
+app.get('/api/account/forum-manager-invites', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    return res.json({
+      invites: await listPendingForumManagerInvitesForUser(client, req.user.sub)
+    });
+  } catch (error) {
+    console.error('Failed to load forum manager invites.', error);
+    return res.status(500).json({ message: 'Failed to load forum manager invites.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/api/forums/:forumId/access', authRequired, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -3950,6 +4056,96 @@ app.post('/api/forums/:forumId/managers', authRequired, async (req, res) => {
       return res.status(400).json({ message: 'The forum owner already has full permissions.' });
     }
 
+    const existingManager = await client.query(
+      `SELECT user_id
+       FROM forum_manager
+       WHERE forum_id = $1
+         AND user_id = $2`,
+      [req.params.forumId, targetUser.id]
+    );
+
+    let manager = null;
+    let invite = null;
+
+    if (existingManager.rows[0]) {
+      await client.query(
+        `UPDATE forum_manager
+         SET permissions = $3::text[],
+             granted_by_id = $4,
+             updated_at = NOW()
+         WHERE forum_id = $1
+           AND user_id = $2`,
+        [req.params.forumId, targetUser.id, permissionsInput, req.user.sub]
+      );
+      await ensureForumFollower(client, req.params.forumId, targetUser.id);
+      const managers = await listForumManagers(client, req.params.forumId);
+      manager = managers.find((item) => item.id === targetUser.id) || null;
+
+      return res.json({
+        ok: true,
+        manager,
+        managers,
+        invite,
+        message: 'Forum manager permissions updated.'
+      });
+    }
+
+    const inviteResult = await client.query(
+      `INSERT INTO forum_manager_invite (forum_id, invitee_user_id, invited_by_id, permissions, status, updated_at, responded_at)
+       VALUES ($1, $2, $3, $4::text[], 'pending', NOW(), NULL)
+       ON CONFLICT (forum_id, invitee_user_id) WHERE status = 'pending'
+       DO UPDATE SET permissions = EXCLUDED.permissions,
+                     invited_by_id = EXCLUDED.invited_by_id,
+                     updated_at = NOW(),
+                     responded_at = NULL
+       RETURNING id, forum_id, permissions, invited_by_id, created_at`,
+      [req.params.forumId, targetUser.id, req.user.sub, permissionsInput]
+    );
+    const inviteRow = inviteResult.rows[0];
+    invite = mapForumManagerInviteRow({
+      ...inviteRow,
+      forum_slug: forum.slug,
+      forum_name: forum.name,
+      forum_description: forum.description,
+      invited_by_name: req.user.name || ''
+    });
+
+    const managers = await listForumManagers(client, req.params.forumId);
+
+    return res.json({
+      ok: true,
+      manager,
+      managers,
+      invite,
+      message: 'Forum manager invite sent.'
+    });
+  } catch (error) {
+    console.error('Failed to save forum manager.', error);
+    return res.status(500).json({ message: 'Failed to save forum manager.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/account/forum-manager-invites/:inviteId/accept', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const inviteResult = await client.query(
+      `SELECT fmi.id, fmi.forum_id, fmi.invitee_user_id, fmi.invited_by_id, fmi.permissions, f.owner_id
+       FROM forum_manager_invite fmi
+       JOIN forum f ON f.id = fmi.forum_id
+       WHERE fmi.id = $1
+         AND fmi.invitee_user_id = $2
+         AND fmi.status = 'pending'`,
+      [req.params.inviteId, req.user.sub]
+    );
+
+    const invite = inviteResult.rows[0];
+    if (!invite) {
+      return res.status(404).json({ message: 'Forum manager invite not found.' });
+    }
+
+    await client.query('BEGIN');
     await client.query(
       `INSERT INTO forum_manager (forum_id, user_id, permissions, granted_by_id, updated_at)
        VALUES ($1, $2, $3::text[], $4, NOW())
@@ -3957,22 +4153,69 @@ app.post('/api/forums/:forumId/managers', authRequired, async (req, res) => {
          SET permissions = EXCLUDED.permissions,
              granted_by_id = EXCLUDED.granted_by_id,
              updated_at = NOW()`,
-      [req.params.forumId, targetUser.id, permissionsInput, req.user.sub]
+      [invite.forum_id, req.user.sub, invite.permissions || [], invite.invited_by_id || null]
     );
-    await ensureForumFollower(client, req.params.forumId, targetUser.id);
+    await ensureForumFollower(client, invite.forum_id, req.user.sub);
+    await client.query(
+      `UPDATE forum_manager_invite
+       SET status = 'accepted',
+           responded_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [req.params.inviteId]
+    );
+    await client.query('COMMIT');
 
-    const managers = await listForumManagers(client, req.params.forumId);
-    const manager = managers.find((item) => item.id === targetUser.id) || null;
+    await recordActivity('forum.manager_invite.accepted', {
+      userId: req.user.sub,
+      forumId: invite.forum_id
+    });
 
     return res.json({
       ok: true,
-      manager,
-      managers,
-      message: 'Forum manager permissions saved.'
+      forum: await getForumById(client, invite.forum_id),
+      message: 'Forum manager invite accepted.'
     });
   } catch (error) {
-    console.error('Failed to save forum manager.', error);
-    return res.status(500).json({ message: 'Failed to save forum manager.' });
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to accept forum manager invite.', error);
+    return res.status(500).json({ message: 'Failed to accept forum manager invite.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/account/forum-manager-invites/:inviteId/reject', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `UPDATE forum_manager_invite
+       SET status = 'rejected',
+           responded_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1
+         AND invitee_user_id = $2
+         AND status = 'pending'
+       RETURNING forum_id`,
+      [req.params.inviteId, req.user.sub]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ message: 'Forum manager invite not found.' });
+    }
+
+    await recordActivity('forum.manager_invite.rejected', {
+      userId: req.user.sub,
+      forumId: result.rows[0].forum_id
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Forum manager invite declined.'
+    });
+  } catch (error) {
+    console.error('Failed to reject forum manager invite.', error);
+    return res.status(500).json({ message: 'Failed to reject forum manager invite.' });
   } finally {
     client.release();
   }
@@ -4118,6 +4361,47 @@ app.post('/api/forums/:forumId/transfer-ownership', authRequired, async (req, re
     await client.query('ROLLBACK').catch(() => {});
     console.error('Failed to transfer forum ownership.', error);
     return res.status(500).json({ message: 'Failed to transfer forum ownership.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/forums/:forumId/details', authRequired, async (req, res) => {
+  const cleanDescription = normalizeForumDescription(req.body?.description || req.body?.overview);
+
+  const client = await pool.connect();
+  try {
+    const { forum, permissions } = await resolveForumPermissionContext(client, req.params.forumId, req.user);
+    if (!forum) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!hasForumPermission(req.user, forum.ownerId, permissions, 'manage_sections')) {
+      return res.status(403).json({ message: 'You do not have permission to edit forum details.' });
+    }
+
+    await client.query(
+      `UPDATE forum
+       SET description = $1,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [cleanDescription, req.params.forumId]
+    );
+
+    await recordActivity('forum.details_updated', {
+      userId: req.user.sub,
+      forumId: req.params.forumId
+    });
+
+    const updatedForum = await getForumById(client, req.params.forumId);
+
+    return res.json({
+      ok: true,
+      message: 'Forum overview updated.',
+      forum: updatedForum
+    });
+  } catch (error) {
+    console.error('Failed to update forum details.', error);
+    return res.status(500).json({ message: 'Failed to update forum details.' });
   } finally {
     client.release();
   }

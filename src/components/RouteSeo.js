@@ -66,10 +66,14 @@ function routeConfig(pathname) {
   if (
     pathname === '/settings' ||
     pathname === '/my-forums' ||
+    pathname === '/my-forums/invitations' ||
+    matchPath('/my-forums/:forumId/managers/:managerId', pathname) ||
     pathname === '/my-posts' ||
     pathname === '/moderation' ||
     pathname === '/analytics' ||
     pathname === '/admin/access' ||
+    pathname === '/admin/password-reset' ||
+    matchPath('/admin/access/:userId', pathname) ||
     pathname === '/following' ||
     pathname === '/forums/request' ||
     pathname === '/forums/request/history' ||

@@ -735,64 +735,12 @@ export default function Home({
               <div className="forum-sections-head mb-3">
                 <div>
                   <h3 className="mb-1 type-title-md">Sections</h3>
-                  <p className="type-body mb-0">
-                    {canManageForumSections
-                      ? 'Filter posts here, and manage which sections this forum accepts.'
-                      : 'Filter posts in this forum by section.'}
-                  </p>
+                  <p className="type-body mb-0">Filter posts in this forum by section.</p>
                 </div>
                 <div className="forum-sections-head-actions">
                   <span className="muted">{sectionDisplayScope.length || 0} sections</span>
-                  {canManageForumSections && !sectionEditMode && (
-                    <button
-                      type="button"
-                      className="forum-secondary-btn"
-                      onClick={() => setSectionEditMode(true)}
-                      disabled={sectionUpdatePending}
-                    >
-                      Edit
-                    </button>
-                  )}
                 </div>
               </div>
-
-              {sectionNotice.text && (
-                <div className={`settings-alert ${sectionNotice.type === 'error' ? 'is-error' : 'is-success'} mb-3`}>
-                  {sectionNotice.text}
-                </div>
-              )}
-
-              {canManageForumSections && sectionEditMode && (
-                <div className="forum-section-admin mb-3">
-                  <div className="forum-section-admin-copy">
-                    <strong>Manage Sections</strong>
-                    <span className="muted">Type a new section, then click the floating x on any section you want to remove.</span>
-                  </div>
-                  <div className="forum-section-admin-controls">
-                    <input
-                      className="form-control forum-input forum-section-input"
-                      value={sectionDraft}
-                      onChange={(event) => setSectionDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          addForumSection();
-                        }
-                      }}
-                      placeholder="Type a section name"
-                      disabled={sectionUpdatePending}
-                    />
-                    <button
-                      type="button"
-                      className="forum-primary-btn"
-                      onClick={addForumSection}
-                      disabled={sectionUpdatePending}
-                    >
-                      Add Section
-                    </button>
-                  </div>
-                </div>
-              )}
 
               <div className="section-grid">
                 <div className="section-card is-open">
@@ -800,7 +748,7 @@ export default function Home({
                     {sectionItems.map((item) => (
                       <div
                         key={item.value}
-                        className={`section-chip-row ${sectionEditMode && canManageForumSections ? 'is-editing' : ''} ${item.isPendingRemoval ? 'is-pending-remove' : ''} ${item.isPendingAdd ? 'is-pending-add' : ''}`.trim()}
+                        className="section-chip-row"
                       >
                         <button
                           type="button"
@@ -810,43 +758,11 @@ export default function Home({
                           <span>{item.label}</span>
                           <span className="section-count">{sectionCounts[item.value] || 0}</span>
                         </button>
-                        {canManageForumSections && (
-                          <button
-                            type="button"
-                            className="section-chip-remove"
-                            onClick={() => markSectionForRemoval(item.value)}
-                            disabled={sectionUpdatePending || !sectionEditMode}
-                            aria-label={`${item.isPendingRemoval ? 'Restore' : 'Remove'} ${item.label}`}
-                          >
-                            x
-                          </button>
-                        )}
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
-
-              {canManageForumSections && sectionEditMode && (
-                <div className="forum-section-admin-actions mt-3">
-                  <button
-                    type="button"
-                    className="forum-primary-btn"
-                    onClick={saveSectionChanges}
-                    disabled={sectionUpdatePending}
-                  >
-                    {sectionUpdatePending ? 'Saving...' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    className="forum-secondary-btn"
-                    onClick={cancelSectionChanges}
-                    disabled={sectionUpdatePending}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
 
               {selectedSections.length > 0 && (
                 <div className="section-filter-row mt-3">

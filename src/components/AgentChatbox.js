@@ -215,6 +215,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
       state: {
         forumRequestDraft: {
           name: forumRequestDraft.name,
+          overview: forumRequestDraft.overview,
           description: forumRequestDraft.description,
           rationale: forumRequestDraft.rationale,
           sectionScope: forumRequestDraft.sectionScope || []
@@ -406,9 +407,21 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
 
                     {message.forumRequestDraft && (
                       <div className="agent-chatbox-draft">
-                        <strong>{message.forumRequestDraft.name}</strong>
+                        <div className="agent-chatbox-field-block">
+                          <span className="agent-chatbox-field-label">Title</span>
+                          <strong>{message.forumRequestDraft.name}</strong>
+                        </div>
+                        {message.forumRequestDraft.overview && (
+                          <div className="agent-chatbox-field-block">
+                            <span className="agent-chatbox-field-label">Overview</span>
+                            <p className="mb-0">{message.forumRequestDraft.overview}</p>
+                          </div>
+                        )}
                         {message.forumRequestDraft.sectionScope?.length > 0 && (
-                          <span>{message.forumRequestDraft.sectionScope.map(getSectionLabel).join(' · ')}</span>
+                          <div className="agent-chatbox-field-block">
+                            <span className="agent-chatbox-field-label">Scope</span>
+                            <span>{message.forumRequestDraft.sectionScope.map(getSectionLabel).join(' · ')}</span>
+                          </div>
                         )}
                         {message.generation && (
                           <span>
@@ -417,7 +430,14 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                               : 'Generated with local template mode'}
                           </span>
                         )}
-                        <pre>{`${message.forumRequestDraft.description}\n\nWhy this forum should exist:\n${message.forumRequestDraft.rationale}`}</pre>
+                        <div className="agent-chatbox-field-block">
+                          <span className="agent-chatbox-field-label">Description</span>
+                          <p className="mb-0">{message.forumRequestDraft.description}</p>
+                        </div>
+                        <div className="agent-chatbox-field-block">
+                          <span className="agent-chatbox-field-label">Why This Forum Should Exist</span>
+                          <p className="mb-0">{message.forumRequestDraft.rationale}</p>
+                        </div>
                         <div className="forum-actions">
                           {currentUser ? (
                             <button type="button" className="forum-primary-btn" onClick={() => openForumRequestDraft(message.forumRequestDraft)}>

@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   apiGetSiteAdminAccess,
-  apiRemoveSiteAdminAccess,
-  apiUpdateSiteAdminAccess,
   apiUpsertSiteAdminAccess
 } from '../api';
 import { authStorage } from '../lib/authStorage';
@@ -36,115 +34,61 @@ export default function AdminAccess({ currentUser }) {
   const [actionKey, setActionKey] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [invitePermissions, setInvitePermissions] = useState([]);
-  const [permissionDrafts, setPermissionDrafts] = useState({});
 
   const canManageAdminAccess = Boolean(currentUser?.canManageAdminAccess);
 
-  const loadAccess = async () => {
-    const token = authStorage.getToken();
-    if (!token) {
-      setError('Please login first.');
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const data = await apiGetSiteAdminAccess(token);
-      setAccess(data);
-      setPermissionDrafts(
-        Object.fromEntries((data.admins || []).map((entry) => [entry.id, entry.permissions || []]))
-      );
-      setError('');
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load admin access.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    async function loadAccess() {
+      const token = authStorage.getToken();
+      if (!token) {
+        setError('Please login first.');
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const data = await apiGetSiteAdminAccess(token);
+        setAccess(data);
+        setError('');
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : 'Failed to load admin access.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
     loadAccess();
   }, []);
 
   const adminEntries = useMemo(() => access?.admins || [], [access]);
   const permissionDetails = useMemo(() => access?.availablePermissions || [], [access]);
 
-  const runAction = async (key, runner) => {
-    setActionKey(key);
+  const handleInvite = async (event) => {
+    event.preventDefault();
+    const token = authStorage.getToken();
+    if (!token) {
+      setError('Please login first.');
+      return;
+    }
+
+    setActionKey('save-admin-access');
     setMessage('');
     setError('');
     try {
-      await runner();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Action failed.');
-    } finally {
-      setActionKey('');
-    }
-  };
-
-  const handleInvite = async (event) => {
-    event.preventDefault();
-    await runAction('save-admin-access', async () => {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
-      }
-
       const response = await apiUpsertSiteAdminAccess({
         identifier,
         permissions: invitePermissions
       }, token);
       setAccess((current) => current ? { ...current, admins: response.admins || [] } : current);
-      setPermissionDrafts((current) => ({
-        ...current,
-        ...Object.fromEntries((response.admins || []).map((entry) => [entry.id, entry.permissions || []]))
-      }));
       setIdentifier('');
       setInvitePermissions([]);
       setMessage(response.message || 'Admin access saved.');
-    });
-  };
-
-  const handleUpdate = async (userId) => {
-    await runAction(`update-${userId}`, async () => {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
-      }
-
-      const response = await apiUpdateSiteAdminAccess(userId, {
-        permissions: permissionDrafts[userId] || []
-      }, token);
-      setAccess((current) => current ? { ...current, admins: response.admins || [] } : current);
-      setPermissionDrafts((current) => ({
-        ...current,
-        ...Object.fromEntries((response.admins || []).map((entry) => [entry.id, entry.permissions || []]))
-      }));
-      setMessage(response.message || 'Admin permissions updated.');
-    });
-  };
-
-  const handleRemove = async (userId, userName) => {
-    if (!window.confirm(`Remove admin access for ${userName || 'this user'}?`)) {
-      return;
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to save admin access.');
+    } finally {
+      setActionKey('');
     }
-
-    await runAction(`remove-${userId}`, async () => {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
-      }
-
-      const response = await apiRemoveSiteAdminAccess(userId, token);
-      setAccess((current) => current ? { ...current, admins: response.admins || [] } : current);
-      setPermissionDrafts((current) => {
-        const nextDrafts = { ...current };
-        delete nextDrafts[userId];
-        return nextDrafts;
-      });
-      setMessage(response.message || 'Admin access removed.');
-    });
   };
 
   return (
@@ -153,9 +97,9 @@ export default function AdminAccess({ currentUser }) {
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div>
             <p className="type-kicker mb-1">Admin</p>
-            <h2 className="mb-1 type-title-md">Admin Access</h2>
+            <h2 className="mb-1 type-title-md">Admin Management</h2>
             <p className="muted mb-0">
-              Grant site-level permissions so people can help with moderation, analytics, forum requests, or admin access itself.
+              Grant site-level permissions here, then open an admin profile to adjust detailed access.
             </p>
           </div>
           <Link to="/forum" className="forum-secondary-btn text-decoration-none">
@@ -176,28 +120,11 @@ export default function AdminAccess({ currentUser }) {
             <section className="forum-admin-panel">
               <div className="forum-admin-panel-head">
                 <div>
-                  <h5 className="mb-1">Available Site Permissions</h5>
-                  <p className="muted mb-0">Use focused permissions instead of handing out full root admin access.</p>
-                </div>
-              </div>
-              <div className="forum-admin-permission-list">
-                {permissionDetails.map((permission) => (
-                  <article key={permission.key} className="forum-admin-permission-card">
-                    <strong>{permission.label}</strong>
-                    <p className="muted mb-0">{permission.description}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className="forum-admin-panel">
-              <div className="forum-admin-panel-head">
-                <div>
-                  <h5 className="mb-1">Grant Or Update Access</h5>
+                  <h5 className="mb-1">Grant Admin Access</h5>
                   <p className="muted mb-0">
                     {canManageAdminAccess
-                      ? 'Add someone by username, email, or user id, then choose exactly what they can do.'
-                      : 'You can see current site admins here, but you do not have permission to change access.'}
+                      ? 'Add someone by username, email, or user id, then choose what they can do.'
+                      : 'You can see the current admin team here, but you do not have permission to change access.'}
                   </p>
                 </div>
               </div>
@@ -245,7 +172,7 @@ export default function AdminAccess({ currentUser }) {
               <div className="forum-admin-panel-head">
                 <div>
                   <h5 className="mb-1">Current Admin Team</h5>
-                  <p className="muted mb-0">Root admins always keep full access. Delegated admins can be updated here.</p>
+                  <p className="muted mb-0">This page only shows who is on the team. Open a profile to change detailed permissions.</p>
                 </div>
               </div>
 
@@ -264,53 +191,17 @@ export default function AdminAccess({ currentUser }) {
                             {entry.grantedByName ? ` / by ${entry.grantedByName}` : ''}
                           </p>
                         </div>
-                        {canManageAdminAccess && !entry.isRootAdmin && (
-                          <button
-                            type="button"
-                            className="forum-secondary-btn"
-                            onClick={() => handleRemove(entry.id, entry.name)}
-                            disabled={actionKey === `remove-${entry.id}`}
-                          >
-                            {actionKey === `remove-${entry.id}` ? 'Removing...' : 'Remove'}
-                          </button>
+                        {canManageAdminAccess && (
+                          <Link to={`/admin/access/${entry.id}`} className="forum-secondary-btn text-decoration-none">
+                            Manage
+                          </Link>
                         )}
                       </div>
-
-                      <div className="forum-admin-checkbox-grid">
-                        {permissionDetails.map((permission) => {
-                          const checkedPermissions = permissionDrafts[entry.id] || entry.permissions || [];
-                          return (
-                            <label key={permission.key} className="forum-admin-checkbox">
-                              <input
-                                type="checkbox"
-                                checked={checkedPermissions.includes(permission.key)}
-                                onChange={() => setPermissionDrafts((current) => ({
-                                  ...current,
-                                  [entry.id]: togglePermission(checkedPermissions, permission.key)
-                                }))}
-                                disabled={!canManageAdminAccess || entry.isRootAdmin || actionKey === `update-${entry.id}`}
-                              />
-                              <span>
-                                <strong>{permission.label}</strong>
-                                <small>{permission.description}</small>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-
-                      {canManageAdminAccess && !entry.isRootAdmin && (
-                        <div className="forum-actions">
-                          <button
-                            type="button"
-                            className="forum-primary-btn"
-                            onClick={() => handleUpdate(entry.id)}
-                            disabled={(permissionDrafts[entry.id] || []).length === 0 || actionKey === `update-${entry.id}`}
-                          >
-                            {actionKey === `update-${entry.id}` ? 'Saving...' : 'Update Permissions'}
-                          </button>
-                        </div>
-                      )}
+                      <p className="muted mb-0">
+                        {entry.isRootAdmin
+                          ? 'Root admin with full access.'
+                          : `${(entry.permissions || []).length} permissions assigned.`}
+                      </p>
                     </article>
                   ))}
                 </div>

@@ -399,9 +399,14 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
                       Analytics
                     </NavLink>
                   )}
+                  {(currentUser.isAdmin || currentUser.adminPermissions?.includes('password_reset')) && (
+                    <NavLink to="/admin/password-reset" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Password Reset
+                    </NavLink>
+                  )}
                   {currentUser.canManageAdminAccess && (
                     <NavLink to="/admin/access" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
-                      Access
+                      Admin Management
                     </NavLink>
                   )}
                 </div>

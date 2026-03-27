@@ -12,7 +12,8 @@ export type SiteAdminPermissionKey =
   | 'manage_admin_access'
   | 'moderation'
   | 'analytics'
-  | 'forum_requests';
+  | 'forum_requests'
+  | 'password_reset';
 
 export type SiteAdminPermissionDetail = {
   key: SiteAdminPermissionKey;
@@ -88,6 +89,18 @@ export type ForumManager = {
   updatedAt: number | null;
 };
 
+export type ForumManagerInvite = {
+  id: string;
+  forumId: string;
+  forumSlug: string;
+  forumName: string;
+  forumDescription: string;
+  permissions: ForumPermissionKey[];
+  invitedById: string | null;
+  invitedByName?: string;
+  createdAt: number | null;
+};
+
 export type ForumAccessPayload = {
   forum: Forum;
   owner: { id: string; name: string } | null;
@@ -120,6 +133,7 @@ export type ForumRequest = {
 
 export type ForumRequestDraft = {
   name: string;
+  overview?: string;
   description: string;
   rationale: string;
   sectionScope: string[];

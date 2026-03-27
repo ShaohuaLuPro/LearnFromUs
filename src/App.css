@@ -1793,7 +1793,7 @@ label,
 .forum-admin-manager-list,
 .forum-admin-permission-list {
   display: grid;
-  gap: 0.85rem;
+  gap: 1rem;
 }
 
 .forum-admin-forum-card {
@@ -1811,6 +1811,80 @@ label,
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
+.forum-admin-invite-link {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(193, 135, 66, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(152, 61, 49, 0.18), transparent 34%),
+    linear-gradient(145deg, rgba(42, 24, 18, 0.96), rgba(21, 16, 18, 0.96));
+  box-shadow:
+    0 18px 36px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(214, 180, 138, 0.05);
+}
+
+.forum-admin-invite-link::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #b88952, #8f4338);
+  opacity: 0.9;
+}
+
+.forum-admin-invite-link strong {
+  color: #eadfd1 !important;
+}
+
+.forum-admin-invite-link p,
+.forum-admin-invite-link .forum-follow-meta {
+  color: #cdb9a5 !important;
+}
+
+.forum-admin-invite-link .forum-tag {
+  border-color: rgba(190, 146, 86, 0.24);
+  background: rgba(179, 131, 71, 0.1);
+  color: #d8bc93;
+}
+
+.forum-admin-invite-link.has-pending {
+  border-color: rgba(176, 92, 79, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(157, 61, 49, 0.24), transparent 38%),
+    linear-gradient(145deg, rgba(54, 24, 20, 0.98), rgba(26, 14, 17, 0.97));
+  box-shadow:
+    0 20px 38px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(176, 110, 96, 0.06),
+    inset 0 1px 0 rgba(210, 183, 151, 0.07);
+}
+
+.forum-admin-invite-badge {
+  min-width: 1.45rem;
+  height: 1.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.36rem;
+  border-radius: 999px;
+  background: #d93025;
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgba(217, 48, 37, 0.28);
+}
+
+.forum-admin-invite-link:hover,
+.forum-admin-invite-link.is-active {
+  border-color: rgba(190, 134, 74, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(157, 61, 49, 0.22), transparent 36%),
+    linear-gradient(145deg, rgba(58, 28, 20, 0.98), rgba(28, 17, 18, 0.98));
+  box-shadow:
+    0 22px 40px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(214, 194, 169, 0.08);
+}
+
 .forum-admin-forum-card:hover,
 .forum-admin-forum-card.is-active {
   border-color: rgba(0, 240, 255, 0.28);
@@ -1825,7 +1899,7 @@ label,
 
 .forum-admin-shell {
   display: grid;
-  gap: 1rem;
+  gap: 1.2rem;
 }
 
 .forum-admin-shell-head,
@@ -1833,9 +1907,20 @@ label,
 .forum-admin-manager-head,
 .forum-admin-inline-form {
   display: flex;
-  gap: 0.9rem;
+  gap: 1rem;
   align-items: flex-start;
   justify-content: space-between;
+}
+
+.forum-admin-shell-head {
+  gap: 1.25rem;
+  padding-bottom: 0.35rem;
+}
+
+.forum-admin-shell-head > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 0.45rem;
 }
 
 .forum-admin-panel,
@@ -1845,7 +1930,7 @@ label,
   border: 1px solid rgba(0, 240, 255, 0.14);
   border-radius: 16px;
   background: rgba(6, 18, 29, 0.84);
-  padding: 1rem;
+  padding: 1.1rem 1.15rem;
 }
 
 .forum-admin-owner-card,
@@ -1853,6 +1938,11 @@ label,
 .forum-admin-manager-card {
   display: grid;
   gap: 0.4rem;
+}
+
+.forum-admin-panel {
+  display: grid;
+  gap: 1rem;
 }
 
 .forum-admin-panel h5,
@@ -1866,7 +1956,7 @@ label,
 .forum-admin-inline-form,
 .forum-admin-create-form {
   display: grid;
-  gap: 0.9rem;
+  gap: 1rem;
 }
 
 .forum-admin-inline-form .forum-input,
@@ -1891,6 +1981,20 @@ label,
 .forum-admin-create-form .form-control.forum-input:focus {
   border-color: rgba(0, 240, 255, 0.4);
   box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.14);
+}
+
+.forum-admin-textarea {
+  min-height: 118px;
+  resize: vertical;
+}
+
+.forum-admin-panel .section-chip-wrap {
+  gap: 0.7rem;
+}
+
+.forum-admin-panel .section-chip-row {
+  margin-right: 0.15rem;
+  margin-bottom: 0.15rem;
 }
 
 .forum-admin-checkbox-grid {
@@ -2237,8 +2341,10 @@ select.forum-input optgroup,
 
 .forum-actions {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
+  justify-content: flex-end;
 }
 
 /* Modal */
@@ -2335,6 +2441,14 @@ select.forum-input optgroup,
   gap: 0.2rem;
 }
 
+.forum-overview-head h4 {
+  color: var(--text-strong);
+}
+
+.forum-overview-head .muted {
+  color: #d5ebf3 !important;
+}
+
 .forum-overview-list {
   display: grid;
   gap: 0.75rem;
@@ -2352,6 +2466,10 @@ select.forum-input optgroup,
   color: inherit;
   text-decoration: none;
   transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.forum-overview-link strong {
+  color: var(--text-heading);
 }
 
 .forum-overview-link:hover {
@@ -2374,8 +2492,12 @@ select.forum-input optgroup,
   gap: 0.75rem;
 }
 
+.forum-overview-link-top .muted {
+  color: #d8eef6 !important;
+}
+
 .forum-overview-meta {
-  color: var(--text-subtle);
+  color: #e2f6fb;
   font-size: 0.86rem;
 }
 
@@ -2842,6 +2964,23 @@ select.forum-input optgroup,
   outline: 2px solid rgba(0, 240, 255, 0.45);
   outline-offset: 2px;
   border-radius: 6px;
+}
+
+.agent-chatbox-field-block {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(0, 240, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(0, 240, 255, 0.04);
+}
+
+.agent-chatbox-field-label {
+  color: var(--text-kicker);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .moderation-banner {

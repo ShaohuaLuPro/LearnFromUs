@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   apiGetForumAccess,
-  apiRemoveForumManager,
+  apiGetForumManagerInvites,
+  apiUpdateForumDetails,
+  apiUpdateForumSections,
   apiTransferForumOwnership,
-  apiUpdateForumManager,
   apiUpsertForumManager
 } from '../api';
 import { authStorage } from '../lib/authStorage';
@@ -24,17 +25,32 @@ function formatTimestamp(timestamp) {
   });
 }
 
-function togglePermission(list, permission) {
-  return list.includes(permission)
-    ? list.filter((item) => item !== permission)
-    : [...list, permission];
-}
-
 function sortForums(items = []) {
   return [...items].sort((a, b) =>
     Number(b.followerCount ?? 0) - Number(a.followerCount ?? 0)
     || String(a.name || '').localeCompare(String(b.name || ''))
   );
+}
+
+function normalizeSectionInput(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+function mergeSectionIntoScope(currentScope = [], nextSection = '') {
+  if (!nextSection) {
+    return currentScope;
+  }
+
+  return [...new Set([...currentScope, nextSection])];
+}
+
+function scopesMatch(left = [], right = []) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export default function MyForums({ currentUser, forums = [], onLoadForums }) {
@@ -48,7 +64,11 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
   const [inviteIdentifier, setInviteIdentifier] = useState('');
   const [invitePermissions, setInvitePermissions] = useState([]);
   const [transferIdentifier, setTransferIdentifier] = useState('');
-  const [managerPermissionDrafts, setManagerPermissionDrafts] = useState({});
+  const [overviewDraft, setOverviewDraft] = useState('');
+  const [sectionScopeDraft, setSectionScopeDraft] = useState([]);
+  const [sectionDraft, setSectionDraft] = useState('');
+  const [incomingInvites, setIncomingInvites] = useState([]);
+  const [inviteInboxLoading, setInviteInboxLoading] = useState(false);
 
   const manageableForums = useMemo(() => {
     if (!currentUser) {
@@ -81,6 +101,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
   );
 
   const selectedAccess = selectedForumId ? accessByForumId[selectedForumId] || null : null;
+  const activeForum = selectedAccess?.forum || selectedForum;
 
   useEffect(() => {
     let cancelled = false;
@@ -108,10 +129,6 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
           ...current,
           [selectedForumId]: data
         }));
-        setManagerPermissionDrafts((current) => ({
-          ...current,
-          ...Object.fromEntries((data.managers || []).map((manager) => [manager.id, manager.permissions || []]))
-        }));
       } catch (error) {
         if (!cancelled) {
           setAccessMessage(error instanceof Error ? error.message : 'Failed to load forum permissions.');
@@ -130,6 +147,43 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
   }, [selectedForumId]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadInvites() {
+      if (!currentUser) {
+        setIncomingInvites([]);
+        return;
+      }
+
+      const token = authStorage.getToken();
+      if (!token) {
+        return;
+      }
+
+      setInviteInboxLoading(true);
+      try {
+        const data = await apiGetForumManagerInvites(token);
+        if (!cancelled) {
+          setIncomingInvites(data.invites || []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setActionError(error instanceof Error ? error.message : 'Failed to load forum manager invites.');
+        }
+      } finally {
+        if (!cancelled) {
+          setInviteInboxLoading(false);
+        }
+      }
+    }
+
+    loadInvites();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
     setInviteIdentifier('');
     setInvitePermissions([]);
     setTransferIdentifier('');
@@ -137,12 +191,23 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
     setActionError('');
   }, [selectedForumId]);
 
+  useEffect(() => {
+    setOverviewDraft(activeForum?.description || '');
+    setSectionScopeDraft(activeForum?.sectionScope || []);
+    setSectionDraft('');
+  }, [activeForum?.id, activeForum?.description, activeForum?.sectionScope]);
+
   const selectedPermissionKeys = selectedAccess?.viewerPermissions || selectedForum?.currentUserPermissions || [];
   const canManageAdmins = Boolean(selectedAccess?.canManageAdmins);
   const canTransferOwnership = Boolean(selectedAccess?.canTransferOwnership);
+  const canManageForumDetails = Boolean(
+    currentUser?.isAdmin
+    || (activeForum?.ownerId && currentUser?.id === activeForum.ownerId)
+    || selectedPermissionKeys.includes('manage_sections')
+  );
   const canViewFollowers = Boolean(
     currentUser?.isAdmin
-    || selectedForum?.ownerId === currentUser?.id
+    || activeForum?.ownerId === currentUser?.id
     || selectedPermissionKeys.includes('view_followers')
   );
 
@@ -161,24 +226,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       ...current,
       [selectedForumId]: data
     }));
-    setManagerPermissionDrafts((current) => ({
-      ...current,
-      ...Object.fromEntries((data.managers || []).map((manager) => [manager.id, manager.permissions || []]))
-    }));
     return data;
-  };
-
-  const handleAction = async (key, runner) => {
-    setActionKey(key);
-    setActionMessage('');
-    setActionError('');
-    try {
-      await runner();
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Action failed.');
-    } finally {
-      setActionKey('');
-    }
   };
 
   const handleInviteManager = async (event) => {
@@ -187,7 +235,10 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       return;
     }
 
-    await handleAction('invite-manager', async () => {
+    setActionKey('invite-manager');
+    setActionMessage('');
+    setActionError('');
+    try {
       const token = authStorage.getToken();
       if (!token) {
         throw new Error('Please login first.');
@@ -201,49 +252,12 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       await onLoadForums?.();
       setInviteIdentifier('');
       setInvitePermissions([]);
-      setActionMessage(response.message || 'Forum manager saved.');
-    });
-  };
-
-  const handleSaveManager = async (managerId) => {
-    if (!selectedForumId) {
-      return;
+      setActionMessage(response.message || 'Forum manager invite sent.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Action failed.');
+    } finally {
+      setActionKey('');
     }
-
-    await handleAction(`save-${managerId}`, async () => {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
-      }
-
-      const response = await apiUpdateForumManager(selectedForumId, managerId, {
-        permissions: managerPermissionDrafts[managerId] || []
-      }, token);
-      await refreshSelectedForum();
-      await onLoadForums?.();
-      setActionMessage(response.message || 'Forum manager updated.');
-    });
-  };
-
-  const handleRemoveManager = async (managerId, managerName) => {
-    if (!selectedForumId) {
-      return;
-    }
-    if (!window.confirm(`Remove ${managerName || 'this manager'} from the forum admin team?`)) {
-      return;
-    }
-
-    await handleAction(`remove-${managerId}`, async () => {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
-      }
-
-      const response = await apiRemoveForumManager(selectedForumId, managerId, token);
-      await refreshSelectedForum();
-      await onLoadForums?.();
-      setActionMessage(response.message || 'Forum manager removed.');
-    });
   };
 
   const handleTransferOwnership = async (event) => {
@@ -255,7 +269,10 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       return;
     }
 
-    await handleAction('transfer-ownership', async () => {
+    setActionKey('transfer-ownership');
+    setActionMessage('');
+    setActionError('');
+    try {
       const token = authStorage.getToken();
       if (!token) {
         throw new Error('Please login first.');
@@ -263,9 +280,131 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
 
       const response = await apiTransferForumOwnership(selectedForumId, { identifier: transferIdentifier }, token);
       await onLoadForums?.();
+      await refreshSelectedForum();
       setTransferIdentifier('');
       setActionMessage(response.message || 'Forum ownership transferred.');
-    });
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Action failed.');
+    } finally {
+      setActionKey('');
+    }
+  };
+
+  const handleSaveOverview = async (event) => {
+    event.preventDefault();
+    if (!selectedForumId) {
+      return;
+    }
+
+    if ((overviewDraft || '').trim() === String(activeForum?.description || '').trim()) {
+      setActionMessage('Forum overview is already up to date.');
+      setActionError('');
+      return;
+    }
+
+    setActionKey('save-overview');
+    setActionMessage('');
+    setActionError('');
+    try {
+      const token = authStorage.getToken();
+      if (!token) {
+        throw new Error('Please login first.');
+      }
+
+      const response = await apiUpdateForumDetails(selectedForumId, { description: overviewDraft }, token);
+      await onLoadForums?.();
+      await refreshSelectedForum();
+      setActionMessage(response.message || 'Forum overview updated.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Failed to update forum overview.');
+    } finally {
+      setActionKey('');
+    }
+  };
+
+  const addSectionDraftValue = () => {
+    const normalizedSection = normalizeSectionInput(sectionDraft);
+    if (!normalizedSection) {
+      setActionError('Enter a valid section name first.');
+      setActionMessage('');
+      return;
+    }
+    if (sectionScopeDraft.includes(normalizedSection)) {
+      setActionError('That section already exists in this forum.');
+      setActionMessage('');
+      return;
+    }
+
+    setSectionScopeDraft((current) => mergeSectionIntoScope(current, normalizedSection));
+    setSectionDraft('');
+    setActionError('');
+  };
+
+  const removeSectionDraftValue = (sectionValue) => {
+    if (sectionScopeDraft.length <= 1) {
+      setActionError('A forum must keep at least one section.');
+      setActionMessage('');
+      return;
+    }
+
+    setSectionScopeDraft((current) => current.filter((value) => value !== sectionValue));
+    setActionError('');
+  };
+
+  const cancelSectionChanges = () => {
+    setSectionScopeDraft(activeForum?.sectionScope || []);
+    setSectionDraft('');
+    setActionError('');
+  };
+
+  const handleSaveSections = async () => {
+    if (!selectedForumId) {
+      return;
+    }
+
+    const pendingSection = normalizeSectionInput(sectionDraft);
+    if (sectionDraft.trim() && !pendingSection) {
+      setActionError('Enter letters or numbers for the section name.');
+      setActionMessage('');
+      return;
+    }
+
+    const nextScope = pendingSection
+      ? mergeSectionIntoScope(sectionScopeDraft, pendingSection)
+      : sectionScopeDraft;
+
+    if (nextScope.length === 0) {
+      setActionError('A forum must keep at least one section.');
+      setActionMessage('');
+      return;
+    }
+
+    if (scopesMatch(nextScope, activeForum?.sectionScope || [])) {
+      setSectionDraft('');
+      setActionError('');
+      return;
+    }
+
+    setActionKey('save-sections');
+    setActionMessage('');
+    setActionError('');
+    try {
+      const token = authStorage.getToken();
+      if (!token) {
+        throw new Error('Please login first.');
+      }
+
+      const response = await apiUpdateForumSections(selectedForumId, { sectionScope: nextScope }, token);
+      await onLoadForums?.();
+      await refreshSelectedForum();
+      setSectionScopeDraft(nextScope);
+      setSectionDraft('');
+      setActionMessage(response.message || 'Forum sections updated.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Failed to update forum sections.');
+    } finally {
+      setActionKey('');
+    }
   };
 
   return (
@@ -284,19 +423,46 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
           </Link>
         </div>
 
+        {actionError && <div className="settings-alert is-error mb-3">{actionError}</div>}
+        {actionMessage && <div className="settings-alert is-success mb-3">{actionMessage}</div>}
+
         {manageableForums.length === 0 ? (
           <section className="settings-card">
             <h4 className="mb-2">No manageable forums yet</h4>
             <p className="muted mb-3">
-              Once you own a forum or receive forum-level permissions, it will show up here.
+              Once you own a forum or accept a forum manager invite, it will show up here.
             </p>
-            <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
-              Create Forum
-            </Link>
+            <div className="d-flex flex-wrap gap-2">
+              <Link to="/my-forums/invitations" className="forum-secondary-btn text-decoration-none">
+                {inviteInboxLoading ? 'Manager Invitations' : `Manager Invitations${incomingInvites.length > 0 ? ` (${incomingInvites.length})` : ''}`}
+              </Link>
+              <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
+                Create Forum
+              </Link>
+            </div>
           </section>
         ) : (
           <div className="forum-admin-layout">
             <aside className="forum-admin-sidebar">
+              <Link
+                to="/my-forums/invitations"
+                className={`forum-admin-forum-card forum-admin-invite-link ${incomingInvites.length > 0 ? 'has-pending' : ''} text-decoration-none`.trim()}
+              >
+                <div className="forum-follow-card-topline">
+                  <span className="forum-tag">Requests</span>
+                  {incomingInvites.length > 0 && (
+                    <span className="forum-admin-invite-badge">{incomingInvites.length}</span>
+                  )}
+                </div>
+                <strong>Manager Invitations</strong>
+                <p className="muted mb-0">
+                  {inviteInboxLoading ? 'Loading pending invitations...' : 'Open a dedicated page to review pending forum manager invites.'}
+                </p>
+                <span className="forum-follow-meta">
+                  {incomingInvites.length > 0 ? `${incomingInvites.length} pending review` : 'No pending invites'}
+                </span>
+              </Link>
+
               {manageableForums.map((forum) => {
                 const isActive = forum.id === selectedForumId;
                 const forumPermissionSummary = forum.isOwner
@@ -319,7 +485,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                     <strong>{forum.name}</strong>
                     <p className="muted mb-0">{forum.description || 'Manage this forum from here.'}</p>
                     <span className="forum-follow-meta">
-                      {(forum.sectionScope || []).slice(0, 4).map((section) => getSectionLabel(section)).join(' 路 ') || 'No sections'}
+                      {(forum.sectionScope || []).slice(0, 4).map((section) => getSectionLabel(section)).join(' · ') || 'No sections'}
                     </span>
                     <span className="forum-follow-meta">{forumPermissionSummary}</span>
                   </button>
@@ -333,31 +499,20 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                   <div className="forum-admin-shell-head">
                     <div>
                       <div className="forum-follow-card-topline">
-                        <span className="forum-tag">{selectedForum.isOwner ? 'Owner Access' : 'Forum Manager'}</span>
-                        <span className="muted">{selectedForum.livePostCount ?? selectedForum.postCount ?? 0} posts</span>
+                        <span className="forum-tag">{activeForum?.isOwner ? 'Owner Access' : 'Forum Manager'}</span>
+                        <span className="muted">{activeForum?.livePostCount ?? activeForum?.postCount ?? 0} posts</span>
                       </div>
-                      <h4 className="mb-1">{selectedForum.name}</h4>
+                      <h4 className="mb-1">{activeForum?.name}</h4>
                       <p className="muted mb-2">
-                        {selectedForum.description || 'Manage your team access and forum responsibilities here.'}
+                        {activeForum?.description || 'Manage your team access and forum responsibilities here.'}
                       </p>
-                      <div className="forum-post-kicker">
-                        <span className="forum-tag">{selectedForum.followerCount ?? 0} followers</span>
-                        {(selectedAccess?.viewerPermissions || []).map((permissionKey) => {
-                          const detail = (selectedAccess?.availablePermissions || []).find((item) => item.key === permissionKey);
-                          return (
-                            <span key={permissionKey} className="forum-tag">
-                              {detail?.label || permissionKey}
-                            </span>
-                          );
-                        })}
-                      </div>
                     </div>
                     <div className="forum-actions">
-                      <Link to={`/forum/${selectedForum.slug}`} className="forum-primary-btn text-decoration-none">
+                      <Link to={`/forum/${activeForum?.slug}`} className="forum-primary-btn text-decoration-none">
                         Open Forum
                       </Link>
                       {canViewFollowers && (
-                        <Link to={`/forum/${selectedForum.slug}/followers`} className="forum-secondary-btn text-decoration-none">
+                        <Link to={`/forum/${activeForum?.slug}/followers`} className="forum-secondary-btn text-decoration-none">
                           View Followers
                         </Link>
                       )}
@@ -365,13 +520,128 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                   </div>
 
                   {accessMessage && <div className="settings-alert is-error mb-3">{accessMessage}</div>}
-                  {actionError && <div className="settings-alert is-error mb-3">{actionError}</div>}
-                  {actionMessage && <div className="settings-alert is-success mb-3">{actionMessage}</div>}
 
                   {accessLoading && !selectedAccess ? (
                     <p className="muted mb-0">Loading forum access...</p>
                   ) : selectedAccess ? (
                     <div className="forum-admin-sections">
+                      <section className="forum-admin-panel">
+                        <div className="forum-admin-panel-head">
+                          <div>
+                            <h5 className="mb-1">Forum Details</h5>
+                            <p className="muted mb-0">
+                              {canManageForumDetails
+                                ? 'Edit the forum overview and keep the accepted section scope up to date here.'
+                                : 'You can review the current overview and section scope here.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <form className="forum-admin-create-form" onSubmit={handleSaveOverview}>
+                          <label className="w-100">
+                            <span className="form-label">Overview</span>
+                            <textarea
+                              className="form-control forum-input forum-admin-textarea"
+                              value={overviewDraft}
+                              onChange={(event) => setOverviewDraft(event.target.value)}
+                              placeholder="Write a short overview for this forum."
+                              rows={4}
+                              disabled={!canManageForumDetails || actionKey === 'save-overview'}
+                            />
+                          </label>
+                          {canManageForumDetails && (
+                            <button
+                              type="submit"
+                              className="forum-primary-btn"
+                              disabled={actionKey === 'save-overview'}
+                            >
+                              {actionKey === 'save-overview' ? 'Saving...' : 'Save Overview'}
+                            </button>
+                          )}
+                        </form>
+
+                        <div className="forum-admin-panel-head mt-3">
+                          <div>
+                            <h5 className="mb-1">Edit Sections</h5>
+                            <p className="muted mb-0">
+                              {canManageForumDetails
+                                ? 'Add new sections or remove ones the forum no longer needs.'
+                                : 'Current sections accepted by this forum.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {canManageForumDetails && (
+                          <div className="forum-section-admin mb-3">
+                            <div className="forum-section-admin-controls">
+                              <input
+                                className="form-control forum-input forum-section-input"
+                                value={sectionDraft}
+                                onChange={(event) => setSectionDraft(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    addSectionDraftValue();
+                                  }
+                                }}
+                                placeholder="Type a section name"
+                                disabled={actionKey === 'save-sections'}
+                              />
+                              <button
+                                type="button"
+                                className="forum-primary-btn"
+                                onClick={addSectionDraftValue}
+                                disabled={actionKey === 'save-sections'}
+                              >
+                                Add Section
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="section-chip-wrap">
+                          {(canManageForumDetails ? sectionScopeDraft : (activeForum?.sectionScope || [])).map((section) => (
+                            <div key={section} className={`section-chip-row ${canManageForumDetails ? 'is-editing' : ''}`.trim()}>
+                              <span className="section-chip is-active">
+                                <span>{getSectionLabel(section)}</span>
+                              </span>
+                              {canManageForumDetails && (
+                                <button
+                                  type="button"
+                                  className="section-chip-remove"
+                                  onClick={() => removeSectionDraftValue(section)}
+                                  disabled={actionKey === 'save-sections'}
+                                  aria-label={`Remove ${getSectionLabel(section)}`}
+                                >
+                                  x
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {canManageForumDetails && (
+                          <div className="forum-section-admin-actions mt-3">
+                            <button
+                              type="button"
+                              className="forum-primary-btn"
+                              onClick={handleSaveSections}
+                              disabled={actionKey === 'save-sections'}
+                            >
+                              {actionKey === 'save-sections' ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                              type="button"
+                              className="forum-secondary-btn"
+                              onClick={cancelSectionChanges}
+                              disabled={actionKey === 'save-sections'}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
+                      </section>
+
                       <section className="forum-admin-panel">
                         <div className="forum-admin-panel-head">
                           <div>
@@ -409,27 +679,10 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                       <section className="forum-admin-panel">
                         <div className="forum-admin-panel-head">
                           <div>
-                            <h5 className="mb-1">Available Permissions</h5>
-                            <p className="muted mb-0">Grant only the responsibilities each forum admin really needs.</p>
-                          </div>
-                        </div>
-                        <div className="forum-admin-permission-list">
-                          {(selectedAccess.availablePermissions || []).map((permission) => (
-                            <article key={permission.key} className="forum-admin-permission-card">
-                              <strong>{permission.label}</strong>
-                              <p className="muted mb-0">{permission.description}</p>
-                            </article>
-                          ))}
-                        </div>
-                      </section>
-
-                      <section className="forum-admin-panel">
-                        <div className="forum-admin-panel-head">
-                          <div>
                             <h5 className="mb-1">Forum Managers</h5>
                             <p className="muted mb-0">
                               {canManageAdmins
-                                ? 'Add managers and choose exactly what they can do.'
+                                ? 'Add managers here, then open a manager profile to update detailed permissions.'
                                 : 'You can view the team here, but only someone with admin-management permission can change it.'}
                             </p>
                           </div>
@@ -438,7 +691,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                         {canManageAdmins && (
                           <form className="forum-admin-create-form" onSubmit={handleInviteManager}>
                             <label className="w-100">
-                              <span className="form-label">Add or update a forum manager</span>
+                              <span className="form-label">Invite a forum manager</span>
                               <input
                                 className="form-control forum-input"
                                 value={inviteIdentifier}
@@ -453,7 +706,9 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                                   <input
                                     type="checkbox"
                                     checked={invitePermissions.includes(permission.key)}
-                                    onChange={() => setInvitePermissions((current) => togglePermission(current, permission.key))}
+                                    onChange={() => setInvitePermissions((current) => current.includes(permission.key)
+                                      ? current.filter((item) => item !== permission.key)
+                                      : [...current, permission.key])}
                                     disabled={actionKey === 'invite-manager'}
                                   />
                                   <span>
@@ -468,7 +723,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                               className="forum-primary-btn"
                               disabled={!inviteIdentifier.trim() || invitePermissions.length === 0 || actionKey === 'invite-manager'}
                             >
-                              {actionKey === 'invite-manager' ? 'Saving...' : 'Save Manager Permissions'}
+                              {actionKey === 'invite-manager' ? 'Sending...' : 'Send Manager Invite'}
                             </button>
                           </form>
                         )}
@@ -488,52 +743,12 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                                     </p>
                                   </div>
                                   {canManageAdmins && (
-                                    <button
-                                      type="button"
-                                      className="forum-secondary-btn"
-                                      onClick={() => handleRemoveManager(manager.id, manager.name)}
-                                      disabled={actionKey === `remove-${manager.id}`}
-                                    >
-                                      {actionKey === `remove-${manager.id}` ? 'Removing...' : 'Remove'}
-                                    </button>
+                                    <Link to={`/my-forums/${selectedForum.id}/managers/${manager.id}`} className="forum-secondary-btn text-decoration-none">
+                                      Manage
+                                    </Link>
                                   )}
                                 </div>
-
-                                <div className="forum-admin-checkbox-grid">
-                                  {(selectedAccess.availablePermissions || []).map((permission) => {
-                                    const checkedPermissions = managerPermissionDrafts[manager.id] || manager.permissions || [];
-                                    return (
-                                      <label key={permission.key} className="forum-admin-checkbox">
-                                        <input
-                                          type="checkbox"
-                                          checked={checkedPermissions.includes(permission.key)}
-                                          onChange={() => setManagerPermissionDrafts((current) => ({
-                                            ...current,
-                                            [manager.id]: togglePermission(checkedPermissions, permission.key)
-                                          }))}
-                                          disabled={!canManageAdmins || actionKey === `save-${manager.id}`}
-                                        />
-                                        <span>
-                                          <strong>{permission.label}</strong>
-                                          <small>{permission.description}</small>
-                                        </span>
-                                      </label>
-                                    );
-                                  })}
-                                </div>
-
-                                {canManageAdmins && (
-                                  <div className="forum-actions">
-                                    <button
-                                      type="button"
-                                      className="forum-primary-btn"
-                                      onClick={() => handleSaveManager(manager.id)}
-                                      disabled={(managerPermissionDrafts[manager.id] || []).length === 0 || actionKey === `save-${manager.id}`}
-                                    >
-                                      {actionKey === `save-${manager.id}` ? 'Saving...' : 'Update Permissions'}
-                                    </button>
-                                  </div>
-                                )}
+                                <p className="muted mb-0">{(manager.permissions || []).length} permissions assigned.</p>
                               </article>
                             ))}
                           </div>

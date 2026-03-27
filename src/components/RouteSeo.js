@@ -13,6 +13,17 @@ function routeConfig(pathname) {
   }
 
   if (
+    matchPath('/forum/:forumSlug/followers', pathname)
+  ) {
+    return {
+      title: buildPageTitle('Forum Followers'),
+      description: DEFAULT_DESCRIPTION,
+      robots: 'noindex,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
+  if (
     matchPath('/forum/:forumSlug', pathname)
     || matchPath('/forum/:forumSlug/section/:sectionId', pathname)
     || pathname === '/forum'
@@ -20,6 +31,15 @@ function routeConfig(pathname) {
     return {
       title: buildPageTitle('Forum'),
       description: 'Browse engineering, AI, machine learning, analytics, and product posts organized by section and tags.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
+  if (pathname === '/explore') {
+    return {
+      title: buildPageTitle('Explore Forums'),
+      description: 'Explore all forums on LearnFromUs and discover which communities are active, popular, and worth following.',
       robots: 'index,follow',
       canonical: buildCanonical(pathname)
     };
@@ -45,11 +65,15 @@ function routeConfig(pathname) {
 
   if (
     pathname === '/settings' ||
+    pathname === '/my-forums' ||
     pathname === '/my-posts' ||
     pathname === '/moderation' ||
     pathname === '/analytics' ||
+    pathname === '/admin/access' ||
     pathname === '/following' ||
     pathname === '/forums/request' ||
+    pathname === '/forums/request/history' ||
+    pathname === '/forums/request/review' ||
     pathname === '/goodbye' ||
     matchPath('/users/:userId', pathname)
   ) {

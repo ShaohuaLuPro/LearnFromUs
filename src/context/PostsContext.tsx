@@ -4,6 +4,7 @@ import {
   apiAdminRemovePost,
   apiAdminRestorePost,
   apiAgentChat,
+  apiAiRewriteForumRequest,
   apiAiRewritePost,
   apiAppealPost,
   apiCreateComment,
@@ -23,6 +24,7 @@ import {
   apiQueryAdminAnalytics,
   apiRejectForumRequest,
   apiRequestForum,
+  apiUpdateForumSections,
   apiUpdatePost
 } from '../api';
 import { useAuth } from './AuthContext';
@@ -34,6 +36,7 @@ type ActionResult<T = undefined> = {
   data?: T;
   posts?: Post[];
   post?: Post;
+  forum?: Forum | null;
   comments?: Comment[];
   comment?: Comment;
   forums?: Forum[];
@@ -61,6 +64,10 @@ type PostsContextValue = {
     input: { instruction: string; draft?: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] } },
     signal?: AbortSignal
   ) => Promise<ActionResult<Record<string, unknown>>>;
+  aiRewriteForumRequest: (
+    input: { instruction: string; draft: { name: string; description: string; rationale: string; sectionScope: string[] } },
+    signal?: AbortSignal
+  ) => Promise<ActionResult<Record<string, unknown>>>;
   deletePost: (postId: string) => Promise<ActionResult>;
   getPostDetail: (postId: string) => Promise<ActionResult<Post>>;
   getComments: (postId: string) => Promise<ActionResult<Comment[]>>;
@@ -73,6 +80,7 @@ type PostsContextValue = {
   ownerRemovePost: (forumId: string, postId: string, reason: string) => Promise<ActionResult>;
   ownerRestorePost: (forumId: string, postId: string) => Promise<ActionResult>;
   requestForum: (input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string }) => Promise<ActionResult>;
+  updateForumSections: (forumId: string, sectionScope: string[]) => Promise<ActionResult>;
   approveForumRequest: (requestId: string, reviewNote?: string) => Promise<ActionResult>;
   rejectForumRequest: (requestId: string, reviewNote?: string) => Promise<ActionResult>;
   agentChat: (message: string, signal?: AbortSignal) => Promise<ActionResult<Record<string, unknown>>>;
@@ -217,6 +225,25 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, message: 'Request cancelled.' };
       }
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to rewrite post with AI.' };
+    }
+  }, [getToken]);
+
+  const aiRewriteForumRequest = useCallback(async (
+    input: { instruction: string; draft: { name: string; description: string; rationale: string; sectionScope: string[] } },
+    signal?: AbortSignal
+  ) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiAiRewriteForumRequest(input, token, signal);
+      return { ok: true, data };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return { ok: false, message: 'Request cancelled.' };
+      }
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to rewrite forum request with AI.' };
     }
   }, [getToken]);
 
@@ -374,6 +401,44 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [getToken, loadForums]);
 
+  const updateForumSections = useCallback(async (forumId: string, sectionScope: string[]) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiUpdateForumSections(forumId, { sectionScope }, token);
+      const updatedForum = data.forum || null;
+      if (updatedForum) {
+        startTransition(() => {
+          setForums((current) => current.map((forum) => (
+            forum.id === updatedForum.id
+              ? { ...forum, ...updatedForum, isFollowing: updatedForum.isFollowing ?? forum.isFollowing }
+              : forum
+          )));
+          setForumWorkspace((current) => {
+            if (!current) {
+              return current;
+            }
+
+            return {
+              ...current,
+              ownedForums: current.ownedForums.map((forum) => (
+                forum.id === updatedForum.id
+                  ? { ...forum, ...updatedForum, isFollowing: updatedForum.isFollowing ?? forum.isFollowing }
+                  : forum
+              ))
+            };
+          });
+        });
+      }
+      await Promise.all([refreshPosts(), loadForums()]);
+      return { ok: true, message: data.message, forum: updatedForum };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to update forum sections.' };
+    }
+  }, [getToken, loadForums, refreshPosts]);
+
   const approveForumRequest = useCallback(async (requestId: string, reviewNote = '') => {
     const token = getToken();
     if (!token) {
@@ -499,6 +564,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     createPost,
     updatePost,
     aiRewritePost,
+    aiRewriteForumRequest,
     deletePost,
     getPostDetail,
     getComments,
@@ -511,6 +577,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     ownerRemovePost,
     ownerRestorePost,
     requestForum,
+    updateForumSections,
     approveForumRequest,
     rejectForumRequest,
     agentChat,
@@ -535,6 +602,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     createPost,
     updatePost,
     aiRewritePost,
+    aiRewriteForumRequest,
     deletePost,
     getPostDetail,
     getComments,
@@ -547,6 +615,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     ownerRemovePost,
     ownerRestorePost,
     requestForum,
+    updateForumSections,
     approveForumRequest,
     rejectForumRequest,
     agentChat,

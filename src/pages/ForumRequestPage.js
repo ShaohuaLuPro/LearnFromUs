@@ -1,52 +1,131 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { defaultSection, getSectionLabel, sectionGroups } from '../lib/sections';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { getSectionLabel } from '../lib/sections';
 
-function formatDate(timestamp) {
-  if (!timestamp) {
-    return '';
+const AI_REWRITE_PRESETS = [
+  {
+    id: 'polish',
+    label: 'Polish',
+    instruction: 'Polish this forum request for clarity and flow while preserving the original idea.'
+  },
+  {
+    id: 'narrow',
+    label: 'More Focused',
+    instruction: 'Make this forum request more focused and specific, with a clearer target audience and tighter section scope.'
+  },
+  {
+    id: 'expand',
+    label: 'More Detailed',
+    instruction: 'Expand this forum request with clearer examples of what belongs in the forum and why members would use it.'
+  },
+  {
+    id: 'stronger',
+    label: 'Stronger Pitch',
+    instruction: 'Strengthen the rationale so it makes a more convincing case for why this forum should exist.'
   }
+];
 
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+function normalizeScopeValue(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+function normalizeScopeList(input) {
+  const raw = Array.isArray(input)
+    ? input
+    : String(input || '')
+      .split(/[\n,]/)
+      .map((value) => value.trim());
+
+  return [...new Set(raw.map((value) => normalizeScopeValue(value)).filter(Boolean))].slice(0, 12);
+}
+
+function toScopeText(sectionScope) {
+  return normalizeScopeList(sectionScope).join(', ');
 }
 
 export default function ForumRequestPage({
   currentUser,
-  forumWorkspace,
   onRequestForum,
-  onApproveForumRequest,
-  onRejectForumRequest
+  onAiRewriteForumRequest
 }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [rewriteAbortController, setRewriteAbortController] = useState(null);
   const [form, setForm] = useState({
     name: '',
     description: '',
     rationale: '',
-    sectionScope: [defaultSection.value]
+    sectionScope: []
   });
+  const [sectionScopeText, setSectionScopeText] = useState('');
+  const [scopeRecommendations, setScopeRecommendations] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [aiRewriteOpen, setAiRewriteOpen] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState('');
+  const [aiRewriteMessage, setAiRewriteMessage] = useState('');
+  const [aiRewriteLoading, setAiRewriteLoading] = useState(false);
 
-  const toggleSection = (sectionValue) => {
+  useEffect(() => () => {
+    rewriteAbortController?.abort();
+  }, [rewriteAbortController]);
+
+  const syncSectionScope = useCallback((nextScope) => {
+    const normalizedScope = normalizeScopeList(nextScope);
     setForm((current) => ({
       ...current,
-      sectionScope: current.sectionScope.includes(sectionValue)
-        ? current.sectionScope.filter((value) => value !== sectionValue)
-        : [...current.sectionScope, sectionValue].slice(0, 4)
+      sectionScope: normalizedScope
     }));
-  };
+    setSectionScopeText(toScopeText(normalizedScope));
+    return normalizedScope;
+  }, []);
+
+  const applyDraft = useCallback((draft, nextMessage = '') => {
+    const normalizedScope = normalizeScopeList(draft?.sectionScope);
+    setForm({
+      name: String(draft?.name || ''),
+      description: String(draft?.description || ''),
+      rationale: String(draft?.rationale || ''),
+      sectionScope: normalizedScope
+    });
+    setSectionScopeText(toScopeText(normalizedScope));
+    setScopeRecommendations(normalizedScope);
+    setMessage(nextMessage);
+    setError('');
+  }, []);
+
+  useEffect(() => {
+    const draft = location.state?.forumRequestDraft;
+    if (!draft) {
+      return;
+    }
+
+    applyDraft(draft, 'AI draft loaded. Review it, edit the section scope if needed, then submit when ready.');
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: null
+    });
+  }, [applyDraft, location.pathname, location.search, location.state, navigate]);
 
   const submit = async (event) => {
     event.preventDefault();
     setMessage('');
     setError('');
 
-    const result = await onRequestForum(form);
+    if (normalizeScopeList(form.sectionScope).length === 0) {
+      setError('Add at least one section scope for this forum.');
+      return;
+    }
+
+    const result = await onRequestForum({
+      ...form,
+      sectionScope: normalizeScopeList(form.sectionScope)
+    });
     if (!result.ok) {
       setError(result.message || 'Failed to request forum.');
       return;
@@ -56,31 +135,79 @@ export default function ForumRequestPage({
       name: '',
       description: '',
       rationale: '',
-      sectionScope: [defaultSection.value]
+      sectionScope: []
     });
+    setSectionScopeText('');
+    setScopeRecommendations([]);
+    setAiRewriteOpen(false);
+    setAiRewriteMessage('');
+    setAiInstruction('');
     setMessage(result.message || 'Forum request submitted.');
   };
 
-  const approveRequest = async (requestId) => {
-    setMessage('');
-    setError('');
-    const result = await onApproveForumRequest(requestId);
-    if (!result.ok) {
-      setError(result.message || 'Failed to approve forum request.');
+  const runAiRewrite = async (instructionOverride) => {
+    const instruction = String(instructionOverride || aiInstruction).trim();
+    if (!instruction) {
+      setError('Add a rewrite instruction first.');
       return;
     }
-    setMessage(result.message || 'Forum request approved.');
+
+    if (!String(form.name || form.description || form.rationale || sectionScopeText).trim()) {
+      setError('Add a rough forum idea first so AI has something to rewrite.');
+      return;
+    }
+
+    setError('');
+    setMessage('');
+    setAiRewriteMessage('');
+    setAiRewriteLoading(true);
+    const controller = new AbortController();
+    setRewriteAbortController(controller);
+    const result = await onAiRewriteForumRequest({
+      instruction,
+      draft: {
+        name: form.name,
+        description: form.description,
+        rationale: form.rationale,
+        sectionScope: normalizeScopeList(form.sectionScope)
+      }
+    }, controller.signal);
+    setRewriteAbortController(null);
+    setAiRewriteLoading(false);
+
+    if (!result.ok) {
+      if (result.message === 'Request cancelled.') {
+        setAiRewriteMessage('AI rewrite stopped.');
+        return;
+      }
+      setError(result.message || 'Failed to rewrite forum request with AI.');
+      return;
+    }
+
+    const rewrittenDraft = result.data?.draft;
+    if (!rewrittenDraft) {
+      setError('AI rewrite did not return a draft.');
+      return;
+    }
+
+    applyDraft(rewrittenDraft);
+    setAiRewriteMessage(result.data?.generation?.rationale || 'AI rewrite applied to the editor. Review it, then submit when you are ready.');
   };
 
-  const rejectRequest = async (requestId) => {
-    setMessage('');
-    setError('');
-    const result = await onRejectForumRequest(requestId);
-    if (!result.ok) {
-      setError(result.message || 'Failed to reject forum request.');
-      return;
-    }
-    setMessage(result.message || 'Forum request rejected.');
+  const stopAiRewrite = () => {
+    rewriteAbortController?.abort();
+    setRewriteAbortController(null);
+    setAiRewriteLoading(false);
+  };
+
+  const removeScope = (value) => {
+    const nextScope = form.sectionScope.filter((item) => item !== value);
+    syncSectionScope(nextScope);
+  };
+
+  const addRecommendedScope = (value) => {
+    const nextScope = normalizeScopeList([...form.sectionScope, value]);
+    syncSectionScope(nextScope);
   };
 
   return (
@@ -94,9 +221,14 @@ export default function ForumRequestPage({
               Propose a new community space, define its topic scope, and track review status.
             </p>
           </div>
-          <Link to="/forum" className="forum-secondary-btn text-decoration-none">
-            Back to Forum
-          </Link>
+          <div className="forum-actions">
+            <Link to="/forums/request/history" className="forum-primary-btn text-decoration-none">
+              Request History
+            </Link>
+            <Link to="/forum" className="forum-secondary-btn text-decoration-none">
+              Back to Forum
+            </Link>
+          </div>
         </div>
 
         {(message || error) && (
@@ -105,126 +237,173 @@ export default function ForumRequestPage({
           </div>
         )}
 
-        <div className="section-grid">
-          <section className="section-card is-open">
-            <h3 className="mb-3 type-title-md">Application</h3>
-            <form onSubmit={submit} className="forum-form">
-              <div className="mb-3">
-                <label className="form-label">Forum Name</label>
-                <input
-                  className="form-control forum-input"
-                  value={form.name}
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Career Growth, MLOps Guild, Frontend Patterns"
-                />
-              </div>
+        <section className="section-card is-open">
+          <h3 className="mb-3 type-title-md">Application</h3>
 
-              <div className="mb-3">
-                <label className="form-label">Description</label>
-                <textarea
-                  className="form-control forum-input"
-                  rows={3}
-                  value={form.description}
-                  onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                  placeholder="What kind of discussion should live in this forum?"
-                />
-              </div>
+          <form onSubmit={submit} className="forum-form">
+            <div className="mb-3">
+              <label className="form-label">Forum Name</label>
+              <input
+                className="form-control forum-input"
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Career Growth, MLOps Guild, Frontend Patterns"
+              />
+            </div>
 
-              <div className="mb-3">
-                <label className="form-label">Section Scope</label>
-                <div className="section-chip-wrap">
-                  {sectionGroups.map((group) => group.items.map((item) => (
-                    <button
-                      key={`forum-request-${item.value}`}
-                      type="button"
-                      className={`section-chip ${form.sectionScope.includes(item.value) ? 'is-active' : ''}`}
-                      onClick={() => toggleSection(item.value)}
-                    >
-                      <span>{item.label}</span>
-                    </button>
-                  )))}
-                </div>
-                <div className="form-help">Choose up to 4 sections that belong in this forum.</div>
-              </div>
+            <div className="mb-3">
+              <label className="form-label">Description</label>
+              <textarea
+                className="form-control forum-input"
+                rows={3}
+                value={form.description}
+                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                placeholder="What kind of discussion should live in this forum?"
+              />
+            </div>
 
-              <div className="mb-2">
-                <label className="form-label">Why Should This Forum Exist?</label>
-                <textarea
-                  className="form-control forum-input"
-                  rows={4}
-                  value={form.rationale}
-                  onChange={(event) => setForm((current) => ({ ...current, rationale: event.target.value }))}
-                  placeholder="Describe the audience, the need, and how this forum would help."
-                />
-              </div>
-
-              <button type="submit" className="forum-primary-btn mt-4">
-                Submit Request
-              </button>
-            </form>
-          </section>
-
-          <section className="section-card is-open">
-            <h3 className="mb-3 type-title-md">Your Requests</h3>
-            {forumWorkspace?.myRequests?.length ? (
-              <div className="forum-follow-list">
-                {forumWorkspace.myRequests.map((request) => (
-                  <article key={request.id} className="forum-follow-card">
-                    <strong>{request.name}</strong>
-                    <p className="muted mb-2">{request.description}</p>
-                    <span className="forum-follow-meta">
-                      {request.status} · {request.sectionScope.map(getSectionLabel).join(', ')}
-                    </span>
-                    {request.reviewNote && (
-                      <p className="muted mb-0">Review note: {request.reviewNote}</p>
-                    )}
-                    {request.reviewedAt && (
-                      <p className="muted mb-0">Reviewed {formatDate(request.reviewedAt)}</p>
-                    )}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="muted mb-0">You have not submitted any forum requests yet.</p>
-            )}
-          </section>
-        </div>
-
-        {currentUser?.isAdmin && (
-          <section className="panel mt-4">
-            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-              <div>
-                <p className="type-kicker mb-2">Admin</p>
-                <h3 className="mb-1 type-title-md">Pending Reviews</h3>
+            <div className="mb-3">
+              <label className="form-label">Section Scope</label>
+              <textarea
+                className="form-control forum-input"
+                rows={2}
+                value={sectionScopeText}
+                onChange={(event) => {
+                  const nextText = event.target.value;
+                  setSectionScopeText(nextText);
+                  setForm((current) => ({
+                    ...current,
+                    sectionScope: normalizeScopeList(nextText)
+                  }));
+                }}
+                onBlur={() => setSectionScopeText(toScopeText(form.sectionScope))}
+                placeholder="Example: mlops-platforms, model-deployment, evaluation-and-monitoring"
+              />
+              <div className="form-help">
+                Enter comma-separated scope labels. You can write your own, and AI can recommend a few.
               </div>
             </div>
 
-            {forumWorkspace?.pendingRequests?.length ? (
-              <div className="forum-follow-list">
-                {forumWorkspace.pendingRequests.map((request) => (
-                  <article key={request.id} className="forum-follow-card">
-                    <strong>{request.name}</strong>
-                    <p className="muted mb-2">{request.description}</p>
-                    <p className="muted mb-2">{request.rationale}</p>
-                    <span className="forum-follow-meta">
-                      {request.requesterName} · {request.sectionScope.map(getSectionLabel).join(', ')}
-                    </span>
-                    <div className="d-flex gap-2 flex-wrap mt-3">
-                      <button type="button" className="forum-primary-btn" onClick={() => approveRequest(request.id)}>
-                        Approve
-                      </button>
-                      <button type="button" className="forum-danger-btn" onClick={() => rejectRequest(request.id)}>
-                        Reject
-                      </button>
-                    </div>
-                  </article>
-                ))}
+            {scopeRecommendations.length > 0 && (
+              <div className="mb-3">
+                <label className="form-label">AI Recommendations</label>
+                <div className="section-chip-wrap">
+                  {scopeRecommendations.map((scope) => (
+                    <button
+                      key={`scope-recommendation-${scope}`}
+                      type="button"
+                      className={`section-chip ${form.sectionScope.includes(scope) ? 'is-active' : ''}`}
+                      onClick={() => addRecommendedScope(scope)}
+                    >
+                      <span>{getSectionLabel(scope)}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            ) : (
-              <p className="muted mb-0">There are no pending forum requests right now.</p>
             )}
-          </section>
-        )}
+
+            {form.sectionScope.length > 0 && (
+              <div className="mb-3">
+                <label className="form-label">Current Scope</label>
+                <div className="section-chip-wrap">
+                  {form.sectionScope.map((scope) => (
+                    <button
+                      key={`scope-current-${scope}`}
+                      type="button"
+                      className="section-chip is-active"
+                      onClick={() => removeScope(scope)}
+                    >
+                      <span>{getSectionLabel(scope)}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="form-help">Click a chip to remove it.</div>
+              </div>
+            )}
+
+            <div className="mb-2">
+              <label className="form-label">Why Should This Forum Exist?</label>
+              <textarea
+                className="form-control forum-input"
+                rows={4}
+                value={form.rationale}
+                onChange={(event) => setForm((current) => ({ ...current, rationale: event.target.value }))}
+                placeholder="Describe the audience, the need, and how this forum would help."
+              />
+            </div>
+
+            <div className="mb-3">
+              <div className="composer-toolbar">
+                <button
+                  type="button"
+                  className="forum-secondary-btn"
+                  onClick={() => setAiRewriteOpen((current) => !current)}
+                >
+                  {aiRewriteOpen ? 'Hide AI Rewrite' : 'Open AI Rewrite'}
+                </button>
+              </div>
+            </div>
+
+            {aiRewriteOpen && (
+              <section className="settings-card mb-3">
+                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                  <div>
+                    <h4 className="mb-1">AI Rewrite</h4>
+                    <p className="muted mb-0">Use OpenAI to polish, narrow, expand, or strengthen this forum request draft.</p>
+                  </div>
+                  <span className="muted">Works on the current editor content</span>
+                </div>
+
+                <div className="forum-actions mb-3">
+                  {AI_REWRITE_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className="forum-secondary-btn"
+                      disabled={aiRewriteLoading}
+                      onClick={() => {
+                        setAiInstruction(preset.instruction);
+                        runAiRewrite(preset.instruction);
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="form-label">Custom instruction</label>
+                <textarea
+                  className="form-control forum-input"
+                  rows={3}
+                  value={aiInstruction}
+                  onChange={(event) => setAiInstruction(event.target.value)}
+                  placeholder="Example: make the pitch tighter, keep the audience specific, and suggest sharper scope labels."
+                />
+                <div className="forum-actions mt-3">
+                  {aiRewriteLoading && (
+                    <button type="button" className="forum-secondary-btn" onClick={stopAiRewrite}>
+                      Stop
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="forum-primary-btn"
+                    disabled={aiRewriteLoading}
+                    onClick={() => runAiRewrite()}
+                  >
+                    {aiRewriteLoading ? 'Rewriting...' : 'Rewrite with AI'}
+                  </button>
+                </div>
+                {aiRewriteMessage && <p className="muted mt-3 mb-0">{aiRewriteMessage}</p>}
+              </section>
+            )}
+
+            <button type="submit" className="forum-primary-btn mt-4">
+              Submit Request
+            </button>
+          </form>
+        </section>
+
       </section>
     </div>
   );

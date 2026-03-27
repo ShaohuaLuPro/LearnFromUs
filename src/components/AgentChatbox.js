@@ -12,10 +12,11 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [showPrompts, setShowPrompts] = useState(false);
   const starterPrompts = currentUser
-    ? [
+      ? [
         'take me to the about page',
         'i want to change my password',
         'draft a post in my style about password reset',
+        'draft a forum request for an mlops community',
         'i want to learn mle',
         'help me improve my post about analytics',
         'draft a post in my style about postgres indexing',
@@ -35,8 +36,8 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
     id: 'welcome',
     role: 'agent',
     reply: currentUser
-      ? 'Ask me to navigate the site, recommend posts to learn a topic, surface active authors, or draft a post in your usual forum style.'
-      : 'Ask me to navigate the site, recommend posts to learn a topic, surface active authors, or draft a post you can publish.',
+      ? 'Ask me to navigate the site, recommend posts to learn a topic, surface active authors, draft a post in your style, or draft a new forum request.'
+      : 'Ask me to navigate the site, recommend posts to learn a topic, surface active authors, draft a post, or draft a new forum request.',
     quickActions: ['search-posts', 'show-trending', 'draft-post']
   });
   const [messages, setMessages] = useState([buildWelcomeMessage()]);
@@ -200,6 +201,23 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
           content: draft.content,
           section: draft.section,
           tags: draft.tags || []
+        }
+      }
+    });
+  };
+
+  const openForumRequestDraft = (forumRequestDraft) => {
+    if (!forumRequestDraft) {
+      return;
+    }
+
+    navigate('/forums/request', {
+      state: {
+        forumRequestDraft: {
+          name: forumRequestDraft.name,
+          description: forumRequestDraft.description,
+          rationale: forumRequestDraft.rationale,
+          sectionScope: forumRequestDraft.sectionScope || []
         }
       }
     });
@@ -385,6 +403,34 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                         </div>
                       </div>
                     )}
+
+                    {message.forumRequestDraft && (
+                      <div className="agent-chatbox-draft">
+                        <strong>{message.forumRequestDraft.name}</strong>
+                        {message.forumRequestDraft.sectionScope?.length > 0 && (
+                          <span>{message.forumRequestDraft.sectionScope.map(getSectionLabel).join(' · ')}</span>
+                        )}
+                        {message.generation && (
+                          <span>
+                            {message.generation.provider === 'openai'
+                              ? `Generated with ${message.generation.model || 'OpenAI'}${message.generation.fallback ? ' (fallback used)' : ''}`
+                              : 'Generated with local template mode'}
+                          </span>
+                        )}
+                        <pre>{`${message.forumRequestDraft.description}\n\nWhy this forum should exist:\n${message.forumRequestDraft.rationale}`}</pre>
+                        <div className="forum-actions">
+                          {currentUser ? (
+                            <button type="button" className="forum-primary-btn" onClick={() => openForumRequestDraft(message.forumRequestDraft)}>
+                              Open Request Form
+                            </button>
+                          ) : (
+                            <Link to="/login" className="forum-primary-btn text-decoration-none">
+                              Login to Request
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -413,8 +459,8 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                 }
               }}
               placeholder={currentUser
-                ? 'Try "take me to about", "change my password", or "help me improve my post".'
-                : 'Try "take me to about", or ask to learn a topic or search posts.'}
+                ? 'Try "take me to about", "draft a forum request for an MLOps community", or "help me improve my post".'
+                : 'Try "take me to about", or ask to learn a topic, search posts, or draft a forum request.'}
             />
             <div className="forum-actions">
               <span className="muted">

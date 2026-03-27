@@ -1,58 +1,65 @@
-export const sectionGroups = [
-  {
-    title: 'Software Engineering',
-    items: [
-      { value: 'frontend', label: 'Front End' },
-      { value: 'backend', label: 'Back End' },
-      { value: 'algorithms', label: 'Algorithms' },
-      { value: 'system-design', label: 'System Design' },
-      { value: 'ui-ux', label: 'UI / UX' },
-      { value: 'devops-cloud', label: 'DevOps / Cloud' },
-      { value: 'mobile', label: 'Mobile' },
-      { value: 'testing-qa', label: 'Testing / QA' },
-      { value: 'security', label: 'Security' },
-      { value: 'sde-general', label: 'General SDE' }
-    ]
-  },
-  {
-    title: 'Data Science & AI',
-    items: [
-      { value: 'ai-llm', label: 'AI / LLM' },
-      { value: 'mle', label: 'MLE' },
-      { value: 'deep-learning', label: 'Deep Learning' },
-      { value: 'data-engineering', label: 'Data Engineering' },
-      { value: 'statistics', label: 'Statistics' },
-      { value: 'analytics', label: 'Analytics' },
-      { value: 'experimentation', label: 'Experimentation' },
-      { value: 'visualization', label: 'Visualization' },
-      { value: 'ds-general', label: 'General DS' }
-    ]
-  },
-  {
-    title: 'Development Team',
-    items: [
-      { value: 'announcements', label: 'Announcements' },
-      { value: 'system-update', label: 'System Update' }
-    ]
-  }
-];
+const SECTION_FALLBACK_VALUE = 'general';
 
-export const allSections = sectionGroups.flatMap((group) => group.items);
+const SECTION_ACRONYMS = {
+  ai: 'AI',
+  llm: 'LLM',
+  mle: 'MLE',
+  ml: 'ML',
+  ds: 'DS',
+  sde: 'SDE',
+  ui: 'UI',
+  ux: 'UX',
+  qa: 'QA',
+  api: 'API',
+  sql: 'SQL',
+  devops: 'DevOps'
+};
 
-export const defaultSection = allSections[0];
+function cleanSectionValue(value) {
+  return String(value || '').trim();
+}
 
-export const sectionSelectOptions = sectionGroups.map((group) => ({
-  label: group.title,
-  options: group.items.map((item) => ({ value: item.value, label: item.label }))
-}));
+function isForumLike(value) {
+  return Boolean(value && typeof value === 'object' && Array.isArray(value.sectionScope));
+}
+
+export function getSectionValues(source = []) {
+  const values = Array.isArray(source)
+    ? source.flatMap((item) => (isForumLike(item) ? item.sectionScope || [] : item))
+    : [source];
+
+  return [...new Set(values.map((value) => cleanSectionValue(value)).filter(Boolean))];
+}
 
 export function getSectionLabel(value) {
-  const found = allSections.find((item) => item.value === value);
-  if (found) {
-    return found.label;
-  }
-  return String(value || '')
+  return cleanSectionValue(value)
     .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .filter(Boolean)
+    .map((part) => SECTION_ACRONYMS[part.toLowerCase()] || `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(' ');
+}
+
+export function getSectionOptions(source = []) {
+  return getSectionValues(source).map((value) => ({
+    value,
+    label: getSectionLabel(value)
+  }));
+}
+
+export function getSectionSelectOptions(source = [], groupLabel = 'Sections') {
+  const options = getSectionOptions(source);
+  return options.length > 0
+    ? [{ label: groupLabel, options }]
+    : [];
+}
+
+export function getDefaultSectionValue(...sources) {
+  for (const source of sources) {
+    const values = getSectionValues(source);
+    if (values[0]) {
+      return values[0];
+    }
+  }
+
+  return SECTION_FALLBACK_VALUE;
 }

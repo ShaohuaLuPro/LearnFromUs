@@ -1,0 +1,85 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { getSectionLabel } from '../lib/sections';
+
+function formatDate(timestamp) {
+  if (!timestamp) {
+    return '';
+  }
+
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+export default function ForumRequestHistoryPage({ forumWorkspace }) {
+  const myRequests = forumWorkspace?.myRequests || [];
+
+  return (
+    <div className="container page-shell">
+      <section className="panel">
+        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+          <div>
+            <p className="type-kicker mb-2">Forum</p>
+            <h2 className="mb-1 type-title-md">Your Requests</h2>
+            <p className="type-body mb-0">
+              Review every forum application you have submitted and track its status.
+            </p>
+          </div>
+          <div className="forum-actions">
+            <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
+              New Request
+            </Link>
+            <Link to="/forum" className="forum-secondary-btn text-decoration-none">
+              Back to Forum
+            </Link>
+          </div>
+        </div>
+
+        {myRequests.length ? (
+          <div className="forum-follow-list">
+            {myRequests.map((request) => (
+              <article key={request.id} className="forum-follow-card">
+                <div className="forum-follow-card-topline">
+                  <span className="forum-tag">{request.status}</span>
+                  <span className="muted">{formatDate(request.createdAt)}</span>
+                </div>
+                <strong>{request.name}</strong>
+                <p className="muted mb-2">{request.description || 'No description provided.'}</p>
+                <span className="forum-follow-meta">
+                  {request.sectionScope.map(getSectionLabel).join(', ') || 'No section scope'}
+                </span>
+                <p className="muted mb-0">{request.rationale || 'No rationale provided.'}</p>
+                {request.reviewNote && (
+                  <p className="muted mb-0">Review note: {request.reviewNote}</p>
+                )}
+                {request.reviewedAt && (
+                  <p className="muted mb-0">Reviewed {formatDate(request.reviewedAt)}</p>
+                )}
+                {request.status === 'approved' && request.forumSlug && (
+                  <div className="forum-actions">
+                    <Link to={`/forum/${request.forumSlug}`} className="forum-secondary-btn text-decoration-none">
+                      Open Forum
+                    </Link>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <section className="settings-card">
+            <h4 className="mb-2">No requests yet</h4>
+            <p className="muted mb-3">Once you submit a forum request, the history will show up here.</p>
+            <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
+              Create Request
+            </Link>
+          </section>
+        )}
+      </section>
+    </div>
+  );
+}

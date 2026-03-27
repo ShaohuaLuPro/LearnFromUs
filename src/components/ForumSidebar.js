@@ -21,10 +21,12 @@ function getPreview(content) {
   return `${text.slice(0, 88).trimEnd()}...`;
 }
 
-export default function ForumSidebar({ currentUser }) {
+export default function ForumSidebar({ currentUser, forums = [], currentForum = null }) {
   const [followedPosts, setFollowedPosts] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [message, setMessage] = useState('');
+  const followedForums = forums.filter((forum) => forum.isFollowing);
+  const visibleFollowedForums = followedForums.slice(0, 3);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,16 +77,71 @@ export default function ForumSidebar({ currentUser }) {
       <section className="panel forum-sidebar-card forum-sidebar-card-header">
         <div className="forum-floating-header">
           <div>
-            <p className="type-kicker mb-1">Following</p>
-            <h3 className="mb-0 type-title-md">Following Feed</h3>
+            <p className="type-kicker mb-1">Workspace</p>
+            <h3 className="mb-0 type-title-md">Apply for a Forum</h3>
           </div>
           <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
-            Create Forum
+            Open Request
           </Link>
         </div>
       </section>
 
       <section className="panel forum-sidebar-card">
+        <div className="forum-sidebar-section-head">
+          <div>
+            <p className="type-kicker mb-1">Forums</p>
+            <h4 className="mb-0 type-title-sm">Followed Forums</h4>
+          </div>
+          <span className="muted">{followedForums.length}</span>
+        </div>
+
+        {!currentUser ? (
+          <div className="forum-follow-empty">
+            <p className="muted mb-3">Login to save forums you want to revisit quickly.</p>
+            <Link to="/login" className="forum-secondary-btn text-decoration-none">
+              Login
+            </Link>
+          </div>
+        ) : followedForums.length === 0 ? (
+          <div className="forum-follow-empty">
+            <p className="muted mb-0">
+              Follow forums to pin them here.
+              {currentForum?.name ? ` Start with ${currentForum.name}.` : ''}
+            </p>
+          </div>
+        ) : (
+          <div className="forum-follow-list">
+            {visibleFollowedForums.map((forum) => (
+              <Link key={forum.id} to={`/forum/${forum.slug}`} className="forum-follow-card">
+                <div className="forum-follow-card-topline">
+                  <span className="forum-tag">{forum.isCore ? 'Core Forum' : 'Community Forum'}</span>
+                  <span className="muted">{forum.followerCount ?? 0} followers</span>
+                </div>
+                <strong>{forum.name}</strong>
+                <span className="forum-follow-meta">{forum.livePostCount ?? forum.postCount ?? 0} posts</span>
+                <span className="forum-follow-meta">
+                  {(forum.sectionScope || []).slice(0, 3).map((section) => getSectionLabel(section)).join(' · ')
+                    || 'Forum details'}
+                </span>
+              </Link>
+            ))}
+            {followedForums.length > 3 && (
+              <Link to="/following?tab=forums" className="forum-secondary-btn text-decoration-none">
+                More
+              </Link>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="panel forum-sidebar-card">
+        <div className="forum-sidebar-section-head">
+          <div>
+            <p className="type-kicker mb-1">People</p>
+            <h4 className="mb-0 type-title-sm">Following Feed</h4>
+          </div>
+        </div>
+
         {!currentUser ? (
           <div className="forum-follow-empty">
             <p className="muted mb-3">Login to see posts from the people you follow.</p>

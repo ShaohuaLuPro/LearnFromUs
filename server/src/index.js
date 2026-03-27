@@ -11,16 +11,17 @@ const { Pool } = require('pg');
 const { createActivityStore } = require('./lib/activity-store');
 const { createOpenAIAgentRouter } = require('./lib/openai-agent-router');
 const { createOpenAIDraftService, SECTION_ENUM } = require('./lib/openai-drafts');
+const { createOpenAIForumRequestDraftService } = require('./lib/openai-forum-request-drafts');
 const { createOpenAIPostRewriter } = require('./lib/openai-post-rewriter');
 const { createHybridRateLimitStore, createRateLimitMiddleware } = require('./lib/rate-limit');
 const { listPublicPosts, getPublicPostById } = require('./lib/post-queries');
 const {
   CORE_FORUM_SEEDS,
+  generateForumSlug,
   getDefaultForumSlugForSection,
   normalizeForumDescription,
   normalizeForumName,
   normalizeForumRationale,
-  normalizeForumSlug,
   normalizeSectionScope
 } = require('./lib/forum-config');
 const { runMigrations } = require('./lib/run-migrations');
@@ -75,6 +76,7 @@ const activityStore = createActivityStore({ mongoUri, mongoDbName });
 const rateLimitStore = createHybridRateLimitStore();
 const openAiAgentRouter = createOpenAIAgentRouter({ apiKey: openAiApiKey, model: openAiModel });
 const openAiDraftService = createOpenAIDraftService({ apiKey: openAiApiKey, model: openAiModel });
+const openAiForumRequestDraftService = createOpenAIForumRequestDraftService({ apiKey: openAiApiKey, model: openAiModel });
 const openAiPostRewriter = createOpenAIPostRewriter({ apiKey: openAiApiKey, model: openAiModel });
 const mailTransport = smtpHost && smtpFrom
   ? nodemailer.createTransport({
@@ -172,6 +174,177 @@ function isAdminUser(user) {
   return Boolean(user?.email && adminEmails.has(String(user.email).trim().toLowerCase()));
 }
 
+const SITE_ADMIN_PERMISSION_ENUM = [
+  'manage_admin_access',
+  'moderation',
+  'analytics',
+  'forum_requests'
+];
+
+const SITE_ADMIN_PERMISSION_DETAILS = [
+  {
+    key: 'manage_admin_access',
+    label: 'Manage Admin Access',
+    description: 'Grant, update, or remove site-level admin permissions.'
+  },
+  {
+    key: 'moderation',
+    label: 'Moderation',
+    description: 'Access the moderation queue and moderate posts site-wide.'
+  },
+  {
+    key: 'analytics',
+    label: 'Analytics',
+    description: 'Open analytics dashboards and export data.'
+  },
+  {
+    key: 'forum_requests',
+    label: 'Forum Requests',
+    description: 'Review and approve or reject forum creation requests.'
+  }
+];
+
+function normalizeSiteAdminPermission(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function normalizeSiteAdminPermissions(input) {
+  const raw = Array.isArray(input)
+    ? input
+    : String(input || '')
+      .split(',')
+      .map((value) => value.trim());
+
+  return [...new Set(
+    raw
+      .map((value) => normalizeSiteAdminPermission(value))
+      .filter((value) => SITE_ADMIN_PERMISSION_ENUM.includes(value))
+  )];
+}
+
+async function getSiteAdminPermissions(client, userId) {
+  if (!userId) {
+    return [];
+  }
+
+  const result = await client.query(
+    `SELECT permissions
+     FROM site_admin_access
+     WHERE user_id = $1`,
+    [userId]
+  );
+
+  return result.rows[0]?.permissions || [];
+}
+
+function getEffectiveSiteAdminPermissions(user, grantedPermissions = []) {
+  return isAdminUser(user) ? SITE_ADMIN_PERMISSION_ENUM : grantedPermissions;
+}
+
+function hasSiteAdminPermission(user, permission) {
+  if (!permission) {
+    return false;
+  }
+  if (isAdminUser(user)) {
+    return true;
+  }
+  return Boolean((user?.adminPermissions || []).includes(permission));
+}
+
+function buildAuthenticatedUser(user, grantedPermissions = []) {
+  const adminPermissions = getEffectiveSiteAdminPermissions(user, grantedPermissions);
+  return {
+    sub: user.id,
+    email: user.email,
+    name: user.username,
+    isAdmin: isAdminUser(user),
+    adminPermissions,
+    hasAdminAccess: adminPermissions.length > 0,
+    canManageAdminAccess: isAdminUser(user) || adminPermissions.includes('manage_admin_access')
+  };
+}
+
+function mapSiteAdminAccessRow(row) {
+  return {
+    id: row.user_id,
+    name: row.username || '',
+    email: row.email || '',
+    permissions: row.permissions || [],
+    grantedById: row.granted_by_id || null,
+    grantedByName: row.granted_by_name || '',
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+    isRootAdmin: isAdminUser({ email: row.email })
+  };
+}
+
+async function listSiteAdminAccess(client) {
+  const delegatedResult = await client.query(
+    `SELECT saa.user_id, u.username, u.email, COALESCE(saa.permissions, '{}') AS permissions,
+            saa.granted_by_id, granter.username AS granted_by_name, saa.created_at, saa.updated_at
+     FROM site_admin_access saa
+     JOIN app_user u ON u.id = saa.user_id
+     LEFT JOIN app_user granter ON granter.id = saa.granted_by_id
+     ORDER BY u.username ASC`
+  );
+
+  const delegated = delegatedResult.rows.map(mapSiteAdminAccessRow);
+  const seen = new Set(delegated.map((item) => item.id));
+
+  if (adminEmails.size === 0) {
+    return delegated;
+  }
+
+  const rootResult = await client.query(
+    `SELECT id AS user_id, username, email
+     FROM app_user
+     WHERE LOWER(email) = ANY($1::text[])
+     ORDER BY username ASC`,
+    [[...adminEmails]]
+  );
+
+  const rootAdmins = rootResult.rows
+    .filter((row) => !seen.has(row.user_id))
+    .map((row) => ({
+      id: row.user_id,
+      name: row.username || '',
+      email: row.email || '',
+      permissions: SITE_ADMIN_PERMISSION_ENUM,
+      grantedById: null,
+      grantedByName: '',
+      createdAt: null,
+      updatedAt: null,
+      isRootAdmin: true
+    }));
+
+  return [...rootAdmins, ...delegated];
+}
+
+async function attachAuthenticatedUser(decodedToken) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT id, email, username
+       FROM app_user
+       WHERE id = $1`,
+      [decodedToken.sub]
+    );
+    if (!result.rows[0]) {
+      return null;
+    }
+
+    const user = result.rows[0];
+    const grantedPermissions = await getSiteAdminPermissions(client, user.id);
+    return buildAuthenticatedUser(user, grantedPermissions);
+  } finally {
+    client.release();
+  }
+}
+
 function authRequired(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
@@ -179,19 +352,32 @@ function authRequired(req, res, next) {
   }
   try {
     const token = auth.slice('Bearer '.length);
-    req.user = jwt.verify(token, jwtSecret);
-    req.user.isAdmin = isAdminUser(req.user);
-    return next();
+    const decoded = jwt.verify(token, jwtSecret);
+    attachAuthenticatedUser(decoded)
+      .then((user) => {
+        if (!user) {
+          return res.status(401).json({ message: 'Invalid token' });
+        }
+        req.user = user;
+        return next();
+      })
+      .catch((error) => {
+        console.error('Failed to hydrate auth user.', error);
+        return res.status(500).json({ message: 'Failed to authenticate user.' });
+      });
+    return undefined;
   } catch {
     return res.status(401).json({ message: 'Invalid token' });
   }
 }
 
-function adminRequired(req, res, next) {
-  if (!req.user?.isAdmin) {
-    return res.status(403).json({ message: 'Admin access required.' });
-  }
-  return next();
+function siteAdminPermissionRequired(permission) {
+  return (req, res, next) => {
+    if (!hasSiteAdminPermission(req.user, permission)) {
+      return res.status(403).json({ message: 'Admin access required.' });
+    }
+    return next();
+  };
 }
 
 function optionalAuth(req, _res, next) {
@@ -202,12 +388,21 @@ function optionalAuth(req, _res, next) {
   }
   try {
     const token = auth.slice('Bearer '.length);
-    req.user = jwt.verify(token, jwtSecret);
-    req.user.isAdmin = isAdminUser(req.user);
+    const decoded = jwt.verify(token, jwtSecret);
+    attachAuthenticatedUser(decoded)
+      .then((user) => {
+        req.user = user;
+        return next();
+      })
+      .catch(() => {
+        req.user = null;
+        return next();
+      });
   } catch {
     req.user = null;
+    return next();
   }
-  return next();
+  return undefined;
 }
 
 function issuePasswordResetToken(user) {
@@ -944,7 +1139,8 @@ function formatAgentDate(timestamp) {
 function buildNavigationResponse(destinationKey, user) {
   const normalized = String(destinationKey || '').trim().toLowerCase();
   const isLoggedIn = Boolean(user?.sub);
-  const isAdmin = Boolean(user?.isAdmin);
+  const canOpenAnalytics = hasSiteAdminPermission(user, 'analytics');
+  const canOpenModeration = hasSiteAdminPermission(user, 'moderation');
 
   const responses = {
     home: {
@@ -958,6 +1154,10 @@ function buildNavigationResponse(destinationKey, user) {
     forum: {
       reply: 'Opening the forum.',
       navigateTo: '/forum'
+    },
+    'forums-request': {
+      reply: isLoggedIn ? 'Opening the forum request form.' : 'Login first, then you can request a new forum.',
+      navigateTo: isLoggedIn ? '/forums/request' : '/login'
     },
     'forum-create-post': {
       reply: isLoggedIn ? 'Opening the forum composer.' : 'Login first, then you can create a post.',
@@ -988,12 +1188,12 @@ function buildNavigationResponse(destinationKey, user) {
       navigateTo: isLoggedIn ? '/following?tab=followers' : '/login'
     },
     analytics: {
-      reply: isAdmin ? 'Opening Analytics.' : 'Analytics is admin-only. Returning to the forum.',
-      navigateTo: isAdmin ? '/analytics' : '/forum'
+      reply: canOpenAnalytics ? 'Opening Analytics.' : 'Analytics is admin-only. Returning to the forum.',
+      navigateTo: canOpenAnalytics ? '/analytics' : '/forum'
     },
     moderation: {
-      reply: isAdmin ? 'Opening the Moderation Queue.' : 'Moderation is admin-only. Returning to the forum.',
-      navigateTo: isAdmin ? '/moderation' : '/forum'
+      reply: canOpenModeration ? 'Opening the Moderation Queue.' : 'Moderation is admin-only. Returning to the forum.',
+      navigateTo: canOpenModeration ? '/moderation' : '/forum'
     },
     login: {
       reply: 'Opening Login.',
@@ -1691,6 +1891,141 @@ function buildDraftFromMessage(message) {
   };
 }
 
+function toTitleCaseWords(value) {
+  return String(value || '')
+    .split(/[\s/-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ')
+    .trim();
+}
+
+function extractForumRequestTopic(message) {
+  return String(message || '')
+    .replace(/^(help me|please|can you|could you|i want to|let me|make|draft|write|generate|create|request|apply for|propose)\s+/i, '')
+    .replace(/^(a|an|the)\s+/i, '')
+    .replace(/\b(new\s+)?forum\b/gi, '')
+    .replace(/\b(request|application|proposal)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildForumRequestScopeSuggestions(topic) {
+  const text = String(topic || '').toLowerCase();
+  const matches = [];
+  const addSuggestions = (values) => {
+    values.forEach((value) => {
+      if (value) {
+        matches.push(value);
+      }
+    });
+  };
+
+  if (/(mlops|model deployment|model serving|feature store|platform engineering for ml)/.test(text)) {
+    addSuggestions(['mlops-platforms', 'model-deployment', 'serving-infra', 'model-observability']);
+  }
+  if (/(llm|rag|prompt|agent|evaluation)/.test(text)) {
+    addSuggestions(['llm-application-patterns', 'rag-evaluation', 'agent-workflows', 'prompt-ops']);
+  }
+  if (/(frontend|react|ui|ux|design system)/.test(text)) {
+    addSuggestions(['component-architecture', 'design-systems', 'frontend-performance', 'ui-debugging']);
+  }
+  if (/(backend|api|distributed system|microservice|database)/.test(text)) {
+    addSuggestions(['api-design', 'service-architecture', 'data-modeling', 'reliability-patterns']);
+  }
+  if (/(analytics|experimentation|data science|metric|dashboard)/.test(text)) {
+    addSuggestions(['decision-metrics', 'analytics-workflows', 'experimentation-design', 'data-storytelling']);
+  }
+  if (/(security|auth|privacy|compliance)/.test(text)) {
+    addSuggestions(['application-security', 'identity-and-access', 'secure-design', 'privacy-practices']);
+  }
+
+  const normalizedMatches = normalizeSectionScope(matches).slice(0, 4);
+  if (normalizedMatches.length > 0) {
+    return normalizedMatches;
+  }
+
+  const topicSlug = normalizeSectionScope([topic])[0] || '';
+  const genericSuggestions = [
+    topicSlug ? `${topicSlug}-patterns` : '',
+    topicSlug ? `${topicSlug}-workflows` : '',
+    'practical-case-studies',
+    'tooling-and-resources'
+  ];
+  return normalizeSectionScope(genericSuggestions).slice(0, 4);
+}
+
+function inferForumRequestSections(message) {
+  const explicitSections = extractQuotedValue(message, 'sections') || extractQuotedValue(message, 'section-scope');
+  if (explicitSections) {
+    return normalizeSectionScope(explicitSections).slice(0, 4);
+  }
+
+  return buildForumRequestScopeSuggestions(extractForumRequestTopic(message) || message);
+}
+
+function buildForumRequestDraftFromMessage(message) {
+  const explicitName = extractQuotedValue(message, 'name') || extractQuotedValue(message, 'forum');
+  const topic = extractForumRequestTopic(message) || 'builders collaboration';
+  const cleanTopic = topic.replace(/\b(forum|community)\b/gi, '').trim() || topic;
+  const name = normalizeForumName(explicitName || toTitleCaseWords(cleanTopic).slice(0, 80)) || 'New Forum Request';
+  const sectionScope = inferForumRequestSections(message);
+  const focusSummary = cleanTopic || name;
+
+  return {
+    name,
+    description: normalizeForumDescription(
+      `A forum for discussions, questions, case studies, and practical workflows related to ${focusSummary}.`
+    ),
+    rationale: normalizeForumRationale(
+      `This forum would give members a dedicated place to share repeatable lessons, tools, and implementation details about ${focusSummary}. Right now those conversations are likely scattered across broader forums, which makes them harder to discover and maintain over time.`
+    ),
+    sectionScope
+  };
+}
+
+async function buildForumRequestDraftWithAi(message) {
+  const fallbackDraft = buildForumRequestDraftFromMessage(message);
+  let generation = {
+    mode: 'template',
+    provider: 'local',
+    model: null,
+    fallback: false
+  };
+  let forumRequestDraft = fallbackDraft;
+
+  if (openAiForumRequestDraftService.isEnabled()) {
+    try {
+      const aiResult = await openAiForumRequestDraftService.createDraft({
+        message,
+        fallbackDraft
+      });
+      if (aiResult?.draft) {
+        forumRequestDraft = aiResult.draft;
+        generation = {
+          mode: 'llm',
+          provider: aiResult.provider || 'openai',
+          model: aiResult.model || openAiForumRequestDraftService.getModel(),
+          fallback: false
+        };
+      }
+    } catch (error) {
+      console.error('OpenAI forum request drafting failed. Falling back to template draft.', error);
+      generation = {
+        mode: 'template',
+        provider: 'local',
+        model: openAiForumRequestDraftService.getModel(),
+        fallback: true
+      };
+    }
+  }
+
+  return {
+    forumRequestDraft,
+    generation
+  };
+}
+
 function normalizeAgentSearchQuery(message) {
   return String(message || '')
     .replace(/^(search|find|look for|show|recommend)\s+/i, '')
@@ -2077,7 +2412,8 @@ async function getTrendingAgentSnapshot() {
 }
 
 async function runRuleBasedAgentCommand(message, user) {
-  const intent = detectAgentIntent(message);
+  const forumRequestIntent = /(request|apply for|propose).*(new )?forum|draft.*forum request|write.*forum request|generate.*forum request|create.*forum request|new forum idea|申请.*forum|帮我申请.*forum|写.*forum申请/i.test(String(message || ''));
+  const intent = forumRequestIntent ? 'forum-request-draft' : detectAgentIntent(message);
 
   if (intent === 'navigate') {
     const text = String(message || '').toLowerCase();
@@ -2104,6 +2440,8 @@ async function runRuleBasedAgentCommand(message, user) {
       destination = 'moderation';
     } else if (/(login|sign in)/.test(text)) {
       destination = 'login';
+    } else if (/(request forum|new forum|forum request|create forum request)/.test(text)) {
+      destination = 'forums-request';
     } else if (/(create post|write post|new post|composer)/.test(text)) {
       destination = 'forum-create-post';
     }
@@ -2204,11 +2542,30 @@ async function runRuleBasedAgentCommand(message, user) {
     };
   }
 
+  if (intent === 'forum-request-draft') {
+    const { forumRequestDraft, generation } = await buildForumRequestDraftWithAi(message);
+    return {
+      intent,
+      reply: generation?.provider === 'openai'
+        ? `I drafted a forum request you can review and submit${generation.model ? ` with ${generation.model}` : ''}.`
+        : 'I drafted a forum request you can review and submit.',
+      forumRequestDraft,
+      generation,
+      actions: [
+        {
+          label: user?.sub ? 'Open Forum Request' : 'Login to Request',
+          to: user?.sub ? '/forums/request' : '/login'
+        }
+      ],
+      quickActions: user ? ['draft-post', 'search-posts'] : ['login-to-publish', 'search-posts']
+    };
+  }
+
   return {
     intent: 'help',
     reply: user
-      ? 'I can search related posts, show active authors, and draft a new post in your usual forum style. Try: "draft a post in my style about password reset".'
-      : 'I can search related posts, show active authors, draft a new post, or help you publish a draft. Try: "find posts about mongodb", "show top authors", or "draft a post about password reset".',
+      ? 'I can search related posts, show active authors, draft a new post in your usual forum style, or draft a forum request. Try: "draft a forum request for an mlops community".'
+      : 'I can search related posts, show active authors, draft a new post, or draft a forum request. Try: "find posts about mongodb", "show top authors", or "draft a forum request for an mlops community".',
     quickActions: ['search-posts', 'show-trending', 'draft-post']
   };
 }
@@ -2296,6 +2653,30 @@ async function executeAgentRoute(route, originalMessage, user) {
       referencePosts,
       generation,
       quickActions: user ? ['publish-draft', 'search-posts'] : ['login-to-publish', 'search-posts'],
+      routing: {
+        provider: safeRoute.provider || 'openai',
+        model: safeRoute.model || openAiModel,
+        rationale: safeRoute.rationale || ''
+      }
+    };
+  }
+
+  if (safeRoute.tool === 'draft_forum_request') {
+    const { forumRequestDraft, generation } = await buildForumRequestDraftWithAi(safeRoute.query || originalMessage);
+    return {
+      intent: 'forum-request-draft',
+      reply: generation?.provider === 'openai'
+        ? `I drafted a forum request you can review and submit${generation.model ? ` with ${generation.model}` : ''}.`
+        : 'I drafted a forum request you can review and submit.',
+      forumRequestDraft,
+      generation,
+      actions: [
+        {
+          label: user?.sub ? 'Open Forum Request' : 'Login to Request',
+          to: user?.sub ? '/forums/request' : '/login'
+        }
+      ],
+      quickActions: user ? ['draft-post', 'search-posts'] : ['login-to-publish', 'search-posts'],
       routing: {
         provider: safeRoute.provider || 'openai',
         model: safeRoute.model || openAiModel,
@@ -2416,9 +2797,58 @@ function mapForumRow(row) {
     postCount: Number(row.post_count || 0),
     livePostCount: Number(row.live_post_count || 0),
     moderatedCount: Number(row.moderated_count || 0),
-    isCore: Boolean(row.is_core)
+    followerCount: Number(row.follower_count || 0),
+    isCore: Boolean(row.is_core),
+    isFollowing: Boolean(row.is_following),
+    isOwner: Boolean(row.is_owner),
+    canManage: Boolean(row.can_manage),
+    currentUserPermissions: row.current_user_permissions || []
   };
 }
+
+const FORUM_PERMISSION_ENUM = [
+  'manage_admins',
+  'manage_sections',
+  'view_followers',
+  'moderate_posts',
+  'review_appeals',
+  'publish_announcements'
+];
+
+const FORUM_PERMISSION_DETAILS = [
+  {
+    key: 'manage_admins',
+    label: 'Manage Admins',
+    description: 'Grant, update, or remove forum manager permissions.'
+  },
+  {
+    key: 'manage_sections',
+    label: 'Manage Sections',
+    description: 'Edit which sections the forum accepts.'
+  },
+  {
+    key: 'view_followers',
+    label: 'View Followers',
+    description: 'See who follows the forum.'
+  },
+  {
+    key: 'moderate_posts',
+    label: 'Delete Posts',
+    description: 'Remove posts from the forum moderation side.'
+  },
+  {
+    key: 'review_appeals',
+    label: 'Review Appeals',
+    description: 'Restore posts after review.'
+  },
+  {
+    key: 'publish_announcements',
+    label: 'Publish Announcements',
+    description: 'Publish posts in announcement sections for this forum.'
+  }
+];
+
+const FORUM_ANNOUNCEMENT_SECTIONS = new Set(['announcements', 'system-update']);
 
 function mapForumRequestRow(row) {
   return {
@@ -2442,8 +2872,140 @@ function mapForumRequestRow(row) {
   };
 }
 
+function mapForumManagerRow(row) {
+  return {
+    id: row.user_id,
+    name: row.username || '',
+    permissions: row.permissions || [],
+    grantedById: row.granted_by_id || null,
+    grantedByName: row.granted_by_name || '',
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null
+  };
+}
+
 function canManageForum(user, forumOwnerId) {
   return Boolean(user?.isAdmin || (user?.sub && forumOwnerId && user.sub === forumOwnerId));
+}
+
+function normalizeForumPermission(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function normalizeForumPermissions(input) {
+  const raw = Array.isArray(input)
+    ? input
+    : String(input || '')
+      .split(',')
+      .map((value) => value.trim());
+
+  return [...new Set(
+    raw
+      .map((value) => normalizeForumPermission(value))
+      .filter((value) => FORUM_PERMISSION_ENUM.includes(value))
+  )];
+}
+
+function isAnnouncementSection(section) {
+  return FORUM_ANNOUNCEMENT_SECTIONS.has(normalizeSection(section));
+}
+
+async function getForumManagerPermissions(client, forumId, userId) {
+  if (!forumId || !userId) {
+    return [];
+  }
+
+  const result = await client.query(
+    `SELECT permissions
+     FROM forum_manager
+     WHERE forum_id = $1 AND user_id = $2`,
+    [forumId, userId]
+  );
+
+  return result.rows[0]?.permissions || [];
+}
+
+function hasForumPermission(user, forumOwnerId, grantedPermissions, permission) {
+  if (user?.isAdmin) {
+    return true;
+  }
+  if (user?.sub && forumOwnerId && user.sub === forumOwnerId) {
+    return true;
+  }
+  return Boolean(permission && (grantedPermissions || []).includes(permission));
+}
+
+function hasAnyForumAccess(user, forumOwnerId, grantedPermissions) {
+  return Boolean(user?.isAdmin || (user?.sub && forumOwnerId && user.sub === forumOwnerId) || (grantedPermissions || []).length > 0);
+}
+
+async function resolveForumPermissionContext(client, forumId, user) {
+  const forum = await getForumById(client, forumId);
+  if (!forum) {
+    return { forum: null, permissions: [] };
+  }
+
+  const permissions = user?.sub
+    ? await getForumManagerPermissions(client, forumId, user.sub)
+    : [];
+
+  return {
+    forum,
+    permissions
+  };
+}
+
+async function findUserByIdentifier(client, identifier) {
+  const cleanIdentifier = String(identifier || '').trim();
+  if (!cleanIdentifier) {
+    return null;
+  }
+
+  const lowerIdentifier = cleanIdentifier.toLowerCase();
+  const result = await client.query(
+    `SELECT id, username, email
+     FROM app_user
+     WHERE id::text = $1
+        OR LOWER(username) = $2
+        OR LOWER(email) = $2
+     ORDER BY username ASC
+     LIMIT 1`,
+    [cleanIdentifier, lowerIdentifier]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function listForumManagers(client, forumId) {
+  const result = await client.query(
+    `SELECT fm.user_id, u.username, COALESCE(fm.permissions, '{}') AS permissions,
+            fm.granted_by_id, granter.username AS granted_by_name, fm.created_at, fm.updated_at
+     FROM forum_manager fm
+     JOIN app_user u ON u.id = fm.user_id
+     LEFT JOIN app_user granter ON granter.id = fm.granted_by_id
+     WHERE fm.forum_id = $1
+     ORDER BY u.username ASC`,
+    [forumId]
+  );
+
+  return result.rows.map(mapForumManagerRow);
+}
+
+async function ensureForumFollower(client, forumId, userId) {
+  if (!forumId || !userId) {
+    return;
+  }
+
+  await client.query(
+    `INSERT INTO forum_follow (user_id, forum_id)
+     VALUES ($1, $2)
+     ON CONFLICT DO NOTHING`,
+    [userId, forumId]
+  );
 }
 
 async function getFirstAdminOwnerId(client) {
@@ -2473,7 +3035,11 @@ async function ensureCoreForums(client) {
        ON CONFLICT (slug) DO UPDATE
          SET name = EXCLUDED.name,
              description = EXCLUDED.description,
-             section_scope = EXCLUDED.section_scope,
+             section_scope = CASE
+               WHEN forum.section_scope IS NULL OR array_length(forum.section_scope, 1) IS NULL
+                 THEN EXCLUDED.section_scope
+               ELSE forum.section_scope
+             END,
              is_core = TRUE,
              owner_id = COALESCE(forum.owner_id, EXCLUDED.owner_id),
              updated_at = NOW()`,
@@ -2509,12 +3075,14 @@ async function getForumById(client, forumId) {
   const result = await client.query(
     `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
             COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count
+            COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+            COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+            COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
+            COUNT(DISTINCT ff_count.user_id) AS follower_count
      FROM forum f
      LEFT JOIN app_user owner ON owner.id = f.owner_id
      LEFT JOIN post p ON p.forum_id = f.id
+     LEFT JOIN forum_follow ff_count ON ff_count.forum_id = f.id
      WHERE f.id = $1
      GROUP BY f.id, owner.username`,
     [forumId]
@@ -2527,12 +3095,14 @@ async function getForumBySlug(client, slug) {
   const result = await client.query(
     `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
             COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count
+            COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+            COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+            COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
+            COUNT(DISTINCT ff_count.user_id) AS follower_count
      FROM forum f
      LEFT JOIN app_user owner ON owner.id = f.owner_id
      LEFT JOIN post p ON p.forum_id = f.id
+     LEFT JOIN forum_follow ff_count ON ff_count.forum_id = f.id
      WHERE f.slug = $1
      GROUP BY f.id, owner.username`,
     [slug]
@@ -2565,19 +3135,54 @@ async function resolveWritableForum(client, forumId, section, fallbackForumId = 
 
 async function getForumWorkspace(client, user) {
   await ensureCoreForums(client);
+  const canManageAllForums = Boolean(user?.isAdmin);
+  const canReviewForumRequests = hasSiteAdminPermission(user, 'forum_requests');
+  const canModerateSite = hasSiteAdminPermission(user, 'moderation');
 
-  const forumsResult = await client.query(
-    `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
-            COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
-            COUNT(p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count
-     FROM forum f
-     LEFT JOIN app_user owner ON owner.id = f.owner_id
-     LEFT JOIN post p ON p.forum_id = f.id
-     GROUP BY f.id, owner.username
-     ORDER BY f.is_core DESC, live_post_count DESC, f.name ASC`
-  );
+  const forumsResult = user?.sub
+    ? await client.query(
+        `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
+                COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+                COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+                COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+                COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
+                COUNT(DISTINCT ff_count.user_id) AS follower_count,
+                COALESCE(fm_self.permissions, '{}') AS current_user_permissions,
+                (f.owner_id = $1) AS is_owner,
+                ($2::boolean = TRUE OR f.owner_id = $1 OR fm_self.user_id IS NOT NULL) AS can_manage,
+                EXISTS (
+                  SELECT 1
+                  FROM forum_follow ff
+                  WHERE ff.user_id = $1
+                    AND ff.forum_id = f.id
+                ) AS is_following
+         FROM forum f
+         LEFT JOIN app_user owner ON owner.id = f.owner_id
+         LEFT JOIN post p ON p.forum_id = f.id
+         LEFT JOIN forum_follow ff_count ON ff_count.forum_id = f.id
+         LEFT JOIN forum_manager fm_self ON fm_self.forum_id = f.id AND fm_self.user_id = $1
+         GROUP BY f.id, owner.username, fm_self.permissions, fm_self.user_id
+         ORDER BY is_following DESC, f.is_core DESC, live_post_count DESC, f.name ASC`,
+        [user.sub, canManageAllForums]
+      )
+    : await client.query(
+        `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
+                COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+                COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
+                COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
+                COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
+                COUNT(DISTINCT ff_count.user_id) AS follower_count,
+                '{}'::text[] AS current_user_permissions,
+                FALSE AS is_owner,
+                FALSE AS can_manage,
+                FALSE AS is_following
+         FROM forum f
+         LEFT JOIN app_user owner ON owner.id = f.owner_id
+         LEFT JOIN post p ON p.forum_id = f.id
+         LEFT JOIN forum_follow ff_count ON ff_count.forum_id = f.id
+         GROUP BY f.id, owner.username
+         ORDER BY f.is_core DESC, live_post_count DESC, f.name ASC`
+      );
 
   const forums = forumsResult.rows.map(mapForumRow);
 
@@ -2619,9 +3224,9 @@ async function getForumWorkspace(client, user) {
        GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
        ORDER BY p.deleted_by_admin_at DESC, p.created_at DESC
        LIMIT 8`,
-      [Boolean(user.isAdmin), user.sub]
+      [canModerateSite, user.sub]
     ),
-    user.isAdmin
+    canReviewForumRequests
       ? client.query(
           `SELECT fr.id, fr.requester_id, requester.username AS requester_name, fr.forum_id,
                   forum.slug AS forum_slug, forum.name AS forum_name,
@@ -2772,6 +3377,14 @@ function mapNetworkUserRow(row) {
   };
 }
 
+function mapForumFollowerRow(row) {
+  return {
+    id: row.id,
+    name: row.username,
+    followedAt: row.created_at ? new Date(row.created_at).getTime() : null
+  };
+}
+
 app.get('/api/health', (_, res) => {
   res.json({
     ok: true,
@@ -2821,6 +3434,7 @@ app.post('/api/auth/register', authRateLimit, async (req, res) => {
     );
     const user = result.rows[0];
     const token = signUser(user);
+    const grantedPermissions = await getSiteAdminPermissions(client, user.id);
     await recordActivity('auth.registered', {
       userId: user.id,
       email: user.email,
@@ -2828,7 +3442,15 @@ app.post('/api/auth/register', authRateLimit, async (req, res) => {
     });
     return res.status(201).json({
       token,
-      user: { id: user.id, email: user.email, name: user.username, isAdmin: isAdminUser(user) }
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.username,
+        isAdmin: isAdminUser(user),
+        adminPermissions: getEffectiveSiteAdminPermissions(user, grantedPermissions),
+        hasAdminAccess: getEffectiveSiteAdminPermissions(user, grantedPermissions).length > 0,
+        canManageAdminAccess: isAdminUser(user) || getEffectiveSiteAdminPermissions(user, grantedPermissions).includes('manage_admin_access')
+      }
     });
   } catch (error) {
     if (String(error.code) === '23505') {
@@ -2870,6 +3492,7 @@ app.post('/api/auth/login', authRateLimit, async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
     const token = signUser(user);
+    const grantedPermissions = await getSiteAdminPermissions(client, user.id);
     await recordActivity('auth.logged_in', {
       userId: user.id,
       email: user.email,
@@ -2877,7 +3500,15 @@ app.post('/api/auth/login', authRateLimit, async (req, res) => {
     });
     return res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.username, isAdmin: isAdminUser(user) }
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.username,
+        isAdmin: isAdminUser(user),
+        adminPermissions: getEffectiveSiteAdminPermissions(user, grantedPermissions),
+        hasAdminAccess: getEffectiveSiteAdminPermissions(user, grantedPermissions).length > 0,
+        canManageAdminAccess: isAdminUser(user) || getEffectiveSiteAdminPermissions(user, grantedPermissions).includes('manage_admin_access')
+      }
     });
   } finally {
     client.release();
@@ -2996,7 +3627,165 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
       return res.status(401).json({ message: 'User not found.' });
     }
     const user = result.rows[0];
-    return res.json({ user: { id: user.id, email: user.email, name: user.username, isAdmin: isAdminUser(user) } });
+    const grantedPermissions = await getSiteAdminPermissions(client, user.id);
+    const effectivePermissions = getEffectiveSiteAdminPermissions(user, grantedPermissions);
+    return res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.username,
+        isAdmin: isAdminUser(user),
+        adminPermissions: effectivePermissions,
+        hasAdminAccess: effectivePermissions.length > 0,
+        canManageAdminAccess: isAdminUser(user) || effectivePermissions.includes('manage_admin_access')
+      }
+    });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/admin/access', authRequired, siteAdminPermissionRequired('manage_admin_access'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    return res.json({
+      admins: await listSiteAdminAccess(client),
+      availablePermissions: SITE_ADMIN_PERMISSION_DETAILS,
+      viewerPermissions: req.user?.isAdmin ? SITE_ADMIN_PERMISSION_ENUM : (req.user?.adminPermissions || []),
+      canManageAdminAccess: Boolean(req.user?.canManageAdminAccess)
+    });
+  } catch (error) {
+    console.error('Failed to load site admin access.', error);
+    return res.status(500).json({ message: 'Failed to load site admin access.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/access', authRequired, siteAdminPermissionRequired('manage_admin_access'), async (req, res) => {
+  const identifier = String(req.body?.identifier || '').trim();
+  const permissions = normalizeSiteAdminPermissions(req.body?.permissions);
+  if (!identifier) {
+    return res.status(400).json({ message: 'Enter a username, email, or user id.' });
+  }
+  if (permissions.length === 0) {
+    return res.status(400).json({ message: 'Choose at least one admin permission.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const targetUser = await findUserByIdentifier(client, identifier);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    if (isAdminUser(targetUser)) {
+      return res.status(400).json({ message: 'That user is already a root admin.' });
+    }
+
+    await client.query(
+      `INSERT INTO site_admin_access (user_id, permissions, granted_by_id, updated_at)
+       VALUES ($1, $2::text[], $3, NOW())
+       ON CONFLICT (user_id) DO UPDATE
+         SET permissions = EXCLUDED.permissions,
+             granted_by_id = EXCLUDED.granted_by_id,
+             updated_at = NOW()`,
+      [targetUser.id, permissions, req.user.sub]
+    );
+
+    return res.json({
+      ok: true,
+      admins: await listSiteAdminAccess(client),
+      message: 'Admin access saved.'
+    });
+  } catch (error) {
+    console.error('Failed to save admin access.', error);
+    return res.status(500).json({ message: 'Failed to save admin access.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/admin/access/:userId', authRequired, siteAdminPermissionRequired('manage_admin_access'), async (req, res) => {
+  const permissions = normalizeSiteAdminPermissions(req.body?.permissions);
+  if (permissions.length === 0) {
+    return res.status(400).json({ message: 'Choose at least one admin permission.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const targetResult = await client.query(
+      `SELECT id, email
+       FROM app_user
+       WHERE id = $1`,
+      [req.params.userId]
+    );
+    if (!targetResult.rows[0]) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    if (isAdminUser(targetResult.rows[0])) {
+      return res.status(400).json({ message: 'Root admin permissions are managed through environment configuration.' });
+    }
+
+    const updated = await client.query(
+      `UPDATE site_admin_access
+       SET permissions = $2::text[],
+           granted_by_id = $3,
+           updated_at = NOW()
+       WHERE user_id = $1
+       RETURNING user_id`,
+      [req.params.userId, permissions, req.user.sub]
+    );
+    if (!updated.rows[0]) {
+      return res.status(404).json({ message: 'Admin access record not found.' });
+    }
+
+    return res.json({
+      ok: true,
+      admins: await listSiteAdminAccess(client),
+      message: 'Admin permissions updated.'
+    });
+  } catch (error) {
+    console.error('Failed to update admin access.', error);
+    return res.status(500).json({ message: 'Failed to update admin access.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/admin/access/:userId', authRequired, siteAdminPermissionRequired('manage_admin_access'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const targetResult = await client.query(
+      `SELECT id, email
+       FROM app_user
+       WHERE id = $1`,
+      [req.params.userId]
+    );
+    if (!targetResult.rows[0]) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    if (isAdminUser(targetResult.rows[0])) {
+      return res.status(400).json({ message: 'Root admin access cannot be removed here.' });
+    }
+
+    const deleted = await client.query(
+      `DELETE FROM site_admin_access
+       WHERE user_id = $1
+       RETURNING user_id`,
+      [req.params.userId]
+    );
+    if (!deleted.rows[0]) {
+      return res.status(404).json({ message: 'Admin access record not found.' });
+    }
+
+    return res.json({
+      ok: true,
+      admins: await listSiteAdminAccess(client),
+      message: 'Admin access removed.'
+    });
+  } catch (error) {
+    console.error('Failed to remove admin access.', error);
+    return res.status(500).json({ message: 'Failed to remove admin access.' });
   } finally {
     client.release();
   }
@@ -3015,12 +3804,404 @@ app.get('/api/forums', optionalAuth, async (req, res) => {
   }
 });
 
+app.post('/api/forums/:forumId/follow', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const forumResult = await client.query(
+      `SELECT id, slug FROM forum WHERE id = $1`,
+      [req.params.forumId]
+    );
+
+    if (!forumResult.rows[0]) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+
+    await client.query(
+      `INSERT INTO forum_follow (user_id, forum_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [req.user.sub, req.params.forumId]
+    );
+
+    await recordActivity('social.followed_forum', {
+      userId: req.user.sub,
+      forumId: req.params.forumId,
+      forumSlug: forumResult.rows[0].slug
+    });
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Failed to follow forum.', error);
+    return res.status(500).json({ message: 'Failed to follow forum.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/forums/:forumId/follow', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `DELETE FROM forum_follow WHERE user_id = $1 AND forum_id = $2`,
+      [req.user.sub, req.params.forumId]
+    );
+
+    await recordActivity('social.unfollowed_forum', {
+      userId: req.user.sub,
+      forumId: req.params.forumId
+    });
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Failed to unfollow forum.', error);
+    return res.status(500).json({ message: 'Failed to unfollow forum.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/forums/:forumId/followers', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { forum, permissions } = await resolveForumPermissionContext(client, req.params.forumId, req.user);
+    if (!forum) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!hasForumPermission(req.user, forum.ownerId, permissions, 'view_followers')) {
+      return res.status(403).json({ message: 'You do not have permission to view forum followers.' });
+    }
+
+    const result = await client.query(
+      `SELECT u.id, u.username, ff.created_at
+       FROM forum_follow ff
+       JOIN app_user u ON u.id = ff.user_id
+       WHERE ff.forum_id = $1
+       ORDER BY ff.created_at DESC, u.username ASC`,
+      [req.params.forumId]
+    );
+
+    return res.json({
+      forum,
+      followers: result.rows.map(mapForumFollowerRow)
+    });
+  } catch (error) {
+    console.error('Failed to load forum followers.', error);
+    return res.status(500).json({ message: 'Failed to load forum followers.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/forums/:forumId/access', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { forum, permissions } = await resolveForumPermissionContext(client, req.params.forumId, req.user);
+    if (!forum) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!hasAnyForumAccess(req.user, forum.ownerId, permissions)) {
+      return res.status(403).json({ message: 'You do not have access to this forum management page.' });
+    }
+
+    const managers = await listForumManagers(client, req.params.forumId);
+
+    return res.json({
+      forum,
+      owner: forum.ownerId ? { id: forum.ownerId, name: forum.ownerName || '' } : null,
+      managers,
+      availablePermissions: FORUM_PERMISSION_DETAILS,
+      viewerPermissions: req.user?.isAdmin || req.user?.sub === forum.ownerId ? FORUM_PERMISSION_ENUM : permissions,
+      canManageAdmins: hasForumPermission(req.user, forum.ownerId, permissions, 'manage_admins'),
+      canTransferOwnership: Boolean(req.user?.isAdmin || (forum.ownerId && req.user?.sub === forum.ownerId))
+    });
+  } catch (error) {
+    console.error('Failed to load forum access.', error);
+    return res.status(500).json({ message: 'Failed to load forum access.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/forums/:forumId/managers', authRequired, async (req, res) => {
+  const identifier = String(req.body?.identifier || '').trim();
+  const permissionsInput = normalizeForumPermissions(req.body?.permissions);
+  if (!identifier) {
+    return res.status(400).json({ message: 'Enter a username, email, or user id.' });
+  }
+  if (permissionsInput.length === 0) {
+    return res.status(400).json({ message: 'Choose at least one permission.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const { forum, permissions } = await resolveForumPermissionContext(client, req.params.forumId, req.user);
+    if (!forum) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!hasForumPermission(req.user, forum.ownerId, permissions, 'manage_admins')) {
+      return res.status(403).json({ message: 'You do not have permission to manage forum admins.' });
+    }
+
+    const targetUser = await findUserByIdentifier(client, identifier);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    if (forum.ownerId && targetUser.id === forum.ownerId) {
+      return res.status(400).json({ message: 'The forum owner already has full permissions.' });
+    }
+
+    await client.query(
+      `INSERT INTO forum_manager (forum_id, user_id, permissions, granted_by_id, updated_at)
+       VALUES ($1, $2, $3::text[], $4, NOW())
+       ON CONFLICT (forum_id, user_id) DO UPDATE
+         SET permissions = EXCLUDED.permissions,
+             granted_by_id = EXCLUDED.granted_by_id,
+             updated_at = NOW()`,
+      [req.params.forumId, targetUser.id, permissionsInput, req.user.sub]
+    );
+    await ensureForumFollower(client, req.params.forumId, targetUser.id);
+
+    const managers = await listForumManagers(client, req.params.forumId);
+    const manager = managers.find((item) => item.id === targetUser.id) || null;
+
+    return res.json({
+      ok: true,
+      manager,
+      managers,
+      message: 'Forum manager permissions saved.'
+    });
+  } catch (error) {
+    console.error('Failed to save forum manager.', error);
+    return res.status(500).json({ message: 'Failed to save forum manager.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/forums/:forumId/managers/:userId', authRequired, async (req, res) => {
+  const permissionsInput = normalizeForumPermissions(req.body?.permissions);
+  if (permissionsInput.length === 0) {
+    return res.status(400).json({ message: 'Choose at least one permission.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const { forum, permissions } = await resolveForumPermissionContext(client, req.params.forumId, req.user);
+    if (!forum) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!hasForumPermission(req.user, forum.ownerId, permissions, 'manage_admins')) {
+      return res.status(403).json({ message: 'You do not have permission to manage forum admins.' });
+    }
+    if (forum.ownerId && req.params.userId === forum.ownerId) {
+      return res.status(400).json({ message: 'The forum owner permissions cannot be edited here.' });
+    }
+
+    const updated = await client.query(
+      `UPDATE forum_manager
+       SET permissions = $3::text[],
+           granted_by_id = $4,
+           updated_at = NOW()
+       WHERE forum_id = $1
+         AND user_id = $2
+       RETURNING user_id`,
+      [req.params.forumId, req.params.userId, permissionsInput, req.user.sub]
+    );
+
+    if (!updated.rows[0]) {
+      return res.status(404).json({ message: 'Forum manager not found.' });
+    }
+
+    const managers = await listForumManagers(client, req.params.forumId);
+    const manager = managers.find((item) => item.id === req.params.userId) || null;
+
+    return res.json({
+      ok: true,
+      manager,
+      managers,
+      message: 'Forum manager permissions updated.'
+    });
+  } catch (error) {
+    console.error('Failed to update forum manager.', error);
+    return res.status(500).json({ message: 'Failed to update forum manager.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/forums/:forumId/managers/:userId', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { forum, permissions } = await resolveForumPermissionContext(client, req.params.forumId, req.user);
+    if (!forum) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!hasForumPermission(req.user, forum.ownerId, permissions, 'manage_admins')) {
+      return res.status(403).json({ message: 'You do not have permission to manage forum admins.' });
+    }
+    if (forum.ownerId && req.params.userId === forum.ownerId) {
+      return res.status(400).json({ message: 'The forum owner cannot be removed from managers.' });
+    }
+
+    const removed = await client.query(
+      `DELETE FROM forum_manager
+       WHERE forum_id = $1
+         AND user_id = $2
+       RETURNING user_id`,
+      [req.params.forumId, req.params.userId]
+    );
+
+    if (!removed.rows[0]) {
+      return res.status(404).json({ message: 'Forum manager not found.' });
+    }
+
+    return res.json({
+      ok: true,
+      managers: await listForumManagers(client, req.params.forumId),
+      message: 'Forum manager removed.'
+    });
+  } catch (error) {
+    console.error('Failed to remove forum manager.', error);
+    return res.status(500).json({ message: 'Failed to remove forum manager.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/forums/:forumId/transfer-ownership', authRequired, async (req, res) => {
+  const identifier = String(req.body?.identifier || '').trim();
+  if (!identifier) {
+    return res.status(400).json({ message: 'Enter the new owner username, email, or user id.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const forum = await getForumById(client, req.params.forumId);
+    if (!forum) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!(req.user?.isAdmin || (forum.ownerId && req.user?.sub === forum.ownerId))) {
+      return res.status(403).json({ message: 'Only the forum owner or a site admin can transfer ownership.' });
+    }
+
+    const targetUser = await findUserByIdentifier(client, identifier);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    if (forum.ownerId && targetUser.id === forum.ownerId) {
+      return res.status(400).json({ message: 'That user already owns this forum.' });
+    }
+
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE forum
+       SET owner_id = $2,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [req.params.forumId, targetUser.id]
+    );
+    await client.query(
+      `DELETE FROM forum_manager
+       WHERE forum_id = $1
+         AND user_id = $2`,
+      [req.params.forumId, targetUser.id]
+    );
+    await ensureForumFollower(client, req.params.forumId, targetUser.id);
+    await client.query('COMMIT');
+
+    return res.json({
+      ok: true,
+      forum: await getForumById(client, req.params.forumId),
+      message: 'Forum ownership transferred.'
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to transfer forum ownership.', error);
+    return res.status(500).json({ message: 'Failed to transfer forum ownership.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/forums/:forumId/sections', authRequired, async (req, res) => {
+  const cleanScope = normalizeSectionScope(req.body?.sectionScope);
+  if (cleanScope.length === 0) {
+    return res.status(400).json({ message: 'A forum must keep at least one section.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const forumResult = await client.query(
+      `SELECT id, owner_id, COALESCE(section_scope, '{}') AS section_scope
+       FROM forum
+       WHERE id = $1`,
+      [req.params.forumId]
+    );
+
+    if (!forumResult.rows[0]) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    const permissions = await getForumManagerPermissions(client, req.params.forumId, req.user.sub);
+    if (!hasForumPermission(req.user, forumResult.rows[0].owner_id, permissions, 'manage_sections')) {
+      return res.status(403).json({ message: 'You do not have permission to edit forum sections.' });
+    }
+
+    const currentScope = forumResult.rows[0].section_scope || [];
+    const removedSections = currentScope.filter((section) => !cleanScope.includes(section));
+    if (removedSections.length > 0) {
+      const inUseSections = await client.query(
+        `SELECT section, COUNT(*)::int AS count
+         FROM post
+         WHERE forum_id = $1
+           AND is_published = TRUE
+           AND section = ANY($2::text[])
+         GROUP BY section
+         ORDER BY section ASC`,
+        [req.params.forumId, removedSections]
+      );
+
+      if (inUseSections.rows[0]) {
+        return res.status(400).json({
+          message: `Cannot remove sections that still have posts: ${inUseSections.rows.map((row) => row.section).join(', ')}.`
+        });
+      }
+    }
+
+    await client.query(
+      `UPDATE forum
+       SET section_scope = $1::text[],
+           updated_at = NOW()
+       WHERE id = $2`,
+      [cleanScope, req.params.forumId]
+    );
+
+    await recordActivity('forum.sections_updated', {
+      userId: req.user.sub,
+      forumId: req.params.forumId,
+      sectionScope: cleanScope
+    });
+
+    const updatedForum = await getForumById(client, req.params.forumId);
+
+    return res.json({
+      ok: true,
+      message: 'Forum sections updated.',
+      forum: updatedForum
+    });
+  } catch (error) {
+    console.error('Failed to update forum sections.', error);
+    return res.status(500).json({ message: 'Failed to update forum sections.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/api/forums/requests', authRequired, async (req, res) => {
   const cleanName = normalizeForumName(req.body?.name);
   const cleanDescription = normalizeForumDescription(req.body?.description);
   const cleanRationale = normalizeForumRationale(req.body?.rationale);
   const cleanScope = normalizeSectionScope(req.body?.sectionScope);
-  const cleanSlug = normalizeForumSlug(req.body?.slug || cleanName);
+  const cleanSlug = generateForumSlug(req.body?.slug, cleanName, cleanScope);
 
   if (!cleanName) {
     return res.status(400).json({ message: 'Forum name is required.' });
@@ -3033,9 +4214,6 @@ app.post('/api/forums/requests', authRequired, async (req, res) => {
   }
   if (!cleanRationale) {
     return res.status(400).json({ message: 'Please explain why this forum should exist.' });
-  }
-  if (!cleanSlug) {
-    return res.status(400).json({ message: 'Forum slug could not be generated.' });
   }
   if (cleanScope.length === 0) {
     return res.status(400).json({ message: 'Choose at least one section for this forum.' });
@@ -3087,7 +4265,83 @@ app.post('/api/forums/requests', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/forums/requests/:requestId/approve', authRequired, adminRequired, async (req, res) => {
+app.post('/api/forums/requests/ai-rewrite', authRequired, async (req, res) => {
+  if (!openAiForumRequestDraftService.isEnabled()) {
+    return res.status(503).json({ message: 'AI Rewrite is not configured for this server.' });
+  }
+
+  const instruction = String(req.body?.instruction || '').trim();
+  if (!instruction) {
+    return res.status(400).json({ message: 'A rewrite instruction is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const usage = await consumeDailyAiUsage(client, req.user);
+    if (!usage.allowed) {
+      await recordActivity('ai.daily_limit_reached', {
+        userId: req.user.sub,
+        limit: usage.limit
+      });
+      return res.status(429).json({
+        message: `Daily AI limit reached. Non-admin accounts can use AI ${usage.limit} times per day.`
+      });
+    }
+
+    const draftInput = req.body?.draft || {};
+    const seedText = [
+      draftInput.name,
+      draftInput.description,
+      draftInput.rationale,
+      Array.isArray(draftInput.sectionScope) ? draftInput.sectionScope.join(' ') : draftInput.sectionScope
+    ].filter(Boolean).join(' ');
+
+    if (!seedText.trim()) {
+      return res.status(400).json({ message: 'Add a rough forum request draft first.' });
+    }
+
+    const fallbackDraft = buildForumRequestDraftFromMessage(seedText);
+    const rewriteSource = {
+      name: normalizeForumName(draftInput.name) || fallbackDraft.name,
+      description: normalizeForumDescription(draftInput.description) || fallbackDraft.description,
+      rationale: normalizeForumRationale(draftInput.rationale) || fallbackDraft.rationale,
+      sectionScope: normalizeSectionScope(draftInput.sectionScope).length > 0
+        ? normalizeSectionScope(draftInput.sectionScope)
+        : fallbackDraft.sectionScope
+    };
+
+    const rewritten = await openAiForumRequestDraftService.rewriteDraft({
+      instruction,
+      draft: rewriteSource,
+      currentUserName: req.user.name || ''
+    });
+
+    await recordActivity('forum_request.ai_rewrite_requested', {
+      userId: req.user.sub,
+      instruction,
+      provider: rewritten.provider,
+      model: rewritten.model
+    });
+
+    return res.json({
+      draft: rewritten.draft,
+      generation: {
+        mode: 'llm',
+        provider: rewritten.provider,
+        model: rewritten.model,
+        fallback: false,
+        rationale: rewritten.summary || 'AI rewrite applied to the forum request draft.'
+      }
+    });
+  } catch (error) {
+    console.error('Failed to rewrite forum request with AI.', error);
+    return res.status(500).json({ message: 'Failed to rewrite forum request with AI.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/forums/requests/:requestId/approve', authRequired, siteAdminPermissionRequired('forum_requests'), async (req, res) => {
   const reviewNote = normalizeForumRationale(req.body?.reviewNote);
   const client = await pool.connect();
   try {
@@ -3126,6 +4380,13 @@ app.post('/api/forums/requests/:requestId/approve', authRequired, adminRequired,
     );
 
     await client.query(
+      `INSERT INTO forum_follow (user_id, forum_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [existing.rows[0].requester_id, createdForum.rows[0].id]
+    );
+
+    await client.query(
       `UPDATE forum_request
        SET status = 'approved',
            forum_id = $1,
@@ -3144,6 +4405,11 @@ app.post('/api/forums/requests/:requestId/approve', authRequired, adminRequired,
       forumId: createdForum.rows[0].id,
       approvedBy: req.user.sub
     });
+    await recordActivity('social.followed_forum', {
+      userId: existing.rows[0].requester_id,
+      forumId: createdForum.rows[0].id,
+      forumSlug: createdForum.rows[0].slug
+    });
 
     return res.json({
       ok: true,
@@ -3153,7 +4419,8 @@ app.post('/api/forums/requests/:requestId/approve', authRequired, adminRequired,
         owner_name: '',
         post_count: 0,
         live_post_count: 0,
-        moderated_count: 0
+        moderated_count: 0,
+        is_following: true
       })
     });
   } catch (error) {
@@ -3165,7 +4432,7 @@ app.post('/api/forums/requests/:requestId/approve', authRequired, adminRequired,
   }
 });
 
-app.post('/api/forums/requests/:requestId/reject', authRequired, adminRequired, async (req, res) => {
+app.post('/api/forums/requests/:requestId/reject', authRequired, siteAdminPermissionRequired('forum_requests'), async (req, res) => {
   const reviewNote = normalizeForumRationale(req.body?.reviewNote);
   const client = await pool.connect();
   try {
@@ -3256,13 +4523,23 @@ app.patch('/api/account/profile', authRequired, async (req, res) => {
     }
     const user = result.rows[0];
     const token = signUser(user);
+    const grantedPermissions = await getSiteAdminPermissions(client, user.id);
+    const effectivePermissions = getEffectiveSiteAdminPermissions(user, grantedPermissions);
     await recordActivity('account.profile_updated', {
       userId: user.id,
       username: user.username
     });
     return res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.username, isAdmin: isAdminUser(user) }
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.username,
+        isAdmin: isAdminUser(user),
+        adminPermissions: effectivePermissions,
+        hasAdminAccess: effectivePermissions.length > 0,
+        canManageAdminAccess: isAdminUser(user) || effectivePermissions.includes('manage_admin_access')
+      }
     });
   } catch (error) {
     if (String(error.code) === '23505') {
@@ -3503,7 +4780,7 @@ app.get('/api/users/:userId', async (req, res) => {
   });
 });
 
-app.get('/api/admin/posts/moderation', authRequired, adminRequired, async (req, res) => {
+app.get('/api/admin/posts/moderation', authRequired, siteAdminPermissionRequired('moderation'), async (req, res) => {
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -3525,7 +4802,7 @@ app.get('/api/admin/posts/moderation', authRequired, adminRequired, async (req, 
   }
 });
 
-app.get('/api/admin/analytics/overview', authRequired, adminRequired, analyticsRateLimit, async (req, res) => {
+app.get('/api/admin/analytics/overview', authRequired, siteAdminPermissionRequired('analytics'), analyticsRateLimit, async (req, res) => {
   if (!isDuckDbAvailable()) {
     return res.status(503).json({ message: 'Analytics is temporarily unavailable.' });
   }
@@ -3538,7 +4815,7 @@ app.get('/api/admin/analytics/overview', authRequired, adminRequired, analyticsR
   }
 });
 
-app.get('/api/admin/analytics/query', authRequired, adminRequired, analyticsRateLimit, async (req, res) => {
+app.get('/api/admin/analytics/query', authRequired, siteAdminPermissionRequired('analytics'), analyticsRateLimit, async (req, res) => {
   if (!isDuckDbAvailable()) {
     return res.status(503).json({ message: 'Analytics is temporarily unavailable.' });
   }
@@ -3551,7 +4828,7 @@ app.get('/api/admin/analytics/query', authRequired, adminRequired, analyticsRate
   }
 });
 
-app.get('/api/admin/analytics/parquet', authRequired, adminRequired, analyticsRateLimit, async (_, res) => {
+app.get('/api/admin/analytics/parquet', authRequired, siteAdminPermissionRequired('analytics'), analyticsRateLimit, async (_, res) => {
   if (!isDuckDbAvailable()) {
     return res.status(503).json({ message: 'Analytics exports are temporarily unavailable.' });
   }
@@ -3563,7 +4840,7 @@ app.get('/api/admin/analytics/parquet', authRequired, adminRequired, analyticsRa
   }
 });
 
-app.get('/api/admin/analytics/parquet/:dataset', authRequired, adminRequired, analyticsRateLimit, async (req, res) => {
+app.get('/api/admin/analytics/parquet/:dataset', authRequired, siteAdminPermissionRequired('analytics'), analyticsRateLimit, async (req, res) => {
   if (!isDuckDbAvailable()) {
     return res.status(503).json({ message: 'Analytics exports are temporarily unavailable.' });
   }
@@ -3700,7 +4977,7 @@ app.post('/api/agent/chat', optionalAuth, agentRateLimit, async (req, res) => {
   }
 });
 
-app.post('/api/admin/posts/:postId/remove', authRequired, adminRequired, async (req, res) => {
+app.post('/api/admin/posts/:postId/remove', authRequired, siteAdminPermissionRequired('moderation'), async (req, res) => {
   const reason = String(req.body?.reason || '').trim();
   if (!reason) {
     return res.status(400).json({ message: 'A moderation reason is required.' });
@@ -3765,8 +5042,9 @@ app.post('/api/forums/:forumId/posts/:postId/remove', authRequired, async (req, 
     if (!existing.rows[0]) {
       return res.status(404).json({ message: 'Post not found in this forum.' });
     }
-    if (!canManageForum(req.user, existing.rows[0].owner_id)) {
-      return res.status(403).json({ message: 'Only the forum owner or an admin can moderate this post.' });
+    const permissions = await getForumManagerPermissions(client, req.params.forumId, req.user.sub);
+    if (!hasForumPermission(req.user, existing.rows[0].owner_id, permissions, 'moderate_posts')) {
+      return res.status(403).json({ message: 'You do not have permission to moderate posts in this forum.' });
     }
     if (existing.rows[0].deleted_by_admin_at) {
       return res.status(400).json({ message: 'This post is already under moderation.' });
@@ -3798,7 +5076,7 @@ app.post('/api/forums/:forumId/posts/:postId/remove', authRequired, async (req, 
   }
 });
 
-app.post('/api/admin/posts/:postId/restore', authRequired, adminRequired, async (req, res) => {
+app.post('/api/admin/posts/:postId/restore', authRequired, siteAdminPermissionRequired('moderation'), async (req, res) => {
   const client = await pool.connect();
   try {
     const existing = await client.query(
@@ -3853,8 +5131,9 @@ app.post('/api/forums/:forumId/posts/:postId/restore', authRequired, async (req,
     if (!existing.rows[0]) {
       return res.status(404).json({ message: 'Post not found in this forum.' });
     }
-    if (!canManageForum(req.user, existing.rows[0].owner_id)) {
-      return res.status(403).json({ message: 'Only the forum owner or an admin can restore this post.' });
+    const permissions = await getForumManagerPermissions(client, req.params.forumId, req.user.sub);
+    if (!hasForumPermission(req.user, existing.rows[0].owner_id, permissions, 'review_appeals')) {
+      return res.status(403).json({ message: 'You do not have permission to restore posts in this forum.' });
     }
     if (!existing.rows[0].deleted_by_admin_at) {
       return res.status(400).json({ message: 'This post is not currently under moderation.' });
@@ -4095,6 +5374,12 @@ app.post('/api/posts', authRequired, async (req, res) => {
   const client = await pool.connect();
   try {
     const forum = await resolveWritableForum(client, forumId, cleanSection);
+    if (isAnnouncementSection(cleanSection)) {
+      const permissions = await getForumManagerPermissions(client, forum.id, req.user.sub);
+      if (!hasForumPermission(req.user, forum.ownerId, permissions, 'publish_announcements')) {
+        throw new Error('You do not have permission to publish announcements in this forum.');
+      }
+    }
     await client.query('BEGIN');
     const created = await client.query(
       `INSERT INTO post (author_id, forum_id, section, title, content_markdown, slug)
@@ -4178,6 +5463,13 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
       return res.status(403).json({ message: 'This post is under moderation and cannot be edited.' });
     }
     const forum = await resolveWritableForum(client, forumId, cleanSection, existing.rows[0].forum_id || '');
+    if (isAnnouncementSection(cleanSection)) {
+      const permissions = await getForumManagerPermissions(client, forum.id, req.user.sub);
+      if (!hasForumPermission(req.user, forum.ownerId, permissions, 'publish_announcements')) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ message: 'You do not have permission to publish announcements in this forum.' });
+      }
+    }
     const updated = await client.query(
       `UPDATE post
        SET forum_id = $1, section = $2, title = $3, content_markdown = $4, updated_at = NOW()

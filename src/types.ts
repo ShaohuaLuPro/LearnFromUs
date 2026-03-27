@@ -3,6 +3,40 @@ export type User = {
   name: string;
   email: string;
   isAdmin?: boolean;
+  adminPermissions?: SiteAdminPermissionKey[];
+  hasAdminAccess?: boolean;
+  canManageAdminAccess?: boolean;
+};
+
+export type SiteAdminPermissionKey =
+  | 'manage_admin_access'
+  | 'moderation'
+  | 'analytics'
+  | 'forum_requests';
+
+export type SiteAdminPermissionDetail = {
+  key: SiteAdminPermissionKey;
+  label: string;
+  description: string;
+};
+
+export type SiteAdminAccessEntry = {
+  id: string;
+  name: string;
+  email: string;
+  permissions: SiteAdminPermissionKey[];
+  grantedById: string | null;
+  grantedByName?: string;
+  createdAt: number | null;
+  updatedAt: number | null;
+  isRootAdmin?: boolean;
+};
+
+export type SiteAdminAccessPayload = {
+  admins: SiteAdminAccessEntry[];
+  availablePermissions: SiteAdminPermissionDetail[];
+  viewerPermissions: SiteAdminPermissionKey[];
+  canManageAdminAccess: boolean;
 };
 
 export type Forum = {
@@ -16,7 +50,52 @@ export type Forum = {
   postCount?: number;
   livePostCount?: number;
   moderatedCount?: number;
+  followerCount?: number;
   isCore?: boolean;
+  isFollowing?: boolean;
+  isOwner?: boolean;
+  canManage?: boolean;
+  currentUserPermissions?: ForumPermissionKey[];
+};
+
+export type ForumFollower = {
+  id: string;
+  name: string;
+  followedAt: number | null;
+};
+
+export type ForumPermissionKey =
+  | 'manage_admins'
+  | 'manage_sections'
+  | 'view_followers'
+  | 'moderate_posts'
+  | 'review_appeals'
+  | 'publish_announcements';
+
+export type ForumPermissionDetail = {
+  key: ForumPermissionKey;
+  label: string;
+  description: string;
+};
+
+export type ForumManager = {
+  id: string;
+  name: string;
+  permissions: ForumPermissionKey[];
+  grantedById: string | null;
+  grantedByName?: string;
+  createdAt: number | null;
+  updatedAt: number | null;
+};
+
+export type ForumAccessPayload = {
+  forum: Forum;
+  owner: { id: string; name: string } | null;
+  managers: ForumManager[];
+  availablePermissions: ForumPermissionDetail[];
+  viewerPermissions: ForumPermissionKey[];
+  canManageAdmins: boolean;
+  canTransferOwnership: boolean;
 };
 
 export type ForumRequest = {
@@ -37,6 +116,13 @@ export type ForumRequest = {
   reviewedByName?: string;
   createdAt: number | null;
   reviewedAt: number | null;
+};
+
+export type ForumRequestDraft = {
+  name: string;
+  description: string;
+  rationale: string;
+  sectionScope: string[];
 };
 
 export type ForumWorkspace = {

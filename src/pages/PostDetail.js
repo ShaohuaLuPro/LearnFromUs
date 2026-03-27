@@ -40,6 +40,7 @@ export default function PostDetail({
   const [error, setError] = useState('');
   const [commentMessage, setCommentMessage] = useState('');
   const [commentError, setCommentError] = useState('');
+  const canSiteModerate = Boolean(currentUser?.isAdmin || currentUser?.adminPermissions?.includes('moderation'));
 
   useEffect(() => {
     if (!post) {
@@ -109,7 +110,7 @@ export default function PostDetail({
   const removePost = async () => {
     setError('');
     setMessage('');
-    const result = currentUser?.isAdmin
+    const result = canSiteModerate
       ? await onAdminRemovePost(postId, reason)
       : await onOwnerRemovePost(post.forum?.id || '', postId, reason);
     if (!result.ok) {
@@ -169,7 +170,7 @@ export default function PostDetail({
   }
 
   const canModeratePost = Boolean(
-    currentUser && post?.forum?.ownerId && (currentUser.isAdmin || post.forum.ownerId === currentUser.id)
+    currentUser && post?.forum?.ownerId && (canSiteModerate || post.forum.ownerId === currentUser.id)
   );
   const backToForumPath = post?.forum?.slug ? `/forum/${post.forum.slug}` : '/forum';
 
@@ -283,7 +284,7 @@ export default function PostDetail({
 
         {canModeratePost && (
           <section className="settings-card settings-danger-card mt-4">
-            <h4 className="mb-2">{currentUser?.isAdmin ? 'Admin Moderation' : 'Forum Owner Moderation'}</h4>
+            <h4 className="mb-2">{canSiteModerate ? 'Admin Moderation' : 'Forum Owner Moderation'}</h4>
             <p className="muted mb-3">
               Remove this post from public view. The author will have 15 days to request restoration.
             </p>

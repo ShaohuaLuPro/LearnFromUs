@@ -9,6 +9,9 @@ type CurrentUser = {
   name: string;
   email: string;
   isAdmin?: boolean;
+  adminPermissions?: string[];
+  hasAdminAccess?: boolean;
+  canManageAdminAccess?: boolean;
 } | null;
 
 type NavItem = {
@@ -19,16 +22,18 @@ type NavItem = {
 const navItems: NavItem[] = [
   { to: '/', label: 'Home' },
   { to: '/forum', label: 'Forum' },
+  { to: '/explore', label: 'Explore' },
   { to: '/about', label: 'About' }
 ];
 
 type HeaderProps = {
   currentUser: CurrentUser;
   forums: Forum[];
+  posts: Post[];
   onLogout: () => void;
 };
 
-type SearchPostSuggestion = Pick<Post, 'id' | 'title' | 'content' | 'forum' | 'section'>;
+type SearchPostSuggestion = Pick<Post, 'id' | 'title' | 'content' | 'forum' | 'section' | 'tags'>;
 
 function getSearchScore(value: string, query: string) {
   if (!value) {
@@ -59,13 +64,32 @@ function buildPostPreview(content: string) {
     .slice(0, 110);
 }
 
-export default function Header({ currentUser, forums, onLogout }: HeaderProps) {
+function mergePostMatches(...groups: SearchPostSuggestion[][]) {
+  const seen = new Set<string>();
+  const merged: SearchPostSuggestion[] = [];
+
+  groups.forEach((group) => {
+    group.forEach((post) => {
+      if (seen.has(post.id)) {
+        return;
+      }
+      seen.add(post.id);
+      merged.push(post);
+    });
+  });
+
+  return merged.slice(0, 8);
+}
+
+export default function Header({ currentUser, forums, posts, onLogout }: HeaderProps) {
   const navigate = useNavigate();
+  const [adminOpen, setAdminOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [forumQuery, setForumQuery] = useState('');
   const [forumSearchOpen, setForumSearchOpen] = useState(false);
-  const [postMatches, setPostMatches] = useState<SearchPostSuggestion[]>([]);
+  const [remotePostMatches, setRemotePostMatches] = useState<SearchPostSuggestion[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const adminCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRequestIdRef = useRef(0);
@@ -92,10 +116,33 @@ export default function Header({ currentUser, forums, onLogout }: HeaderProps) {
       .slice(0, 5);
   }, [forumQuery, forums]);
 
+  const localPostMatches = useMemo(() => {
+    const query = forumQuery.trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+
+    return [...posts]
+      .map((post) => ({
+        post,
+        score: Math.min(
+          getSearchScore(post.title, query),
+          getSearchScore(post.content, query),
+          getSearchScore(post.section, query),
+          getSearchScore(post.forum?.name || '', query),
+          getSearchScore((post.tags || []).join(' '), query)
+        )
+      }))
+      .filter((entry) => Number.isFinite(entry.score))
+      .sort((left, right) => left.score - right.score || left.post.title.localeCompare(right.post.title))
+      .map((entry) => entry.post)
+      .slice(0, 5);
+  }, [forumQuery, posts]);
+
   useEffect(() => {
     const query = deferredForumQuery.trim();
     if (query.length < 2) {
-      setPostMatches([]);
+      setRemotePostMatches([]);
       setSearchLoading(false);
       return undefined;
     }
@@ -108,14 +155,14 @@ export default function Header({ currentUser, forums, onLogout }: HeaderProps) {
         const response = await apiGetPosts({
           q: query,
           page: 1,
-          pageSize: 4
+          pageSize: 5
         });
         if (searchRequestIdRef.current === requestId) {
-          setPostMatches(response.posts || []);
+          setRemotePostMatches(response.posts || []);
         }
       } catch (error) {
         if (searchRequestIdRef.current === requestId) {
-          setPostMatches([]);
+          setRemotePostMatches([]);
         }
       } finally {
         if (searchRequestIdRef.current === requestId) {
@@ -127,12 +174,35 @@ export default function Header({ currentUser, forums, onLogout }: HeaderProps) {
     return () => clearTimeout(timer);
   }, [deferredForumQuery]);
 
+  const postMatches = useMemo(
+    () => mergePostMatches(localPostMatches, remotePostMatches),
+    [localPostMatches, remotePostMatches]
+  );
+
   const openAccountMenu = () => {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
     setAccountOpen(true);
+  };
+
+  const openAdminMenu = () => {
+    if (adminCloseTimerRef.current) {
+      clearTimeout(adminCloseTimerRef.current);
+      adminCloseTimerRef.current = null;
+    }
+    setAdminOpen(true);
+  };
+
+  const closeAdminMenu = () => {
+    if (adminCloseTimerRef.current) {
+      clearTimeout(adminCloseTimerRef.current);
+    }
+    adminCloseTimerRef.current = setTimeout(() => {
+      setAdminOpen(false);
+      adminCloseTimerRef.current = null;
+    }, 160);
   };
 
   const closeAccountMenu = () => {
@@ -165,30 +235,37 @@ export default function Header({ currentUser, forums, onLogout }: HeaderProps) {
 
   const goToForum = (slug: string) => {
     setForumQuery('');
-    setPostMatches([]);
+    setRemotePostMatches([]);
     setForumSearchOpen(false);
     navigate(`/forum/${slug}`);
   };
 
   const goToPost = (postId: string) => {
     setForumQuery('');
-    setPostMatches([]);
+    setRemotePostMatches([]);
     setForumSearchOpen(false);
     navigate(`/forum/post/${postId}`);
   };
 
   const submitForumSearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const firstForum = matchingForums[0];
-    if (firstForum) {
-      goToForum(firstForum.slug);
+    const firstResult =
+      matchingForums[0]
+        ? { type: 'forum' as const, value: matchingForums[0] }
+        : postMatches[0]
+          ? { type: 'post' as const, value: postMatches[0] }
+          : null;
+
+    if (!firstResult) {
       return;
     }
 
-    const firstPost = postMatches[0];
-    if (firstPost) {
-      goToPost(firstPost.id);
+    if (firstResult.type === 'forum') {
+      goToForum(firstResult.value.slug);
+      return;
     }
+
+    goToPost(firstResult.value.id);
   };
 
   const showHintState = forumQuery.trim().length === 0;
@@ -297,6 +374,39 @@ export default function Header({ currentUser, forums, onLogout }: HeaderProps) {
                 {item.label}
               </Nav.Link>
             ))}
+            {(currentUser?.isAdmin || currentUser?.hasAdminAccess) && (
+              <div
+                className="admin-menu"
+                onMouseEnter={openAdminMenu}
+                onMouseLeave={closeAdminMenu}
+              >
+                <button type="button" className="admin-menu-trigger">
+                  Admin
+                </button>
+                <div className={`admin-menu-panel ${adminOpen ? 'is-open' : ''}`}>
+                  {(currentUser.isAdmin || currentUser.adminPermissions?.includes('moderation')) && (
+                    <NavLink to="/moderation" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Moderation
+                    </NavLink>
+                  )}
+                  {(currentUser.isAdmin || currentUser.adminPermissions?.includes('forum_requests')) && (
+                    <NavLink to="/forums/request/review" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Forum Requests
+                    </NavLink>
+                  )}
+                  {(currentUser.isAdmin || currentUser.adminPermissions?.includes('analytics')) && (
+                    <NavLink to="/analytics" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Analytics
+                    </NavLink>
+                  )}
+                  {currentUser.canManageAdminAccess && (
+                    <NavLink to="/admin/access" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Access
+                    </NavLink>
+                  )}
+                </div>
+              </div>
+            )}
             {currentUser ? (
               <div
                 className="account-menu"
@@ -313,19 +423,12 @@ export default function Header({ currentUser, forums, onLogout }: HeaderProps) {
                   <NavLink to="/my-posts" className="account-menu-item" onClick={() => setAccountOpen(false)}>
                     My Posts
                   </NavLink>
+                  <NavLink to="/my-forums" className="account-menu-item" onClick={() => setAccountOpen(false)}>
+                    My Forums
+                  </NavLink>
                   <NavLink to="/following" className="account-menu-item" onClick={() => setAccountOpen(false)}>
                     Following
                   </NavLink>
-                  {currentUser.isAdmin && (
-                    <NavLink to="/moderation" className="account-menu-item" onClick={() => setAccountOpen(false)}>
-                      Moderation
-                    </NavLink>
-                  )}
-                  {currentUser.isAdmin && (
-                    <NavLink to="/analytics" className="account-menu-item" onClick={() => setAccountOpen(false)}>
-                      Analytics
-                    </NavLink>
-                  )}
                   <NavLink to="/settings" className="account-menu-item" onClick={() => setAccountOpen(false)}>
                     Settings
                   </NavLink>

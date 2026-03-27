@@ -1,5 +1,3 @@
-const { SECTION_ENUM } = require('./openai-drafts');
-
 const CORE_FORUM_SEEDS = [
   {
     slug: 'software-engineering',
@@ -51,6 +49,20 @@ function normalizeForumSlug(input) {
     .slice(0, 60);
 }
 
+function generateForumSlug(...inputs) {
+  for (const input of inputs) {
+    const normalized = Array.isArray(input)
+      ? normalizeForumSlug(input.join('-'))
+      : normalizeForumSlug(input);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const uniqueSuffix = Date.now().toString(36).slice(-8);
+  return `forum-${uniqueSuffix}`;
+}
+
 function normalizeForumName(input) {
   return String(input || '').trim().slice(0, 80);
 }
@@ -63,6 +75,15 @@ function normalizeForumRationale(input) {
   return String(input || '').trim().slice(0, 500);
 }
 
+function normalizeForumSectionValue(input) {
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
 function normalizeSectionScope(input) {
   const raw = Array.isArray(input)
     ? input
@@ -72,9 +93,9 @@ function normalizeSectionScope(input) {
 
   return [...new Set(
     raw
-      .map((value) => String(value || '').trim().toLowerCase())
-      .filter((value) => SECTION_ENUM.includes(value))
-  )].slice(0, 8);
+      .map((value) => normalizeForumSectionValue(value))
+      .filter(Boolean)
+  )].slice(0, 12);
 }
 
 function getDefaultForumSlugForSection(section) {
@@ -85,6 +106,7 @@ function getDefaultForumSlugForSection(section) {
 
 module.exports = {
   CORE_FORUM_SEEDS,
+  generateForumSlug,
   normalizeForumSlug,
   normalizeForumName,
   normalizeForumDescription,

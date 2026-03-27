@@ -1,6 +1,51 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
+const INDUSTRY_CARDS = [
+  {
+    key: 'housing',
+    title: 'Housing',
+    subtitle: 'Home & Living',
+    image:
+      'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=1200&q=80'
+  },
+  {
+    key: 'sports',
+    title: 'Sports',
+    subtitle: 'Fitness & Training',
+    image:
+      'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1200&q=80'
+  },
+  {
+    key: 'social',
+    title: 'Social',
+    subtitle: 'Community & Dating',
+    image:
+      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=80'
+  },
+  {
+    key: 'ai',
+    title: 'AI',
+    subtitle: 'Artificial Intelligence',
+    image:
+      'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80'
+  },
+  {
+    key: 'food',
+    title: 'Food',
+    subtitle: 'Nutrition & Cooking',
+    image:
+      'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=1200&q=80'
+  },
+  {
+    key: 'transport',
+    title: 'Transport',
+    subtitle: 'Travel & Mobility',
+    image:
+      'https://images.unsplash.com/photo-1474487548417-781cb71495f3?auto=format&fit=crop&w=1200&q=80'
+  }
+];
+
 export default function Landing({ currentUser }) {
   return (
     <div className="container page-shell">
@@ -74,6 +119,18 @@ export default function Landing({ currentUser }) {
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="industry-gallery mt-4" aria-label="Industry gallery">
+        {INDUSTRY_CARDS.map((card) => (
+          <article key={card.key} className="industry-card">
+            <img src={card.image} alt={`${card.title} industry`} className="industry-card-image" loading="lazy" />
+            <div className="industry-card-overlay" />
+            <div className="industry-card-content">
+              <h3 className="industry-card-title mb-1">{card.title}</h3>
+            </div>
+          </article>
+        ))}
       </section>
     </div>
   );

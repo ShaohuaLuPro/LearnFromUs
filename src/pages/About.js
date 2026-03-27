@@ -45,7 +45,7 @@ const SECTION_CONTENT = {
     heroCopy:
       'I am Shaohua Lu, founder of LearnFromUs. I build practical products at the intersection of software engineering, AI, and community learning.',
     profile: {
-      eyebrow: 'Profile',
+      eyebrow: '',
       name: 'Shaohua Lu',
       role: 'Founder',
       summary:
@@ -79,7 +79,7 @@ const SECTION_CONTENT = {
     heroCopy:
       'Meet Ben He, a software developer contributing to LearnFromUs with cross-functional experience and collaborative execution.',
     profile: {
-      eyebrow: 'Profile',
+      eyebrow: '',
       name: 'Ben He',
       role: 'Software Developer',
       summary:
@@ -145,6 +145,17 @@ export default function About() {
         {activeSection === 'story' ? (
           <div className="col-lg-9">
             <section className="panel about-story-panel h-100">
+              <section className="about-story-hero" aria-label="Story hero">
+                <p className="about-story-hero-eyebrow">A Forum For Doers</p>
+                <h2 className="about-story-hero-title mb-0">
+                  <span className="about-story-hero-title-main">Most platforms are full of opinions.</span>
+                  <span className="about-story-hero-title-em">
+                    Very few show <span className="about-word-bounce about-word-bounce-delay-0">real</span>{' '}
+                    <span className="about-word-bounce about-word-bounce-delay-1">execution</span>.
+                  </span>
+                </h2>
+              </section>
+
               {section.blocks.map((block, idx) => (
                 <div
                   key={block.kicker}
@@ -163,21 +174,7 @@ export default function About() {
                   >
                     {block.kicker}
                   </p>
-                  {block.kicker === 'Why This Exists' ? (
-                    <h3 className="about-story-title about-story-title-why">
-                      —— To make technical learning{' '}
-                      <span className="about-word-bounce about-word-bounce-delay-0">more public</span>{' '}
-                      and{' '}
-                      <span className="about-word-bounce about-word-bounce-delay-1">more useful</span>.
-                    </h3>
-                  ) : block.kicker === 'Long-Term Direction' ? (
-                    <h3 className="about-story-title about-story-title-why">
-                      —— To build a platform where{' '}
-                      <span className="about-word-bounce about-word-bounce-delay-0">proof of skill</span>{' '}
-                      is woven{' '}
-                      <span className="about-word-bounce about-word-bounce-delay-1">into the product</span>.
-                    </h3>
-                  ) : (
+                  {['Why This Exists', 'Long-Term Direction'].includes(block.kicker) ? null : (
                     <h3
                       className={`about-story-title ${
                         block.kicker === 'Long-Term Direction' ? 'about-story-title-why' : ''
@@ -195,18 +192,24 @@ export default function About() {
                   >
                     {block.kicker === 'Why This Exists' ? (
                       <>
-                        <strong>Stop passive learning.</strong>{' '}
-                        In software and data, most tutorials are bookmarked and forgotten.{' '}
-                        <strong>LearnFromUs is the opposite.</strong>{' '}
-                        We pull back the curtain on real implementation—<strong>shipping</strong>, <strong>debugging</strong>, and <strong>architecture</strong>—<strong>providing</strong> the practical hacks that actual builders need to execute.
+                        Most platforms reward loud voices. LearnFromUs rewards people who actually
+                        ship, train, and build — then show their work. It&apos;s a space where doing
+                        {' '}<strong>beats</strong> talking, every single time.
+                        {' '}
+                        <strong>Not just in tech</strong> — but across every domain where real knowledge <strong>compounds</strong>: fitness,
+                        craft, finance, daily life. The people who&apos;ve done it are here.
                       </>
                     ) : block.kicker === 'Long-Term Direction' ? (
                       <>
-                        Over time, LearnFromUs should become a place where strong work naturally stands out:
-                        clear posts, strong examples, useful feedback, and visible patterns of execution. The
-                        point is not to mimic a traditional social feed. The point is to build a technical
-                        community where what you can <strong>explain</strong>, <strong>ship</strong>, and{' '}
-                        <strong>improve</strong> is visible by default.
+                        <span className="about-longterm-stair-line about-longterm-stair-line-1">
+                          Real experience <strong>beats</strong> opinions.
+                        </span>
+                        <span className="about-longterm-stair-line about-longterm-stair-line-2">
+                          Execution is <strong>visible</strong>.
+                        </span>
+                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
+                          Useful knowledge <strong>compounds</strong> — across software, fitness, and everyday life.
+                        </span>
                       </>
                     ) : (
                       block.copy
@@ -260,15 +263,17 @@ export default function About() {
             <div className="col-lg-5 about-detail-col">
               <section className="panel about-story-panel about-detail-panel h-100">
                 <div className="about-story-block">
-                  <p
-                    className={`about-story-kicker ${
-                      highlightedLabels.has(profile.eyebrow) ? 'about-story-kicker-highlight' : ''
-                    } ${
-                      largeKickers.has(profile.eyebrow) ? 'about-story-kicker-xl' : ''
-                    }`}
-                  >
-                    {profile.eyebrow}
-                  </p>
+                  {profile.eyebrow ? (
+                    <p
+                      className={`about-story-kicker ${
+                        highlightedLabels.has(profile.eyebrow) ? 'about-story-kicker-highlight' : ''
+                      } ${
+                        largeKickers.has(profile.eyebrow) ? 'about-story-kicker-xl' : ''
+                      }`}
+                    >
+                      {profile.eyebrow}
+                    </p>
+                  ) : null}
                   <h3 className="about-story-title about-profile-name mb-2">
                     {profile.name}
                     {profile.role ? <span className="about-profile-role-inline">{profile.role}</span> : null}
@@ -343,13 +348,15 @@ export default function About() {
                       <span className="about-connect-label about-story-kicker-highlight about-story-kicker-xl">Location</span>
                       <span className="about-connect-value">{profile.location}</span>
                     </div>
-                    <div className="about-connect-row">
-                      <span className="about-connect-label about-story-kicker-highlight about-story-kicker-xl">Email</span>
-                      <a href={`mailto:${profile.email}`}>{profile.email}</a>
-                    </div>
                   </div>
 
                   <div className="founder-link-row mt-3">
+                    <a
+                      href={`mailto:${profile.email}`}
+                      className="founder-link-pill"
+                    >
+                      Email
+                    </a>
                     {profile.links.map((link) => (
                       <a
                         key={link.label}

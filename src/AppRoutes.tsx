@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import AgentChatbox from './components/AgentChatbox';
 import Footer from './components/Footer';
 import Header from './components/Header';
@@ -7,14 +7,20 @@ import RouteSeo from './components/RouteSeo';
 import { useAuth } from './context/AuthContext';
 import { usePosts } from './context/PostsContext';
 import About from './pages/About';
+import AdminAccess from './pages/AdminAccess';
 import Analytics from './pages/Analytics';
+import Explore from './pages/Explore';
 import Following from './pages/Following';
+import ForumFollowersPage from './pages/ForumFollowersPage';
+import ForumRequestHistoryPage from './pages/ForumRequestHistoryPage';
 import ForumRequestPage from './pages/ForumRequestPage';
+import ForumRequestReviewPage from './pages/ForumRequestReviewPage';
 import Goodbye from './pages/Goodbye';
 import Home from './pages/Home';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Moderation from './pages/Moderation';
+import MyForums from './pages/MyForums';
 import MyPosts from './pages/MyPosts';
 import PostDetail from './pages/PostDetail';
 import Settings from './pages/Settings';
@@ -46,21 +52,13 @@ function LoadingShell() {
   );
 }
 
-function ForumRootRedirect({ forumSlug }: { forumSlug: string }) {
-  const location = useLocation();
-
-  return (
-    <Navigate
-      to={`/forum/${forumSlug}${location.search || ''}`}
-      replace
-      state={location.state}
-    />
-  );
-}
-
 export default function AppRoutes() {
   const auth = useAuth();
   const posts = usePosts();
+  const canManageAdminAccess = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.canManageAdminAccess);
+  const canModerate = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('moderation'));
+  const canViewAnalytics = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('analytics'));
+  const canReviewForumRequests = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('forum_requests'));
 
   if (auth.authLoading || (!posts.initialized && posts.loadingPosts)) {
     return <LoadingShell />;
@@ -90,7 +88,34 @@ export default function AppRoutes() {
       <main className="app-main">
         <Routes>
           <Route path="/" element={<Landing currentUser={auth.currentUser} />} />
-          <Route path="/forum" element={<ForumRootRedirect forumSlug={posts.forums[0]?.slug || 'software-engineering'} />} />
+          <Route
+            path="/explore"
+            element={(
+              <Explore
+                forums={posts.forums}
+                posts={posts.posts}
+                currentUser={auth.currentUser}
+              />
+            )}
+          />
+          <Route
+            path="/forum"
+            element={(
+              <Home
+                posts={posts.posts}
+                forums={posts.forums}
+                pagination={posts.pagination}
+                currentFilters={posts.filters}
+                loadingPosts={posts.loadingPosts}
+                currentUser={auth.currentUser}
+                onLoadPosts={posts.loadPosts}
+                onLoadForums={posts.loadForums}
+                onCreatePost={posts.createPost}
+                onUpdateForumSections={posts.updateForumSections}
+                onOwnerRemovePost={posts.ownerRemovePost}
+              />
+            )}
+          />
           <Route
             path="/forum/:forumSlug"
             element={(
@@ -107,6 +132,17 @@ export default function AppRoutes() {
                 onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
               />
+            )}
+          />
+          <Route
+            path="/forum/:forumSlug/followers"
+            element={auth.currentUser ? (
+              <ForumFollowersPage
+                currentUser={auth.currentUser}
+                forums={posts.forums}
+              />
+            ) : (
+              <Navigate to="/login" replace />
             )}
           />
           <Route
@@ -139,14 +175,33 @@ export default function AppRoutes() {
             element={auth.currentUser ? (
               <ForumRequestPage
                 currentUser={auth.currentUser}
-                forums={posts.forums}
-                forumWorkspace={posts.forumWorkspace}
                 onRequestForum={posts.requestForum}
+                onAiRewriteForumRequest={posts.aiRewriteForumRequest}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
+            path="/forums/request/history"
+            element={auth.currentUser ? (
+              <ForumRequestHistoryPage
+                forumWorkspace={posts.forumWorkspace}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
+            path="/forums/request/review"
+            element={canReviewForumRequests ? (
+              <ForumRequestReviewPage
+                forumWorkspace={posts.forumWorkspace}
                 onApproveForumRequest={posts.approveForumRequest}
                 onRejectForumRequest={posts.rejectForumRequest}
               />
             ) : (
-              <Navigate to="/login" replace />
+              <Navigate to="/forum" replace />
             )}
           />
           <Route
@@ -179,8 +234,20 @@ export default function AppRoutes() {
             )}
           />
           <Route
+            path="/my-forums"
+            element={auth.currentUser ? (
+              <MyForums
+                currentUser={auth.currentUser}
+                forums={posts.forums}
+                onLoadForums={posts.loadForums}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
             path="/moderation"
-            element={auth.currentUser?.isAdmin ? (
+            element={canModerate ? (
               <Moderation
                 onGetModerationPosts={posts.getModerationPosts}
                 onRestorePost={posts.adminRestorePost}
@@ -191,12 +258,20 @@ export default function AppRoutes() {
           />
           <Route
             path="/analytics"
-            element={auth.currentUser?.isAdmin ? (
+            element={canViewAnalytics ? (
               <Analytics
                 onQueryAdminAnalytics={posts.queryAdminAnalytics}
                 onGetParquetDatasets={posts.getAdminParquetDatasets}
                 onDownloadParquetDataset={posts.downloadAdminParquetDataset}
               />
+            ) : (
+              <Navigate to="/forum" replace />
+            )}
+          />
+          <Route
+            path="/admin/access"
+            element={canManageAdminAccess ? (
+              <AdminAccess currentUser={auth.currentUser} />
             ) : (
               <Navigate to="/forum" replace />
             )}

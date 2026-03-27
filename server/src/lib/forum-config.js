@@ -49,6 +49,20 @@ function normalizeForumSlug(input) {
     .slice(0, 60);
 }
 
+function generateForumSlug(...inputs) {
+  for (const input of inputs) {
+    const normalized = Array.isArray(input)
+      ? normalizeForumSlug(input.join('-'))
+      : normalizeForumSlug(input);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const uniqueSuffix = Date.now().toString(36).slice(-8);
+  return `forum-${uniqueSuffix}`;
+}
+
 function normalizeForumName(input) {
   return String(input || '').trim().slice(0, 80);
 }
@@ -92,6 +106,7 @@ function getDefaultForumSlugForSection(section) {
 
 module.exports = {
   CORE_FORUM_SEEDS,
+  generateForumSlug,
   normalizeForumSlug,
   normalizeForumName,
   normalizeForumDescription,

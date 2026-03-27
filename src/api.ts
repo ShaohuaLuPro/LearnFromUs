@@ -5,12 +5,18 @@ import type {
   Comment,
   DraftGeneration,
   Forum,
+  ForumAccessPayload,
+  ForumFollower,
+  ForumManager,
+  ForumRequestDraft,
   ForumRequest,
   ForumWorkspace,
   NetworkUser,
   Post,
   PostListFilters,
   PostListResponse,
+  SiteAdminAccessPayload,
+  SiteAdminAccessEntry,
   User,
   WorkspacePostLink,
   WritingStyleProfile
@@ -73,6 +79,7 @@ type AgentResponse = {
   posts?: Post[];
   authors?: Array<Record<string, unknown>>;
   draft?: PostPayload;
+  forumRequestDraft?: ForumRequestDraft;
   styleProfile?: WritingStyleProfile | null;
   referencePosts?: Post[];
   generation?: DraftGeneration;
@@ -250,6 +257,94 @@ export async function apiUnfollowUser(userId: string, token: string) {
   });
 }
 
+export async function apiGetForumFollowers(forumId: string, token: string) {
+  return request<{ forum: Forum; followers: ForumFollower[] }>(`/api/forums/${forumId}/followers`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiGetSiteAdminAccess(token: string) {
+  return request<SiteAdminAccessPayload>('/api/admin/access', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiUpsertSiteAdminAccess(
+  input: { identifier: string; permissions: string[] },
+  token: string
+) {
+  return request<{ ok: boolean; admins: SiteAdminAccessEntry[]; message?: string }>('/api/admin/access', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiUpdateSiteAdminAccess(
+  userId: string,
+  input: { permissions: string[] },
+  token: string
+) {
+  return request<{ ok: boolean; admins: SiteAdminAccessEntry[]; message?: string }>(`/api/admin/access/${userId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiRemoveSiteAdminAccess(userId: string, token: string) {
+  return request<{ ok: boolean; admins: SiteAdminAccessEntry[]; message?: string }>(`/api/admin/access/${userId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiGetForumAccess(forumId: string, token: string) {
+  return request<ForumAccessPayload>(`/api/forums/${forumId}/access`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiUpsertForumManager(
+  forumId: string,
+  input: { identifier: string; permissions: string[] },
+  token: string
+) {
+  return request<{ ok: boolean; manager: ForumManager | null; managers: ForumManager[]; message?: string }>(`/api/forums/${forumId}/managers`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiUpdateForumManager(
+  forumId: string,
+  userId: string,
+  input: { permissions: string[] },
+  token: string
+) {
+  return request<{ ok: boolean; manager: ForumManager | null; managers: ForumManager[]; message?: string }>(`/api/forums/${forumId}/managers/${userId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiRemoveForumManager(forumId: string, userId: string, token: string) {
+  return request<{ ok: boolean; managers: ForumManager[]; message?: string }>(`/api/forums/${forumId}/managers/${userId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiTransferForumOwnership(forumId: string, input: { identifier: string }, token: string) {
+  return request<{ ok: boolean; forum: Forum; message?: string }>(`/api/forums/${forumId}/transfer-ownership`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
 export async function apiUpdateProfile(input: { name: string }, token: string) {
   return request<AuthResponse>('/api/account/profile', {
     method: 'PATCH',
@@ -287,6 +382,22 @@ export async function apiRequestForum(
 ) {
   return request<{ ok: boolean; message?: string; request: ForumRequest }>('/api/forums/requests', {
     method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiAiRewriteForumRequest(
+  input: {
+    instruction: string;
+    draft: ForumRequestDraft;
+  },
+  token: string,
+  signal?: AbortSignal
+) {
+  return request<{ draft: ForumRequestDraft; generation: DraftGeneration }>('/api/forums/requests/ai-rewrite', {
+    method: 'POST',
+    signal,
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(input)
   });

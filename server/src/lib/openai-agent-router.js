@@ -12,6 +12,7 @@ const AGENT_ROUTE_SCHEMA = {
         'latest_announcements',
         'trending_authors',
         'draft_post',
+        'draft_forum_request',
         'rewrite_existing_post',
         'navigate_page',
         'help'
@@ -89,6 +90,7 @@ function createOpenAIAgentRouter({ apiKey, model }) {
                   '- latest_announcements: get the newest announcements or product updates.',
                   '- trending_authors: show active authors or trending forum activity.',
                   '- draft_post: generate a draft post, especially when the user asks to write, draft, publish, or compose.',
+                  '- draft_forum_request: draft a request for creating a new forum, including its name, description, rationale, and section scope.',
                   '- rewrite_existing_post: help the user improve or rewrite one of their existing posts in My Posts.',
                   '- navigate_page: take the user to an existing page or task surface in the app.',
                   '- help: only when none of the tools fit.',
@@ -98,9 +100,10 @@ function createOpenAIAgentRouter({ apiKey, model }) {
                   'Prefer latest_posts for requests about newest, latest, or recent posts in general.',
                   'Prefer latest_announcements for "latest", "most recent", "newest", "announcement", or "update" requests.',
                   'Prefer draft_post for requests that ask the assistant to write content on the user\'s behalf.',
+                  'Prefer draft_forum_request when the user wants help requesting, proposing, or creating a new forum/community space.',
                   'Prefer rewrite_existing_post when the user wants to edit, rewrite, improve, polish, shorten, expand, or refine one of their existing posts.',
                   'Prefer navigate_page when the user wants to open a page, go somewhere in the app, change password, open settings, see Home, see About, open My Posts, open analytics, or create a post.',
-                  'For navigate_page, set query to one of: home, about, forum, forum-create-post, settings-profile, settings-password, settings-danger, my-posts, following, followers, analytics, moderation, login.',
+                  'For navigate_page, set query to one of: home, about, forum, forum-create-post, forums-request, settings-profile, settings-password, settings-danger, my-posts, following, followers, analytics, moderation, login.',
                   'Set query to the normalized topic or destination key.',
                   'Keep rationale short.'
                 ].join('\n')

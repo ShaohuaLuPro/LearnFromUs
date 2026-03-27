@@ -54,6 +54,7 @@ function ForumRow({ forum }) {
         </div>
         <p className="muted mb-2">{forum.description || 'A forum you follow for quick access.'}</p>
         <div className="following-user-stats">
+          <span>{forum.followerCount ?? 0} followers</span>
           <span>{forum.livePostCount ?? forum.postCount ?? 0} posts</span>
           <span>{(forum.sectionScope || []).length} sections</span>
         </div>

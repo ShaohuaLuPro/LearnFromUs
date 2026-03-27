@@ -8,6 +8,13 @@ import ForumSidebar from '../components/ForumSidebar';
 import Select from '../components/Select';
 import { authStorage } from '../lib/authStorage';
 import {
+  buildForumDirectory,
+  getFeedScore,
+  getPostActivityAt,
+  sortByPopularity,
+  sortByRecentActivity
+} from '../lib/forumInsights';
+import {
   getDefaultSectionValue,
   getSectionLabel,
   getSectionOptions,
@@ -20,6 +27,7 @@ const codeLanguageOptions = codeLanguages.map((language) => ({
   value: language,
   label: language
 }));
+const FORUM_SIDEBAR_PREF_KEY = 'forum-workspace-collapsed';
 
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
@@ -55,6 +63,25 @@ function normalizeSectionInput(value) {
     .slice(0, 40);
 }
 
+function WorkspaceToggleIcon({ collapsed }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      className="forum-workspace-toggle-icon"
+    >
+      <rect x="3.5" y="4.5" width="17" height="15" rx="3.5" className="forum-workspace-toggle-frame" />
+      <path d="M8 7.5v9" className="forum-workspace-toggle-divider" />
+      {collapsed ? (
+        <path d="M13.5 9.2 16.8 12l-3.3 2.8" className="forum-workspace-toggle-arrow" />
+      ) : (
+        <path d="M15.5 9.2 12.2 12l3.3 2.8" className="forum-workspace-toggle-arrow" />
+      )}
+    </svg>
+  );
+}
+
 export default function Home({
   posts,
   forums,
@@ -77,7 +104,9 @@ export default function Home({
     () => forums.find((forum) => forum.slug === selectedForumSlug) || null,
     [forums, selectedForumSlug]
   );
-  const availableSectionValues = useMemo(() => getSectionValues(forums), [forums]);
+  const isAggregateView = !selectedForumSlug;
+  const activeSectionSource = selectedForum?.sectionScope || forums;
+  const availableSectionValues = useMemo(() => getSectionValues(activeSectionSource), [activeSectionSource]);
   const fallbackSectionValue = useMemo(
     () => getDefaultSectionValue(availableSectionValues),
     [availableSectionValues]
@@ -93,10 +122,7 @@ export default function Home({
   const [sectionUpdatePending, setSectionUpdatePending] = useState(false);
   const [sectionNotice, setSectionNotice] = useState({ type: '', text: '' });
   const [sectionEditMode, setSectionEditMode] = useState(false);
-  const persistedSectionScope = useMemo(
-    () => sectionScopeCommitted,
-    [sectionScopeCommitted]
-  );
+  const persistedSectionScope = useMemo(() => sectionScopeCommitted, [sectionScopeCommitted]);
   const sectionDisplayScope = useMemo(() => {
     if (!sectionEditMode) {
       return persistedSectionScope;
@@ -107,14 +133,8 @@ export default function Home({
       ...sectionScopeDraft.filter((value) => !persistedSectionScope.includes(value))
     ];
   }, [persistedSectionScope, sectionEditMode, sectionScopeDraft]);
-  const visibleSections = useMemo(
-    () => getSectionOptions(sectionDisplayScope),
-    [sectionDisplayScope]
-  );
-  const visibleSectionValues = useMemo(
-    () => visibleSections.map((item) => item.value),
-    [visibleSections]
-  );
+  const visibleSections = useMemo(() => getSectionOptions(sectionDisplayScope), [sectionDisplayScope]);
+  const visibleSectionValues = useMemo(() => visibleSections.map((item) => item.value), [visibleSections]);
   const [form, setForm] = useState({
     title: '',
     content: '',
@@ -131,32 +151,140 @@ export default function Home({
   );
   const [composerLanguage, setComposerLanguage] = useState('javascript');
   const [followPending, setFollowPending] = useState(false);
-  const shouldRedirectToDefaultForum = forums.length > 0 && !selectedForum;
+  const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(false);
+
+  const forumDirectory = useMemo(() => buildForumDirectory(forums, posts), [forums, posts]);
+
+  const forumInsightMap = useMemo(() => {
+    const nextMap = new Map();
+    for (const forum of forumDirectory) {
+      if (forum.id) {
+        nextMap.set(forum.id, forum);
+      }
+      if (forum.slug) {
+        nextMap.set(forum.slug, forum);
+      }
+    }
+    return nextMap;
+  }, [forumDirectory]);
+
+  const preferredComposerForum = useMemo(() => {
+    if (selectedForumOption) {
+      return selectedForumOption;
+    }
+
+    const followed = [...forums]
+      .filter((forum) => forum.isFollowing)
+      .sort((a, b) => {
+        const aInsight = forumInsightMap.get(a.id) || forumInsightMap.get(a.slug) || {};
+        const bInsight = forumInsightMap.get(b.id) || forumInsightMap.get(b.slug) || {};
+        return sortByRecentActivity(aInsight, bInsight);
+      })[0];
+
+    return followed || [...forums].sort((a, b) => {
+      const aInsight = forumInsightMap.get(a.id) || forumInsightMap.get(a.slug) || {};
+      const bInsight = forumInsightMap.get(b.id) || forumInsightMap.get(b.slug) || {};
+      return sortByPopularity(aInsight, bInsight);
+    })[0] || null;
+  }, [forumInsightMap, forums, selectedForumOption]);
 
   const applyComposerDraft = useCallback((draft) => {
     if (!draft) {
       return;
     }
 
+    const draftForum = forums.find((forum) => forum.id === draft.forumId)
+      || selectedForumOption
+      || preferredComposerForum;
+    const defaultSection = getScopedDefaultSection(draftForum, forums);
+
     setForm({
       title: String(draft.title || ''),
       content: String(draft.content || ''),
-      forumId: String(draft.forumId || selectedForumOption?.id || ''),
-      section: String(draft.section || getScopedDefaultSection(selectedForumOption, forums)) || getScopedDefaultSection(selectedForumOption, forums),
+      forumId: String(draft.forumId || draftForum?.id || ''),
+      section: String(draft.section || defaultSection) || defaultSection,
       tags: Array.isArray(draft.tags) ? draft.tags.join(', ') : String(draft.tags || '')
     });
     setMessage('');
     setIsComposerOpen(true);
-  }, [forums, selectedForumOption]);
+  }, [forums, preferredComposerForum, selectedForumOption]);
+
+  const displayedPosts = useMemo(() => {
+    if (!isAggregateView) {
+      return posts;
+    }
+
+    const now = Date.now();
+    return [...posts].sort((a, b) => {
+      const aInsight = forumInsightMap.get(a.forum?.id || '') || forumInsightMap.get(a.forum?.slug || '') || null;
+      const bInsight = forumInsightMap.get(b.forum?.id || '') || forumInsightMap.get(b.forum?.slug || '') || null;
+      const scoreDiff = getFeedScore(b, bInsight, now) - getFeedScore(a, aInsight, now);
+
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      return getPostActivityAt(b) - getPostActivityAt(a);
+    });
+  }, [forumInsightMap, isAggregateView, posts]);
 
   const sectionCounts = useMemo(() => {
     const counts = {};
-    for (const post of posts) {
+    for (const post of displayedPosts) {
       const key = post.section || fallbackSectionValue;
       counts[key] = (counts[key] || 0) + 1;
     }
     return counts;
-  }, [fallbackSectionValue, posts]);
+  }, [displayedPosts, fallbackSectionValue]);
+
+  const sortedComposerForums = useMemo(() => {
+    return [...forums].sort((a, b) => {
+      const aInsight = forumInsightMap.get(a.id) || forumInsightMap.get(a.slug) || {};
+      const bInsight = forumInsightMap.get(b.id) || forumInsightMap.get(b.slug) || {};
+
+      return Number(Boolean(b.isFollowing)) - Number(Boolean(a.isFollowing))
+        || sortByRecentActivity(aInsight, bInsight);
+    });
+  }, [forumInsightMap, forums]);
+
+  const forumComposerOptions = useMemo(() => {
+    const followedOptions = sortedComposerForums
+      .filter((forum) => forum.isFollowing)
+      .map((forum) => ({ value: forum.id, label: forum.name }));
+    const otherOptions = sortedComposerForums
+      .filter((forum) => !forum.isFollowing)
+      .map((forum) => ({ value: forum.id, label: forum.name }));
+
+    if (followedOptions.length > 0 && otherOptions.length > 0) {
+      return [
+        { label: 'Followed Forums', options: followedOptions },
+        { label: 'All Forums', options: otherOptions }
+      ];
+    }
+
+    return [
+      {
+        label: 'Forums',
+        options: sortedComposerForums.map((forum) => ({ value: forum.id, label: forum.name }))
+      }
+    ];
+  }, [sortedComposerForums]);
+
+  useEffect(() => {
+    const savedPreference = window.localStorage.getItem(FORUM_SIDEBAR_PREF_KEY);
+    if (savedPreference === '1') {
+      setIsWorkspaceCollapsed(true);
+      return;
+    }
+
+    if (window.matchMedia('(max-width: 1280px)').matches) {
+      setIsWorkspaceCollapsed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(FORUM_SIDEBAR_PREF_KEY, isWorkspaceCollapsed ? '1' : '0');
+  }, [isWorkspaceCollapsed]);
 
   useEffect(() => {
     if (sectionId) {
@@ -210,13 +338,14 @@ export default function Home({
   }, [deferredSearchQuery, onLoadPosts, selectedForumSlug, selectedSections]);
 
   useEffect(() => {
-    if (!selectedForumOption) {
+    const defaultForum = selectedForumOption || preferredComposerForum;
+    if (!defaultForum) {
       return;
     }
 
     setForm((current) => {
-      const nextForumId = current.forumId || selectedForumOption.id;
-      const activeForum = forums.find((forum) => forum.id === nextForumId) || selectedForumOption;
+      const nextForumId = current.forumId || defaultForum.id;
+      const activeForum = forums.find((forum) => forum.id === nextForumId) || defaultForum;
       const nextSection = activeForum.sectionScope.includes(current.section)
         ? current.section
         : getScopedDefaultSection(activeForum, forums);
@@ -231,15 +360,16 @@ export default function Home({
         section: nextSection
       };
     });
-  }, [forums, selectedForumOption]);
+  }, [forums, preferredComposerForum, selectedForumOption]);
 
   useEffect(() => {
-    setSectionScopeCommitted(selectedForum?.sectionScope || []);
-    setSectionScopeDraft(selectedForum?.sectionScope || []);
+    const nextScope = selectedForum?.sectionScope || availableSectionValues;
+    setSectionScopeCommitted(nextScope);
+    setSectionScopeDraft(nextScope);
     setSectionDraft('');
     setSectionEditMode(false);
     setSectionNotice({ type: '', text: '' });
-  }, [selectedForum?.id, selectedForum?.sectionScope]);
+  }, [availableSectionValues, selectedForum?.id, selectedForum?.sectionScope]);
 
   useEffect(() => {
     if (visibleSectionValues.length === 0) {
@@ -260,8 +390,20 @@ export default function Home({
     setSelectedSections([]);
   };
 
+  const selectedForumPermissions = selectedForum?.currentUserPermissions || [];
   const canManageForumSections = Boolean(
-    currentUser && selectedForum && (currentUser.isAdmin || selectedForum.ownerId === currentUser.id)
+    currentUser && selectedForum && (
+      currentUser.isAdmin
+      || selectedForum.ownerId === currentUser.id
+      || selectedForumPermissions.includes('manage_sections')
+    )
+  );
+  const canViewForumFollowers = Boolean(
+    currentUser && selectedForum && (
+      currentUser.isAdmin
+      || selectedForum.ownerId === currentUser.id
+      || selectedForumPermissions.includes('view_followers')
+    )
   );
 
   const mergeSectionIntoScope = useCallback((currentScope, sectionValue) => {
@@ -363,7 +505,7 @@ export default function Home({
   };
 
   const cancelSectionChanges = () => {
-    setSectionScopeDraft(selectedForum?.sectionScope || []);
+    setSectionScopeDraft(selectedForum?.sectionScope || availableSectionValues);
     setSectionDraft('');
     setSectionEditMode(false);
     setSectionNotice({ type: '', text: '' });
@@ -412,7 +554,7 @@ export default function Home({
         await apiFollowForum(selectedForum.id, token);
       }
       await onLoadForums();
-      setMessage(isFollowingSelectedForum ? 'Forum removed from your account shortcuts.' : 'Forum saved to your account shortcuts.');
+      setMessage(isFollowingSelectedForum ? 'Forum removed from your saved forums.' : 'Forum saved to your forums.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to update forum follow.');
     } finally {
@@ -423,20 +565,29 @@ export default function Home({
   const submitPost = async (event) => {
     event.preventDefault();
     setMessage('');
+
+    if (!form.forumId) {
+      setMessage('Choose a forum first.');
+      return;
+    }
+
     if (!form.title.trim() || !form.content.trim()) {
       setMessage('Title and content are required.');
       return;
     }
+
     const result = await onCreatePost(form);
     if (!result.ok) {
       setMessage(result.message);
       return;
     }
+
+    const resetForum = selectedForumOption || preferredComposerForum;
     setForm({
       title: '',
       content: '',
-      forumId: selectedForumOption?.id || '',
-      section: getScopedDefaultSection(selectedForumOption, forums),
+      forumId: resetForum?.id || '',
+      section: getScopedDefaultSection(resetForum, forums),
       tags: ''
     });
     setSearchQuery('');
@@ -477,200 +628,260 @@ export default function Home({
     setMessage(result.message || (result.ok ? 'Post removed.' : 'Failed to remove post.'));
   };
 
-  const activeForumForComposer = forums.find((forum) => forum.id === form.forumId) || selectedForumOption;
+  const activeForumForComposer = forums.find((forum) => forum.id === form.forumId) || selectedForumOption || preferredComposerForum;
   const activeSectionOptions = buildSectionOptionsForForum(activeForumForComposer);
-  const canManagePost = (post) => Boolean(
-    currentUser && post.forum?.ownerId && (currentUser.isAdmin || post.forum.ownerId === currentUser.id)
-  );
+  const canSiteModerate = Boolean(currentUser?.isAdmin || currentUser?.adminPermissions?.includes('moderation'));
+  const canManagePost = (post) => {
+    if (!currentUser || !post.forum?.id) {
+      return false;
+    }
 
-  if (shouldRedirectToDefaultForum) {
-    return <Navigate to={`/forum/${forums[0].slug}`} replace />;
+    const forumDetails = forums.find((forum) => forum.id === post.forum.id) || post.forum;
+    return Boolean(
+      canSiteModerate
+      || (forumDetails?.ownerId && forumDetails.ownerId === currentUser.id)
+      || (forumDetails?.currentUserPermissions || []).includes('moderate_posts')
+    );
+  };
+
+  if (selectedForumSlug && forums.length > 0 && !selectedForum) {
+    return <Navigate to="/forum" replace />;
   }
 
   return (
     <div className="container page-shell">
-      <section className="hero-card mb-4">
-        <div className="forum-hero-row">
+      <section className="panel mb-4 forum-view-intro">
+        <div className="forum-view-intro-row">
           <div>
-            <h1 className="hero-title">{selectedForum?.name || 'Forum'}</h1>
-            <p className="hero-copy mb-0">
-              {selectedForum?.description || 'Browse posts, discussions, and practical writeups from this forum only.'}
+            <p className="type-kicker mb-1">{isAggregateView ? 'Forum Feed' : 'Forum'}</p>
+            <h3 className="mb-1 type-title-md">
+              {isAggregateView ? 'All forums, one smart feed' : selectedForum?.name || 'Forum'}
+            </h3>
+            <p className="forum-view-intro-copy mb-0">
+              {isAggregateView
+                ? 'Posts here are prioritized by the forums you follow, recent updates, and overall forum activity.'
+                : (selectedForum?.description || 'Browse posts and practical writeups from this forum.')}
             </p>
+            {selectedForum && (
+              <div className="forum-post-kicker mt-2">
+                <span className="forum-tag">{selectedForum.followerCount ?? 0} followers</span>
+                <span className="forum-tag">{selectedForum.livePostCount ?? selectedForum.postCount ?? 0} posts</span>
+              </div>
+            )}
           </div>
           {selectedForum && (
-            currentUser ? (
-              <button
-                type="button"
-                className={isFollowingSelectedForum ? 'forum-secondary-btn' : 'forum-primary-btn'}
-                onClick={toggleForumFollow}
-                disabled={followPending}
-              >
-                {followPending ? 'Updating...' : isFollowingSelectedForum ? 'Unfollow Forum' : 'Follow Forum'}
-              </button>
-            ) : (
-              <Link to="/login" className="forum-secondary-btn text-decoration-none">
-                Login to Follow
-              </Link>
-            )
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              {canViewForumFollowers && (
+                <Link
+                  to={`/forum/${selectedForum.slug}/followers`}
+                  className="forum-secondary-btn text-decoration-none"
+                >
+                  View Followers
+                </Link>
+              )}
+              {currentUser ? (
+                <button
+                  type="button"
+                  className={isFollowingSelectedForum ? 'forum-secondary-btn' : 'forum-primary-btn'}
+                  onClick={toggleForumFollow}
+                  disabled={followPending}
+                >
+                  {followPending ? 'Updating...' : isFollowingSelectedForum ? 'Unfollow Forum' : 'Follow Forum'}
+                </button>
+              ) : (
+                <Link to="/login" className="forum-secondary-btn text-decoration-none">
+                  Login to Follow
+                </Link>
+              )}
+            </div>
           )}
         </div>
       </section>
 
-      <div className="forum-workspace-float">
-        <div id="forum-workspace-panel" className="forum-workspace-panel">
-          <ForumSidebar
-            currentUser={currentUser}
-            forums={forums}
-            currentForum={selectedForum}
-          />
+      <div className={`forum-workspace-float ${isWorkspaceCollapsed ? 'is-collapsed' : ''}`.trim()}>
+        <div
+          id="forum-workspace-panel"
+          className={`forum-workspace-panel ${isWorkspaceCollapsed ? 'is-collapsed' : ''}`.trim()}
+        >
+          <div className={`forum-workspace-panel-bar ${isWorkspaceCollapsed ? 'is-collapsed' : ''}`.trim()}>
+            <button
+              type="button"
+              className="forum-workspace-toggle"
+              onClick={() => setIsWorkspaceCollapsed((current) => !current)}
+              aria-expanded={!isWorkspaceCollapsed}
+              aria-controls="forum-workspace-panel"
+              aria-label={isWorkspaceCollapsed ? 'Expand forum panel' : 'Collapse forum panel'}
+              title={isWorkspaceCollapsed ? 'Expand forum panel' : 'Collapse forum panel'}
+            >
+              <WorkspaceToggleIcon collapsed={isWorkspaceCollapsed} />
+            </button>
+          </div>
+          {!isWorkspaceCollapsed && (
+            <div className="forum-workspace-panel-body">
+              <ForumSidebar
+                currentUser={currentUser}
+                forums={forums}
+                currentForum={selectedForum}
+              />
+            </div>
+          )}
         </div>
       </div>
 
       <div className="forum-layout">
         <div className="forum-main forum-main-full">
-          <section className="panel mb-4">
-            <div className="forum-sections-head mb-3">
-              <div>
-                <h3 className="mb-1 type-title-md">Sections</h3>
-                <p className="type-body mb-0">
-                  {canManageForumSections
-                    ? 'Filter posts here, and manage which sections this forum accepts.'
-                    : 'Filter posts in this forum by section.'}
-                </p>
-              </div>
-              <div className="forum-sections-head-actions">
-                <span className="muted">{sectionDisplayScope.length || 0} sections</span>
-                {canManageForumSections && !sectionEditMode && (
-                  <button
-                    type="button"
-                    className="forum-secondary-btn"
-                    onClick={() => setSectionEditMode(true)}
-                    disabled={sectionUpdatePending}
-                  >
-                    Edit
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {sectionNotice.text && (
-              <div className={`settings-alert ${sectionNotice.type === 'error' ? 'is-error' : 'is-success'} mb-3`}>
-                {sectionNotice.text}
-              </div>
-            )}
-
-            {canManageForumSections && sectionEditMode && (
-              <div className="forum-section-admin mb-3">
-                <div className="forum-section-admin-copy">
-                  <strong>Manage Sections</strong>
-                  <span className="muted">Type a new section, then click the floating x on any section you want to remove.</span>
+          {!isAggregateView && (
+            <section className="panel mb-4">
+              <div className="forum-sections-head mb-3">
+                <div>
+                  <h3 className="mb-1 type-title-md">Sections</h3>
+                  <p className="type-body mb-0">
+                    {canManageForumSections
+                      ? 'Filter posts here, and manage which sections this forum accepts.'
+                      : 'Filter posts in this forum by section.'}
+                  </p>
                 </div>
-                <div className="forum-section-admin-controls">
-                  <input
-                    className="form-control forum-input forum-section-input"
-                    value={sectionDraft}
-                    onChange={(event) => setSectionDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        addForumSection();
-                      }
-                    }}
-                    placeholder="Type a section name"
-                    disabled={sectionUpdatePending}
-                  />
+                <div className="forum-sections-head-actions">
+                  <span className="muted">{sectionDisplayScope.length || 0} sections</span>
+                  {canManageForumSections && !sectionEditMode && (
+                    <button
+                      type="button"
+                      className="forum-secondary-btn"
+                      onClick={() => setSectionEditMode(true)}
+                      disabled={sectionUpdatePending}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {sectionNotice.text && (
+                <div className={`settings-alert ${sectionNotice.type === 'error' ? 'is-error' : 'is-success'} mb-3`}>
+                  {sectionNotice.text}
+                </div>
+              )}
+
+              {canManageForumSections && sectionEditMode && (
+                <div className="forum-section-admin mb-3">
+                  <div className="forum-section-admin-copy">
+                    <strong>Manage Sections</strong>
+                    <span className="muted">Type a new section, then click the floating x on any section you want to remove.</span>
+                  </div>
+                  <div className="forum-section-admin-controls">
+                    <input
+                      className="form-control forum-input forum-section-input"
+                      value={sectionDraft}
+                      onChange={(event) => setSectionDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          addForumSection();
+                        }
+                      }}
+                      placeholder="Type a section name"
+                      disabled={sectionUpdatePending}
+                    />
+                    <button
+                      type="button"
+                      className="forum-primary-btn"
+                      onClick={addForumSection}
+                      disabled={sectionUpdatePending}
+                    >
+                      Add Section
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="section-grid">
+                <div className="section-card is-open">
+                  <div className="section-chip-wrap">
+                    {sectionItems.map((item) => (
+                      <div
+                        key={item.value}
+                        className={`section-chip-row ${sectionEditMode && canManageForumSections ? 'is-editing' : ''} ${item.isPendingRemoval ? 'is-pending-remove' : ''} ${item.isPendingAdd ? 'is-pending-add' : ''}`.trim()}
+                      >
+                        <button
+                          type="button"
+                          className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`.trim()}
+                          onClick={() => toggleSection(item.value)}
+                        >
+                          <span>{item.label}</span>
+                          <span className="section-count">{sectionCounts[item.value] || 0}</span>
+                        </button>
+                        {canManageForumSections && (
+                          <button
+                            type="button"
+                            className="section-chip-remove"
+                            onClick={() => markSectionForRemoval(item.value)}
+                            disabled={sectionUpdatePending || !sectionEditMode}
+                            aria-label={`${item.isPendingRemoval ? 'Restore' : 'Remove'} ${item.label}`}
+                          >
+                            x
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {canManageForumSections && sectionEditMode && (
+                <div className="forum-section-admin-actions mt-3">
                   <button
                     type="button"
                     className="forum-primary-btn"
-                    onClick={addForumSection}
+                    onClick={saveSectionChanges}
                     disabled={sectionUpdatePending}
                   >
-                    Add Section
+                    {sectionUpdatePending ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    className="forum-secondary-btn"
+                    onClick={cancelSectionChanges}
+                    disabled={sectionUpdatePending}
+                  >
+                    Cancel
                   </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="section-grid">
-              <div className="section-card is-open">
-                <div className="section-chip-wrap">
-                  {sectionItems.map((item) => (
-                    <div
-                      key={item.value}
-                      className={`section-chip-row ${sectionEditMode && canManageForumSections ? 'is-editing' : ''} ${item.isPendingRemoval ? 'is-pending-remove' : ''} ${item.isPendingAdd ? 'is-pending-add' : ''}`.trim()}
+              {selectedSections.length > 0 && (
+                <div className="section-filter-row mt-3">
+                  <button
+                    type="button"
+                    className="section-filter is-active"
+                    onClick={clearSections}
+                  >
+                    Clear Sections
+                  </button>
+                  {selectedSections.map((sectionValue) => (
+                    <button
+                      key={sectionValue}
+                      type="button"
+                      className="section-filter"
+                      onClick={() => toggleSection(sectionValue)}
                     >
-                      <button
-                        type="button"
-                        className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`}
-                        onClick={() => toggleSection(item.value)}
-                      >
-                        <span>{item.label}</span>
-                        <span className="section-count">{sectionCounts[item.value] || 0}</span>
-                      </button>
-                      {canManageForumSections && (
-                        <button
-                          type="button"
-                          className="section-chip-remove"
-                          onClick={() => markSectionForRemoval(item.value)}
-                          disabled={sectionUpdatePending || !sectionEditMode}
-                          aria-label={`${item.isPendingRemoval ? 'Restore' : 'Remove'} ${item.label}`}
-                        >
-                          x
-                        </button>
-                      )}
-                    </div>
+                      {getSectionLabel(sectionValue)}
+                    </button>
                   ))}
                 </div>
-              </div>
-            </div>
-
-            {canManageForumSections && sectionEditMode && (
-              <div className="forum-section-admin-actions mt-3">
-                <button
-                  type="button"
-                  className="forum-primary-btn"
-                  onClick={saveSectionChanges}
-                  disabled={sectionUpdatePending}
-                >
-                  {sectionUpdatePending ? 'Saving...' : 'Save'}
-                </button>
-                <button
-                  type="button"
-                  className="forum-secondary-btn"
-                  onClick={cancelSectionChanges}
-                  disabled={sectionUpdatePending}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-
-            {selectedSections.length > 0 && (
-              <div className="section-filter-row mt-3">
-                <button
-                  type="button"
-                  className="section-filter is-active"
-                  onClick={clearSections}
-                >
-                  Clear Sections
-                </button>
-                {selectedSections.map((sectionValue) => (
-                  <button
-                    key={sectionValue}
-                    type="button"
-                    className="section-filter"
-                    onClick={() => toggleSection(sectionValue)}
-                  >
-                    {getSectionLabel(sectionValue)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
+              )}
+            </section>
+          )}
 
           <section className="panel">
-            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-              <h3 className="mb-0 type-title-md">Latest Posts</h3>
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+              <div>
+                <h3 className="mb-1 type-title-md">{isAggregateView ? 'Smart Feed' : 'Forum Posts'}</h3>
+                <p className="muted mb-0">
+                  {isAggregateView
+                    ? 'Forum label lives on the top-left of every post so users always know where it came from.'
+                    : 'Posts inside this forum, ordered by your current filters.'}
+                </p>
+              </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
                 <span className="muted">{pagination?.total || 0} posts</span>
                 {!currentUser ? (
@@ -690,7 +901,7 @@ export default function Home({
                 className="form-control forum-input tag-search-input"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search title, content, tags, author, section"
+                placeholder={isAggregateView ? 'Search posts across all forums' : 'Search title, content, tags, author, section'}
               />
               {searchQuery && (
                 <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
@@ -703,14 +914,24 @@ export default function Home({
             {loadingPosts && <p className="muted mb-3">Refreshing posts...</p>}
 
             <div className="forum-feed">
-              {posts.map((post) => (
+              {displayedPosts.map((post) => (
                 <article key={post.id} className="forum-post-card">
                   <div className="forum-post-meta-row">
-                    <div className="forum-post-badges">
-                      {post.forum?.name && <span className="forum-tag is-active">{post.forum.name}</span>}
+                    <div className="forum-post-kicker">
+                      {post.forum?.name && post.forum?.slug ? (
+                        <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip">
+                          <span className="forum-origin-chip-label">Forum</span>
+                          <span>{post.forum.name}</span>
+                        </Link>
+                      ) : (
+                        <span className="forum-origin-chip is-static">
+                          <span className="forum-origin-chip-label">Forum</span>
+                          <span>{post.forum?.name || 'General'}</span>
+                        </span>
+                      )}
                       <span className="forum-tag">{getSectionLabel(post.section)}</span>
                     </div>
-                    <span className="muted forum-time">{formatTime(post.createdAt)}</span>
+                    <span className="muted forum-time">{formatTime(getPostActivityAt(post))}</span>
                   </div>
 
                   <h5 className="mb-1">
@@ -724,7 +945,7 @@ export default function Home({
                         <button
                           key={`${post.id}-${tag}`}
                           type="button"
-                          className={`post-tag-pill ${searchQuery === tag ? 'is-active' : ''}`}
+                          className={`post-tag-pill ${searchQuery === tag ? 'is-active' : ''}`.trim()}
                           onClick={() => toggleTagFilter(tag)}
                         >
                           #{tag}
@@ -754,7 +975,7 @@ export default function Home({
                 </article>
               ))}
 
-              {!loadingPosts && posts.length === 0 && (
+              {!loadingPosts && displayedPosts.length === 0 && (
                 <p className="muted mb-0">No posts match the current forum, section, and tag filters.</p>
               )}
             </div>
@@ -776,9 +997,25 @@ export default function Home({
             <form onSubmit={submitPost} className="forum-form">
               <div className="mb-3">
                 <label className="form-label">Forum</label>
-                <div className="form-control forum-input d-flex align-items-center">
-                  {selectedForum?.name || 'Current forum'}
-                </div>
+                {selectedForum ? (
+                  <div className="form-control forum-input d-flex align-items-center">
+                    {selectedForum.name}
+                  </div>
+                ) : (
+                  <Select
+                    options={forumComposerOptions}
+                    value={form.forumId}
+                    onChange={(nextForumId) => {
+                      const nextForum = forums.find((forum) => forum.id === nextForumId) || preferredComposerForum;
+                      setForm((prev) => ({
+                        ...prev,
+                        forumId: nextForumId,
+                        section: getScopedDefaultSection(nextForum, forums)
+                      }));
+                    }}
+                    placeholder="Choose a forum"
+                  />
+                )}
               </div>
 
               <div className="mb-3">

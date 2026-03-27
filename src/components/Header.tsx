@@ -9,6 +9,9 @@ type CurrentUser = {
   name: string;
   email: string;
   isAdmin?: boolean;
+  adminPermissions?: string[];
+  hasAdminAccess?: boolean;
+  canManageAdminAccess?: boolean;
 } | null;
 
 type NavItem = {
@@ -19,6 +22,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { to: '/', label: 'Home' },
   { to: '/forum', label: 'Forum' },
+  { to: '/explore', label: 'Explore' },
   { to: '/about', label: 'About' }
 ];
 
@@ -79,11 +83,13 @@ function mergePostMatches(...groups: SearchPostSuggestion[][]) {
 
 export default function Header({ currentUser, forums, posts, onLogout }: HeaderProps) {
   const navigate = useNavigate();
+  const [adminOpen, setAdminOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [forumQuery, setForumQuery] = useState('');
   const [forumSearchOpen, setForumSearchOpen] = useState(false);
   const [remotePostMatches, setRemotePostMatches] = useState<SearchPostSuggestion[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const adminCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRequestIdRef = useRef(0);
@@ -179,6 +185,24 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
       closeTimerRef.current = null;
     }
     setAccountOpen(true);
+  };
+
+  const openAdminMenu = () => {
+    if (adminCloseTimerRef.current) {
+      clearTimeout(adminCloseTimerRef.current);
+      adminCloseTimerRef.current = null;
+    }
+    setAdminOpen(true);
+  };
+
+  const closeAdminMenu = () => {
+    if (adminCloseTimerRef.current) {
+      clearTimeout(adminCloseTimerRef.current);
+    }
+    adminCloseTimerRef.current = setTimeout(() => {
+      setAdminOpen(false);
+      adminCloseTimerRef.current = null;
+    }, 160);
   };
 
   const closeAccountMenu = () => {
@@ -350,6 +374,39 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
                 {item.label}
               </Nav.Link>
             ))}
+            {(currentUser?.isAdmin || currentUser?.hasAdminAccess) && (
+              <div
+                className="admin-menu"
+                onMouseEnter={openAdminMenu}
+                onMouseLeave={closeAdminMenu}
+              >
+                <button type="button" className="admin-menu-trigger">
+                  Admin
+                </button>
+                <div className={`admin-menu-panel ${adminOpen ? 'is-open' : ''}`}>
+                  {(currentUser.isAdmin || currentUser.adminPermissions?.includes('moderation')) && (
+                    <NavLink to="/moderation" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Moderation
+                    </NavLink>
+                  )}
+                  {(currentUser.isAdmin || currentUser.adminPermissions?.includes('forum_requests')) && (
+                    <NavLink to="/forums/request/review" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Forum Requests
+                    </NavLink>
+                  )}
+                  {(currentUser.isAdmin || currentUser.adminPermissions?.includes('analytics')) && (
+                    <NavLink to="/analytics" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Analytics
+                    </NavLink>
+                  )}
+                  {currentUser.canManageAdminAccess && (
+                    <NavLink to="/admin/access" className="admin-menu-item" onClick={() => setAdminOpen(false)}>
+                      Access
+                    </NavLink>
+                  )}
+                </div>
+              </div>
+            )}
             {currentUser ? (
               <div
                 className="account-menu"
@@ -366,19 +423,12 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
                   <NavLink to="/my-posts" className="account-menu-item" onClick={() => setAccountOpen(false)}>
                     My Posts
                   </NavLink>
+                  <NavLink to="/my-forums" className="account-menu-item" onClick={() => setAccountOpen(false)}>
+                    My Forums
+                  </NavLink>
                   <NavLink to="/following" className="account-menu-item" onClick={() => setAccountOpen(false)}>
                     Following
                   </NavLink>
-                  {currentUser.isAdmin && (
-                    <NavLink to="/moderation" className="account-menu-item" onClick={() => setAccountOpen(false)}>
-                      Moderation
-                    </NavLink>
-                  )}
-                  {currentUser.isAdmin && (
-                    <NavLink to="/analytics" className="account-menu-item" onClick={() => setAccountOpen(false)}>
-                      Analytics
-                    </NavLink>
-                  )}
                   <NavLink to="/settings" className="account-menu-item" onClick={() => setAccountOpen(false)}>
                     Settings
                   </NavLink>

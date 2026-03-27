@@ -78,10 +78,10 @@ export default function ForumSidebar({ currentUser, forums = [], currentForum = 
         <div className="forum-floating-header">
           <div>
             <p className="type-kicker mb-1">Workspace</p>
-            <h3 className="mb-0 type-title-md">Forum Shortcuts</h3>
+            <h3 className="mb-0 type-title-md">Apply for a Forum</h3>
           </div>
           <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
-            Create Forum
+            Open Request
           </Link>
         </div>
       </section>
@@ -115,12 +115,13 @@ export default function ForumSidebar({ currentUser, forums = [], currentForum = 
               <Link key={forum.id} to={`/forum/${forum.slug}`} className="forum-follow-card">
                 <div className="forum-follow-card-topline">
                   <span className="forum-tag">{forum.isCore ? 'Core Forum' : 'Community Forum'}</span>
-                  <span className="muted">{forum.livePostCount ?? forum.postCount ?? 0} posts</span>
+                  <span className="muted">{forum.followerCount ?? 0} followers</span>
                 </div>
                 <strong>{forum.name}</strong>
+                <span className="forum-follow-meta">{forum.livePostCount ?? forum.postCount ?? 0} posts</span>
                 <span className="forum-follow-meta">
                   {(forum.sectionScope || []).slice(0, 3).map((section) => getSectionLabel(section)).join(' · ')
-                    || 'Forum shortcuts'}
+                    || 'Forum details'}
                 </span>
               </Link>
             ))}

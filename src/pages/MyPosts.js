@@ -328,8 +328,21 @@ export default function MyPosts({
 
             return (
               <article key={post.id} className={`forum-post-card ${isModerated ? 'moderated-post-card' : ''}`}>
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                  <span className="forum-tag">{getSectionLabel(post.section)}</span>
+                <div className="forum-post-meta-row mb-2">
+                  <div className="forum-post-kicker">
+                    {post.forum?.name && post.forum?.slug ? (
+                      <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip">
+                        <span className="forum-origin-chip-label">Forum</span>
+                        <span>{post.forum.name}</span>
+                      </Link>
+                    ) : (
+                      <span className="forum-origin-chip is-static">
+                        <span className="forum-origin-chip-label">Forum</span>
+                        <span>{post.forum?.name || 'General'}</span>
+                      </span>
+                    )}
+                    <span className="forum-tag">{getSectionLabel(post.section)}</span>
+                  </div>
                   <span className="muted forum-time">{formatTime(post.createdAt)}</span>
                 </div>
 
@@ -411,7 +424,20 @@ export default function MyPosts({
                               <h4 className="mb-1">Post Preview</h4>
                               <p className="muted mb-0">This is how the post will roughly look after publishing.</p>
                             </div>
-                            <span className="forum-tag">{getSectionLabel(editForm.section)}</span>
+                            <div className="forum-post-kicker">
+                              {editingPost?.forum?.name && editingPost?.forum?.slug ? (
+                                <Link to={`/forum/${editingPost.forum.slug}`} className="forum-origin-chip">
+                                  <span className="forum-origin-chip-label">Forum</span>
+                                  <span>{editingPost.forum.name}</span>
+                                </Link>
+                              ) : (
+                                <span className="forum-origin-chip is-static">
+                                  <span className="forum-origin-chip-label">Forum</span>
+                                  <span>{editingPost?.forum?.name || 'General'}</span>
+                                </span>
+                              )}
+                              <span className="forum-tag">{getSectionLabel(editForm.section)}</span>
+                            </div>
                           </div>
 
                           <h3 className="post-detail-title my-posts-preview-title">{editForm.title || 'Untitled draft'}</h3>

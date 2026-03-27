@@ -51,18 +51,27 @@ export default function Landing({ currentUser }) {
     <div className="container page-shell">
       <section className="landing-hero">
         <div className="landing-copy">
-          <p className="landing-eyebrow type-kicker">Technical Community</p>
-          <h1 className="landing-title type-title-lg">A place to share what actually works.</h1>
+          <p className="landing-eyebrow type-kicker">A Forum For Doers</p>
+          <h1 className="landing-title landing-title-two-line type-title-lg">
+            <span className="about-story-hero-title-main">Most platforms are full of opinions.</span>
+            <span className="about-story-hero-title-em">
+              <span className="landing-em-no-break">Very few show <span className="about-word-bounce about-word-bounce-delay-0">real</span>{' '}
+              <span className="about-word-bounce about-word-bounce-delay-1">execution</span>.</span>
+            </span>
+          </h1>
           <p className="landing-text type-body">
-            LearnFromUs is built for engineers, data scientists, and builders who want practical ideas,
-            code-driven discussions, and visible proof of execution.
+            Real experience beats opinions.
+            <br />
+            Execution is visible.
+            <br />
+            Useful knowledge compounds — across software, fitness, and everyday life.
           </p>
           <div className="landing-actions">
             <Link to="/forum" className="forum-primary-btn text-decoration-none">
               Explore the Forum
             </Link>
             <Link to="/about" className="forum-secondary-btn text-decoration-none">
-              Meet the Founder
+              Meet the Leadership
             </Link>
             {!currentUser && (
               <Link to="/login" className="landing-text-link text-decoration-none">
@@ -92,10 +101,9 @@ export default function Landing({ currentUser }) {
         <div className="col-lg-4">
           <div className="feature-card landing-feature-card">
             <p className="landing-card-kicker type-kicker">Forum</p>
-            <h4 className="type-title-md">Curated by technical section</h4>
+            <h4 className="type-title-md">Curated by topics</h4>
             <p className="type-body mb-0">
-              Browse Front End, Back End, Algorithms, AI / LLM, Statistics, and more without mixing
-              everything into one noisy feed.
+              Explore topics across tech, AI, lifestyle, and beyond — all organized, no noise.
             </p>
           </div>
         </div>

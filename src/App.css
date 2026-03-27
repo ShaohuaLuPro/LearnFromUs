@@ -467,11 +467,8 @@ a {
 }
 
 .about-page-shell {
-  max-width: min(1800px, 96vw);
   margin-left: auto;
   margin-right: auto;
-  padding-left: clamp(0.75rem, 2vw, 1.5rem);
-  padding-right: clamp(0.75rem, 2vw, 1.5rem);
 }
 
 /* Shared Surfaces */
@@ -970,11 +967,15 @@ a {
 
 .landing-eyebrow {
   margin-bottom: 0.65rem;
-  font-size: var(--font-size-kicker);
+  font-size: clamp(1.12rem, 1.55vw, 1.34rem);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #47648f;
+}
+
+.landing-eyebrow.type-kicker {
+  font-size: clamp(0.83rem, 1.16vw, 0.98rem);
 }
 
 .landing-title {
@@ -982,6 +983,39 @@ a {
   line-height: 1.03;
   margin-bottom: 0.9rem;
   max-width: 10ch;
+}
+
+.landing-title-two-line {
+  max-width: none;
+  display: grid;
+  gap: 0.1em;
+}
+
+.landing-title-two-line .about-story-hero-title-em {
+  margin-left: 6.2ch;
+  font-size: 0.89em;
+  font-weight: 340;
+}
+
+.landing-title-two-line .about-story-hero-title-main {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  font-weight: 450;
+}
+
+.landing-em-no-break {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.landing-title-line {
+  display: block;
+  white-space: nowrap;
+  font-weight: 400;
+}
+
+.landing-title-line-top {
+  font-size: 0.67em;
+  line-height: 1.15;
 }
 
 .landing-text {
@@ -3523,50 +3557,80 @@ select.forum-input optgroup,
 }
 
 /* Footer */
-.footer-shell {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 0.85rem;
-}
-
-.footer-left,
-.footer-right {
-  min-width: 0;
+.footer-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1.5rem 1.25rem;
+  padding-top: 1.25rem;
+  padding-bottom: 1.25rem;
 }
 
 .footer-title {
+  margin: 0 0 0.85rem;
+  font-size: 1.24rem;
+  line-height: 1.2;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: var(--text-link);
+  color: #7dfff1;
 }
 
-.footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+.footer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
 }
 
 .footer-link {
+  display: inline-block;
   text-decoration: none;
-  color: #b6e4f2;
-  font-weight: 600;
-  border: 1px solid var(--interactive-border);
-  background: var(--interactive-bg);
-  border-radius: 999px;
-  padding: 0.2rem 0.65rem;
+  color: var(--text-subtle);
+  font-size: 1.02rem;
+  line-height: 1.35;
+  font-weight: 500;
 }
 
 .footer-link:hover {
-  background: var(--interactive-bg-hover);
-  color: var(--text-main);
+  color: var(--text-link-hover);
 }
 
 .footer-bottom {
-  border-top: 1px solid #d9e2f0;
-  padding-top: 0.7rem;
-  padding-bottom: 1rem;
+  border-top: 1px solid rgba(0, 240, 255, 0.1);
+  padding-top: 0.9rem;
+  padding-bottom: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.footer-note {
+  color: var(--text-subtle);
+  font-size: 0.95rem;
+}
+
+.footer-legal {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.footer-legal-link {
+  text-decoration: none;
+  color: var(--text-subtle);
+  font-size: 0.92rem;
+}
+
+.footer-legal-link:hover {
+  color: var(--text-link-hover);
+}
+
+.footer-copyright {
+  color: var(--text-muted);
+  font-size: 0.88rem;
 }
 
 /* Theme Consolidation */
@@ -3646,8 +3710,8 @@ h5 {
 
 .section-card-title,
 .section-group-summary,
-.footer-title,
-.footer-link {
+.footer-link,
+.footer-legal-link {
   color: var(--text-link);
 }
 
@@ -3974,8 +4038,7 @@ h5 {
   }
 
   .landing-hero {
-    grid-template-columns: 1fr;
-    padding: 1rem;
+    padding: 1.45rem 1.3rem 1.55rem;
   }
 
   .goodbye-card {
@@ -3984,6 +4047,10 @@ h5 {
 
   .landing-title {
     max-width: none;
+  }
+
+  .landing-title-line {
+    white-space: normal;
   }
 
   .hero-card {
@@ -4004,7 +4071,11 @@ h5 {
     width: 100%;
   }
 
-  .footer-shell {
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footer-bottom {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -4154,5 +4225,11 @@ h5 {
 
   .industry-card {
     min-height: 220px;
+  }
+}
+
+@media (max-width: 560px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
   }
 }

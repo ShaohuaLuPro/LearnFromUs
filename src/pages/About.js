@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 const SECTION_CONTENT = {
   story: {
@@ -102,8 +103,21 @@ const SECTION_CONTENT = {
 // This is a simple modification to the About.js file without affecting existing content
 
 export default function About() {
-  const [activeSection, setActiveSection] = useState('story');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sectionParam = searchParams.get('section');
+  const activeSection = ['story', 'leadership', 'founder', 'teamMembers'].includes(sectionParam || '')
+    ? sectionParam
+    : 'story';
   const section = useMemo(() => SECTION_CONTENT[activeSection], [activeSection]);
+  const setActiveSection = (nextSection) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextSection === 'story') {
+      nextParams.delete('section');
+    } else {
+      nextParams.set('section', nextSection);
+    }
+    setSearchParams(nextParams);
+  };
   const profile = section.profile;
   const highlightedLabels = new Set([
     'Why This Exists',
@@ -119,31 +133,11 @@ export default function About() {
     'Location',
     'Email'
   ]);
-  const sidebarItems = [
-    { key: 'story', label: 'Story' },
-    { key: 'leadership', label: 'Leadership' }
-  ];
-
   return (
-    <div className="container-fluid page-shell about-page-shell" data-page="about">
+    <div className="container page-shell about-page-shell" data-page="about">
       <div className="row g-4">
-        <div className="col-lg-3">
-          <section className="glass-card about-sidebar-panel p-2 p-lg-3">
-            {sidebarItems.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`about-sidebar-btn ${activeSection === item.key ? 'is-active' : ''}`}
-                onClick={() => setActiveSection(item.key)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </section>
-        </div>
-
         {activeSection === 'story' ? (
-          <div className="col-lg-9">
+          <div className="col-lg-12">
             <section className="panel about-story-panel h-100">
               <section className="about-story-hero" aria-label="Story hero">
                 <p className="about-story-hero-eyebrow">A Forum For Doers</p>
@@ -192,12 +186,15 @@ export default function About() {
                   >
                     {block.kicker === 'Why This Exists' ? (
                       <>
-                        Most platforms reward loud voices. LearnFromUs rewards people who actually
-                        ship, train, and build — then show their work. It&apos;s a space where doing
-                        {' '}<strong>beats</strong> talking, every single time.
-                        {' '}
-                        <strong>Not just in tech</strong> — but across every domain where real knowledge <strong>compounds</strong>: fitness,
-                        craft, finance, daily life. The people who&apos;ve done it are here.
+                        <span className="about-longterm-stair-line about-longterm-stair-line-1">
+                          Most platforms reward noise. LearnFromUs <strong>rewards</strong> people who build, ship, and show their work.
+                        </span>
+                        <span className="about-longterm-stair-line about-longterm-stair-line-2">
+                          This is a place where doing <strong>beats</strong> talking — every time.
+                        </span>
+                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
+                          Real knowledge comes from <strong>experience</strong>. And the people who&apos;ve done it are here.
+                        </span>
                       </>
                     ) : block.kicker === 'Long-Term Direction' ? (
                       <>
@@ -220,7 +217,7 @@ export default function About() {
             </section>
           </div>
         ) : activeSection === 'leadership' ? (
-          <div className="col-lg-9">
+          <div className="col-lg-12">
             <section className="panel leadership-panel h-100">
               <header className="leadership-hero">
                 <h2 className="leadership-hero-title mb-0">{section.heroTitle}</h2>
@@ -260,7 +257,7 @@ export default function About() {
           </div>
         ) : (
           <>
-            <div className="col-lg-5 about-detail-col">
+            <div className="col-lg-8 about-detail-col">
               <section className="panel about-story-panel about-detail-panel h-100">
                 <div className="about-story-block">
                   {profile.eyebrow ? (

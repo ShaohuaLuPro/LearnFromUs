@@ -19,6 +19,7 @@ import ForumRequestPage from './pages/ForumRequestPage';
 import ForumRequestReviewPage from './pages/ForumRequestReviewPage';
 import Goodbye from './pages/Goodbye';
 import Home from './pages/Home';
+import Legal from './pages/Legal';
 import Login from './pages/Login';
 import Landing from './pages/Landing';
 import Moderation from './pages/Moderation';
@@ -27,7 +28,9 @@ import MyForumInvitations from './pages/MyForumInvitations';
 import MyForumManagers from './pages/MyForumManagers';
 import MyPosts from './pages/MyPosts';
 import PostDetail from './pages/PostDetail';
+import Privacy from './pages/Privacy';
 import Settings from './pages/Settings';
+import Terms from './pages/Terms';
 import UserProfile from './pages/UserProfile';
 
 function LoadingShell() {
@@ -169,6 +172,9 @@ export default function AppRoutes() {
             )}
           />
           <Route path="/about" element={<About />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/legal" element={<Legal />} />
           <Route path="/goodbye" element={<Goodbye />} />
           <Route path="/users/:userId" element={<UserProfile currentUser={auth.currentUser} />} />
           <Route

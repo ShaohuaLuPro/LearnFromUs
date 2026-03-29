@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 const SECTION_CONTENT = {
   story: {
@@ -153,7 +153,9 @@ export default function About() {
               {section.blocks.map((block, idx) => (
                 <div
                   key={block.kicker}
-                  className={`about-story-block ${idx === section.blocks.length - 1 ? 'is-last' : ''}`}
+                  className={`about-story-block ${idx === section.blocks.length - 1 ? 'is-last' : ''} ${
+                    block.kicker === 'Why This Exists' ? 'no-divider' : ''
+                  }`}
                 >
                   <p
                     className={`about-story-kicker ${
@@ -187,26 +189,72 @@ export default function About() {
                     {block.kicker === 'Why This Exists' ? (
                       <>
                         <span className="about-longterm-stair-line about-longterm-stair-line-1">
-                          Most platforms reward noise. LearnFromUs <strong>rewards</strong> people who build, ship, and show their work.
+                          LearnFromUs began as a platform for deep, meaningful discussions — built for people who
+                          expect more than surface-level content. It was designed as a space where ideas are explored
+                          with clarity, and knowledge is built through thoughtful exchange rather than quick takes.
                         </span>
                         <span className="about-longterm-stair-line about-longterm-stair-line-2">
-                          This is a place where doing <strong>beats</strong> talking — every time.
+                          From the beginning, Shaohua&apos;s vision centered on ownership. Not just participation, but
+                          true control — giving users the ability to create, lead, and shape their own communities. The
+                          goal was to move beyond passive consumption and toward active contribution, where individuals
+                          don&apos;t just follow conversations, but define them.
                         </span>
                         <span className="about-longterm-stair-line about-longterm-stair-line-3">
-                          Real knowledge comes from <strong>experience</strong>. And the people who&apos;ve done it are here.
+                          As the platform evolved, Ben joined and helped expand that vision. Living in Boston — a city
+                          defined by its academic depth and culture of learning — brought a new perspective. It
+                          reinforced the belief that meaningful knowledge is not accidental. It is built, tested, and
+                          refined over time, through real experience and shared insight.
+                        </span>
+                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
+                          The mission grew from building a discussion platform into something more deliberate: a place
+                          where knowledge compounds, where signal rises above noise, and where people are encouraged to
+                          contribute what they&apos;ve actually learned through doing.
+                        </span>
+                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
+                          Today, we focus on one thing:
+                        </span>
+                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
+                          Building a space where real experience is shared, trusted, and continuously refined.
                         </span>
                       </>
                     ) : block.kicker === 'Long-Term Direction' ? (
                       <>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-1">
-                          Real experience <strong>beats</strong> opinions.
-                        </span>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-2">
-                          Execution is <strong>visible</strong>.
-                        </span>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
-                          Useful knowledge <strong>compounds</strong> — across software, fitness, and everyday life.
-                        </span>
+                        <div className="about-longterm-cards">
+                          <article className="about-longterm-card">
+                            <span className="about-longterm-icon" aria-hidden="true">
+                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                                <path d="M13.5 2 5 13h6l-1 9 9-12h-6l.5-8z" />
+                              </svg>
+                            </span>
+                            <h4 className="about-longterm-card-title">Real experience beats opinions</h4>
+                          </article>
+                          <article className="about-longterm-card">
+                            <span className="about-longterm-icon" aria-hidden="true">
+                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                                <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
+                                <path d="m8 12 2.6 2.6L16 9.2" />
+                              </svg>
+                            </span>
+                            <h4 className="about-longterm-card-title">Execution is visible</h4>
+                          </article>
+                          <article className="about-longterm-card">
+                            <span className="about-longterm-icon" aria-hidden="true">
+                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                                <path d="m12 3 8.5 4.9L12 12.8 3.5 7.9 12 3z" />
+                                <path d="m3.5 12.5 8.5 4.9 8.5-4.9" />
+                              </svg>
+                            </span>
+                            <p className="about-longterm-card-copy mb-0">
+                              Useful knowledge compounds — across software, fitness, and everyday life.
+                            </p>
+                          </article>
+                        </div>
+                        <Link
+                          to="/about?section=leadership"
+                          className="founder-link-pill is-bright d-inline-flex mt-4 text-decoration-none"
+                        >
+                          Meet Our Leadership
+                        </Link>
                       </>
                     ) : (
                       block.copy
@@ -366,8 +414,17 @@ export default function About() {
                       </a>
                     ))}
                   </div>
+
                 </div>
               </section>
+              <div className="founder-link-row mt-3">
+                <Link
+                  to="/about"
+                  className="about-back-link text-decoration-none"
+                >
+                  ← Back
+                </Link>
+              </div>
             </div>
 
             <div className="col-lg-4">

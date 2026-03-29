@@ -54,6 +54,33 @@ function routeConfig(pathname) {
     };
   }
 
+  if (pathname === '/terms') {
+    return {
+      title: buildPageTitle('Terms of Use'),
+      description: 'Read the LearnFromUs Terms of Use for community posting, account responsibilities, and platform rules.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
+  if (pathname === '/privacy') {
+    return {
+      title: buildPageTitle('Privacy Notice'),
+      description: 'Read how LearnFromUs handles account, post, and community workflow data.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
+  if (pathname === '/legal') {
+    return {
+      title: buildPageTitle('Legal Information'),
+      description: 'Review LearnFromUs legal information, moderation enforcement, and service disclaimers.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
   if (pathname === '/login') {
     return {
       title: buildPageTitle('Login'),

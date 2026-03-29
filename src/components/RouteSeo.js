@@ -54,6 +54,33 @@ function routeConfig(pathname) {
     };
   }
 
+  if (pathname === '/about/leadership') {
+    return {
+      title: buildPageTitle('Leadership'),
+      description: 'Meet the leadership team behind LearnFromUs and learn who is building the platform.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
+  if (pathname === '/about/leadership/founder') {
+    return {
+      title: buildPageTitle('Founder'),
+      description: 'Learn more about Shaohua Lu, founder of LearnFromUs.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
+  if (pathname === '/about/leadership/team-members') {
+    return {
+      title: buildPageTitle('Team Member'),
+      description: 'Learn more about the LearnFromUs team and the people helping build the product.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
   if (pathname === '/terms') {
     return {
       title: buildPageTitle('Terms of Use'),

@@ -19,7 +19,7 @@ const footerSections: FooterSection[] = [
       { href: '/explore', label: 'Explore' },
       { href: '/forum', label: 'Forum Feed' },
       { href: '/about', label: 'About' },
-      { href: '/about?section=leadership', label: 'Leadership' }
+      { href: '/about/leadership', label: 'Leadership' }
     ]
   },
   {
@@ -46,8 +46,7 @@ const footerSections: FooterSection[] = [
     links: [
       { href: '/login', label: 'Login' },
       { href: '/settings', label: 'Settings' },
-      { href: '/my-posts', label: 'My Activity' },
-      { href: '/goodbye', label: 'Goodbye Page' }
+      { href: '/my-posts', label: 'My Activity' }
     ]
   }
 ];
@@ -87,19 +86,20 @@ export default function Footer() {
         ))}
       </div>
       <div className="container footer-bottom">
-        <p className="footer-note mb-0">Built by builders, for builders. Some links require sign-in or admin permissions.</p>
-        <div className="footer-legal">
-          <Link to="/terms" className="footer-legal-link">
-            Terms
-          </Link>
-          <Link to="/privacy" className="footer-legal-link">
-            Privacy
-          </Link>
-          <Link to="/legal" className="footer-legal-link">
-            Legal
-          </Link>
+        <div className="footer-meta">
+          <div className="footer-legal">
+            <Link to="/terms" className="footer-legal-link">
+              Terms
+            </Link>
+            <Link to="/privacy" className="footer-legal-link">
+              Privacy
+            </Link>
+            <Link to="/legal" className="footer-legal-link">
+              Legal
+            </Link>
+          </div>
+          <small className="footer-copyright">&copy; {new Date().getFullYear()} LearnFromUs. All rights reserved.</small>
         </div>
-        <small className="footer-copyright">&copy; {new Date().getFullYear()} LearnFromUs. All rights reserved.</small>
       </div>
     </footer>
   );

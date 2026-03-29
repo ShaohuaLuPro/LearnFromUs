@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useMemo } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 const SECTION_CONTENT = {
   story: {
@@ -11,11 +11,11 @@ const SECTION_CONTENT = {
         kicker: 'Why This Exists',
         title: 'LearnFromUs makes technical learning more public and more useful.',
         copy:
-          'Stop passive learning. In software and data, most tutorials are bookmarked and forgotten. LearnFromUs is the opposite. We pull back the curtain on real implementation—shipping, debugging, and architecture—providing the practical hacks that actual builders need to execute.'
+          'Stop passive learning. In software and data, most tutorials are bookmarked and forgotten. LearnFromUs is the opposite. We pull back the curtain on real implementation- shipping, debugging, and architecture - providing the practical hacks that actual builders need to execute.'
       },
       {
         kicker: 'Long-Term Direction',
-        title: '—— To build a platform where proof of skill is woven into the product.',
+        title: 'To build a platform where proof of skill is woven into the product.',
         copy:
           'Over time, LearnFromUs should become a place where strong work naturally stands out: clear posts, strong examples, useful feedback, and visible patterns of execution. The point is not to mimic a traditional social feed. The point is to build a technical community where what you can explain, ship, and improve is visible by default.'
       }
@@ -100,23 +100,46 @@ const SECTION_CONTENT = {
   }
 };
 
-// This is a simple modification to the About.js file without affecting existing content
+const SECTION_ROUTES = {
+  story: '/about',
+  leadership: '/about/leadership',
+  founder: '/about/leadership/founder',
+  teamMembers: '/about/leadership/team-members'
+};
 
 export default function About() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const sectionParam = searchParams.get('section');
-  const activeSection = ['story', 'leadership', 'founder', 'teamMembers'].includes(sectionParam || '')
-    ? sectionParam
-    : 'story';
+  const location = useLocation();
+  const navigate = useNavigate();
+  const normalizedPath = useMemo(() => {
+    const pathname = location.pathname.replace(/\/+$/, '');
+    return pathname || '/';
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const legacySection = new URLSearchParams(location.search).get('section');
+    if (!legacySection) {
+      return;
+    }
+
+    const redirectTarget = SECTION_ROUTES[legacySection] || SECTION_ROUTES.story;
+    navigate(redirectTarget, { replace: true });
+  }, [location.search, navigate]);
+
+  const activeSection = useMemo(() => {
+    if (normalizedPath === SECTION_ROUTES.leadership) {
+      return 'leadership';
+    }
+    if (normalizedPath === SECTION_ROUTES.founder) {
+      return 'founder';
+    }
+    if (normalizedPath === SECTION_ROUTES.teamMembers) {
+      return 'teamMembers';
+    }
+    return 'story';
+  }, [normalizedPath]);
   const section = useMemo(() => SECTION_CONTENT[activeSection], [activeSection]);
   const setActiveSection = (nextSection) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (nextSection === 'story') {
-      nextParams.delete('section');
-    } else {
-      nextParams.set('section', nextSection);
-    }
-    setSearchParams(nextParams);
+    navigate(SECTION_ROUTES[nextSection] || SECTION_ROUTES.story);
   };
   const profile = section.profile;
   const highlightedLabels = new Set([
@@ -189,19 +212,19 @@ export default function About() {
                     {block.kicker === 'Why This Exists' ? (
                       <>
                         <span className="about-longterm-stair-line about-longterm-stair-line-1">
-                          LearnFromUs began as a platform for deep, meaningful discussions — built for people who
+                          LearnFromUs began as a platform for deep, meaningful discussions - built for people who
                           expect more than surface-level content. It was designed as a space where ideas are explored
                           with clarity, and knowledge is built through thoughtful exchange rather than quick takes.
                         </span>
                         <span className="about-longterm-stair-line about-longterm-stair-line-2">
                           From the beginning, Shaohua&apos;s vision centered on ownership. Not just participation, but
-                          true control — giving users the ability to create, lead, and shape their own communities. The
+                          true control - giving users the ability to create, lead, and shape their own communities. The
                           goal was to move beyond passive consumption and toward active contribution, where individuals
                           don&apos;t just follow conversations, but define them.
                         </span>
                         <span className="about-longterm-stair-line about-longterm-stair-line-3">
-                          As the platform evolved, Ben joined and helped expand that vision. Living in Boston — a city
-                          defined by its academic depth and culture of learning — brought a new perspective. It
+                          As the platform evolved, Ben joined and helped expand that vision. Living in Boston - a city
+                          defined by its academic depth and culture of learning - brought a new perspective. It
                           reinforced the belief that meaningful knowledge is not accidental. It is built, tested, and
                           refined over time, through real experience and shared insight.
                         </span>
@@ -245,12 +268,12 @@ export default function About() {
                               </svg>
                             </span>
                             <p className="about-longterm-card-copy mb-0">
-                              Useful knowledge compounds — across software, fitness, and everyday life.
+                              Useful knowledge compounds - across software, fitness, and everyday life.
                             </p>
                           </article>
                         </div>
                         <Link
-                          to="/about?section=leadership"
+                          to={SECTION_ROUTES.leadership}
                           className="founder-link-pill is-bright d-inline-flex mt-4 text-decoration-none"
                         >
                           Meet Our Leadership
@@ -268,6 +291,14 @@ export default function About() {
           <div className="col-lg-12">
             <section className="panel leadership-panel h-100">
               <header className="leadership-hero">
+                <Link
+                  to={SECTION_ROUTES.story}
+                  className="about-back-link text-decoration-none"
+                  aria-label="Back to About"
+                >
+                  <span className="about-back-link-icon" aria-hidden="true">←</span>
+                  <span className="about-back-link-text">Back</span>
+                </Link>
                 <h2 className="leadership-hero-title mb-0">{section.heroTitle}</h2>
                 {section.heroCopy ? <p className="leadership-hero-copy mb-0">{section.heroCopy}</p> : null}
               </header>
@@ -379,7 +410,7 @@ export default function About() {
                     <p className="about-story-copy about-story-copy-story-match about-team-summary-centered mb-0">
                       Shaped by years of working across industries and borders, I've learned that the most
                       meaningful progress happens at the intersection of people, process, and technology. I
-                      bring that perspective into every team I join — bridging communication gaps, driving
+                      bring that perspective into every team I join - bridging communication gaps, driving
                       engineering execution, and translating complexity into clarity. At LearnFromUs, I channel
                       this into building products that are not just functional, but thoughtfully crafted and
                       built to last.
@@ -419,10 +450,12 @@ export default function About() {
               </section>
               <div className="founder-link-row mt-3">
                 <Link
-                  to="/about"
+                  to={SECTION_ROUTES.leadership}
                   className="about-back-link text-decoration-none"
+                  aria-label="Back to Leadership"
                 >
-                  ← Back
+                  <span className="about-back-link-icon" aria-hidden="true">←</span>
+                  <span className="about-back-link-text">Back</span>
                 </Link>
               </div>
             </div>

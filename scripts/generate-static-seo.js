@@ -58,7 +58,10 @@ async function getSitemapUrls() {
   const entries = [
     { loc: `${siteUrl}/`, changefreq: 'daily', priority: '1.0' },
     { loc: `${siteUrl}/stories`, changefreq: 'daily', priority: '0.9' },
-    { loc: `${siteUrl}/about`, changefreq: 'monthly', priority: '0.7' }
+    { loc: `${siteUrl}/about`, changefreq: 'monthly', priority: '0.7' },
+    { loc: `${siteUrl}/about/leadership`, changefreq: 'monthly', priority: '0.6' },
+    { loc: `${siteUrl}/about/leadership/founder`, changefreq: 'monthly', priority: '0.5' },
+    { loc: `${siteUrl}/about/leadership/team-members`, changefreq: 'monthly', priority: '0.5' }
   ];
 
   if (!apiBaseUrl) {

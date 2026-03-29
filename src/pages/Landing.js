@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
 const INDUSTRY_CARDS = [
@@ -52,7 +52,26 @@ const INDUSTRY_CARDS = [
   }
 ];
 
-export default function Landing({ currentUser }) {
+export default function Landing({ currentUser, forums = [], loadingForums = false }) {
+  const forumCount = forums.length;
+  const sectionCount = useMemo(() => {
+    const sections = new Set();
+
+    forums.forEach((forum) => {
+      (forum?.sectionScope || []).forEach((section) => {
+        const normalizedSection = String(section || '').trim();
+        if (normalizedSection) {
+          sections.add(normalizedSection);
+        }
+      });
+    });
+
+    return sections.size;
+  }, [forums]);
+
+  const forumCountDisplay = loadingForums ? '...' : String(forumCount);
+  const sectionCountDisplay = loadingForums ? '...' : String(sectionCount);
+
   return (
     <div className="container page-shell">
       <section className="landing-hero">
@@ -77,7 +96,7 @@ export default function Landing({ currentUser }) {
               Explore the Forum
             </Link>
             <Link to="/about" className="forum-secondary-btn text-decoration-none">
-              Meet the Leadership
+              Learn About Us
             </Link>
             {!currentUser && (
               <Link to="/login" className="landing-text-link text-decoration-none">
@@ -89,11 +108,11 @@ export default function Landing({ currentUser }) {
 
         <div className="landing-feature-panel">
           <div className="landing-stat-card">
-            <span className="landing-stat-value">2</span>
-            <span className="landing-stat-label">Core tracks</span>
+            <span className="landing-stat-value">{forumCountDisplay}</span>
+            <span className="landing-stat-label">Active forums</span>
           </div>
           <div className="landing-stat-card">
-            <span className="landing-stat-value">18+</span>
+            <span className="landing-stat-value">{sectionCountDisplay}</span>
             <span className="landing-stat-label">Forum sections</span>
           </div>
           <div className="landing-stat-card">

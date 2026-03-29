@@ -95,7 +95,16 @@ export default function AppRoutes() {
       <Header currentUser={auth.currentUser} forums={posts.forums} posts={posts.posts} onLogout={auth.logout} />
       <main className="app-main">
         <Routes>
-          <Route path="/" element={<Landing currentUser={auth.currentUser} />} />
+          <Route
+            path="/"
+            element={(
+              <Landing
+                currentUser={auth.currentUser}
+                forums={posts.forums}
+                loadingForums={posts.loadingForums}
+              />
+            )}
+          />
           <Route
             path="/explore"
             element={(
@@ -172,6 +181,9 @@ export default function AppRoutes() {
             )}
           />
           <Route path="/about" element={<About />} />
+          <Route path="/about/leadership" element={<About />} />
+          <Route path="/about/leadership/founder" element={<About />} />
+          <Route path="/about/leadership/team-members" element={<About />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/legal" element={<Legal />} />

@@ -136,7 +136,7 @@ const DIRECTION_CARDS = [
 const BENTO_SCROLL_CARDS = [
   {
     key: 'cardA',
-    image: `${process.env.PUBLIC_URL}/images/bento/1.jpg`,
+    image: `${process.env.PUBLIC_URL}/images/about-1.jpg`,
     alt: 'Monitor workspace',
     x: '-45vw',
     y: '-26vh',
@@ -146,7 +146,7 @@ const BENTO_SCROLL_CARDS = [
   },
   {
     key: 'cardB',
-    image: `${process.env.PUBLIC_URL}/images/bento/2.jpg`,
+    image: `${process.env.PUBLIC_URL}/images/about-2.jpg`,
     alt: 'Coffee shop conversation',
     x: '40vw',
     y: '-18vh',
@@ -156,7 +156,7 @@ const BENTO_SCROLL_CARDS = [
   },
   {
     key: 'cardC',
-    image: `${process.env.PUBLIC_URL}/images/bento/3.jpg`,
+    image: `${process.env.PUBLIC_URL}/images/about-3.jpg`,
     alt: 'Family cooking scene',
     x: '-38vw',
     y: '28vh',
@@ -166,7 +166,7 @@ const BENTO_SCROLL_CARDS = [
   },
   {
     key: 'cardD',
-    image: `${process.env.PUBLIC_URL}/images/bento/4.jpg`,
+    image: `${process.env.PUBLIC_URL}/images/about-4.jpg`,
     alt: 'Forum discussion UI',
     x: '42vw',
     y: '32vh',

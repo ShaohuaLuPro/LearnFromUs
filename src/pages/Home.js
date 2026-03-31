@@ -4,7 +4,6 @@ import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
 import { apiFollowForum, apiUnfollowForum } from '../api';
-import ForumSidebar from '../components/ForumSidebar';
 import Select from '../components/Select';
 import { authStorage } from '../lib/authStorage';
 import {
@@ -27,7 +26,6 @@ const codeLanguageOptions = codeLanguages.map((language) => ({
   value: language,
   label: language
 }));
-const FORUM_SIDEBAR_PREF_KEY = 'forum-workspace-collapsed';
 
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
@@ -54,34 +52,6 @@ function getScopedDefaultSection(forum, forums) {
   return getDefaultSectionValue(forum?.sectionScope || [], forums);
 }
 
-function normalizeSectionInput(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
-}
-
-function WorkspaceToggleIcon({ collapsed }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-      className="forum-workspace-toggle-icon"
-    >
-      <rect x="3.5" y="4.5" width="17" height="15" rx="3.5" className="forum-workspace-toggle-frame" />
-      <path d="M8 7.5v9" className="forum-workspace-toggle-divider" />
-      {collapsed ? (
-        <path d="M13.5 9.2 16.8 12l-3.3 2.8" className="forum-workspace-toggle-arrow" />
-      ) : (
-        <path d="M15.5 9.2 12.2 12l3.3 2.8" className="forum-workspace-toggle-arrow" />
-      )}
-    </svg>
-  );
-}
-
 export default function Home({
   posts,
   forums,
@@ -95,6 +65,7 @@ export default function Home({
   onUpdateForumSections,
   onOwnerRemovePost
 }) {
+  void onUpdateForumSections;
   const location = useLocation();
   const navigate = useNavigate();
   const { sectionId, forumSlug } = useParams();
@@ -117,22 +88,8 @@ export default function Home({
   );
   const selectedForumOption = selectedForum || null;
   const [sectionScopeCommitted, setSectionScopeCommitted] = useState([]);
-  const [sectionScopeDraft, setSectionScopeDraft] = useState([]);
-  const [sectionDraft, setSectionDraft] = useState('');
-  const [sectionUpdatePending, setSectionUpdatePending] = useState(false);
-  const [sectionNotice, setSectionNotice] = useState({ type: '', text: '' });
-  const [sectionEditMode, setSectionEditMode] = useState(false);
   const persistedSectionScope = useMemo(() => sectionScopeCommitted, [sectionScopeCommitted]);
-  const sectionDisplayScope = useMemo(() => {
-    if (!sectionEditMode) {
-      return persistedSectionScope;
-    }
-
-    return [
-      ...persistedSectionScope,
-      ...sectionScopeDraft.filter((value) => !persistedSectionScope.includes(value))
-    ];
-  }, [persistedSectionScope, sectionEditMode, sectionScopeDraft]);
+  const sectionDisplayScope = useMemo(() => persistedSectionScope, [persistedSectionScope]);
   const visibleSections = useMemo(() => getSectionOptions(sectionDisplayScope), [sectionDisplayScope]);
   const visibleSectionValues = useMemo(() => visibleSections.map((item) => item.value), [visibleSections]);
   const [form, setForm] = useState({
@@ -151,7 +108,6 @@ export default function Home({
   );
   const [composerLanguage, setComposerLanguage] = useState('javascript');
   const [followPending, setFollowPending] = useState(false);
-  const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(false);
 
   const forumDirectory = useMemo(() => buildForumDirectory(forums, posts), [forums, posts]);
 
@@ -271,22 +227,6 @@ export default function Home({
   }, [sortedComposerForums]);
 
   useEffect(() => {
-    const savedPreference = window.localStorage.getItem(FORUM_SIDEBAR_PREF_KEY);
-    if (savedPreference === '1') {
-      setIsWorkspaceCollapsed(true);
-      return;
-    }
-
-    if (window.matchMedia('(max-width: 1280px)').matches) {
-      setIsWorkspaceCollapsed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(FORUM_SIDEBAR_PREF_KEY, isWorkspaceCollapsed ? '1' : '0');
-  }, [isWorkspaceCollapsed]);
-
-  useEffect(() => {
     if (sectionId) {
       setSelectedSections([sectionId]);
       return;
@@ -365,10 +305,6 @@ export default function Home({
   useEffect(() => {
     const nextScope = selectedForum?.sectionScope || availableSectionValues;
     setSectionScopeCommitted(nextScope);
-    setSectionScopeDraft(nextScope);
-    setSectionDraft('');
-    setSectionEditMode(false);
-    setSectionNotice({ type: '', text: '' });
   }, [availableSectionValues, selectedForum?.id, selectedForum?.sectionScope]);
 
   useEffect(() => {
@@ -391,13 +327,6 @@ export default function Home({
   };
 
   const selectedForumPermissions = selectedForum?.currentUserPermissions || [];
-  const canManageForumSections = Boolean(
-    currentUser && selectedForum && (
-      currentUser.isAdmin
-      || selectedForum.ownerId === currentUser.id
-      || selectedForumPermissions.includes('manage_sections')
-    )
-  );
   const canViewForumFollowers = Boolean(
     currentUser && selectedForum && (
       currentUser.isAdmin
@@ -405,131 +334,6 @@ export default function Home({
       || selectedForumPermissions.includes('view_followers')
     )
   );
-
-  const mergeSectionIntoScope = useCallback((currentScope, sectionValue) => {
-    if (!sectionValue || currentScope.includes(sectionValue)) {
-      return currentScope;
-    }
-
-    const nextDraftValues = new Set([...currentScope, sectionValue]);
-    const nextPersistedValues = persistedSectionScope.filter((value) => nextDraftValues.has(value));
-    const nextCustomValues = currentScope.filter((value) => !persistedSectionScope.includes(value));
-
-    if (!persistedSectionScope.includes(sectionValue)) {
-      nextCustomValues.push(sectionValue);
-    }
-
-    return [...nextPersistedValues, ...nextCustomValues];
-  }, [persistedSectionScope]);
-
-  const restoreSectionIntoDraft = useCallback((sectionValue) => {
-    setSectionScopeDraft((current) => mergeSectionIntoScope(current, sectionValue));
-  }, [mergeSectionIntoScope]);
-
-  const sectionItems = useMemo(
-    () => visibleSections.map((item) => {
-      const isPersisted = persistedSectionScope.includes(item.value);
-      const isInDraft = sectionScopeDraft.includes(item.value);
-
-      return {
-        ...item,
-        isPendingRemoval: sectionEditMode && isPersisted && !isInDraft,
-        isPendingAdd: sectionEditMode && !isPersisted && isInDraft
-      };
-    }),
-    [persistedSectionScope, sectionEditMode, sectionScopeDraft, visibleSections]
-  );
-
-  const persistForumSections = async (nextSectionScope, successMessage) => {
-    if (!selectedForum?.id) {
-      return;
-    }
-
-    setSectionUpdatePending(true);
-    setSectionNotice({ type: '', text: '' });
-    const result = await onUpdateForumSections(selectedForum.id, nextSectionScope);
-    if (!result.ok) {
-      setSectionNotice({ type: 'error', text: result.message || 'Failed to update forum sections.' });
-      setSectionUpdatePending(false);
-      return;
-    }
-
-    setSectionScopeCommitted(nextSectionScope);
-    setSectionScopeDraft(nextSectionScope);
-    setSectionDraft('');
-    setSectionNotice({ type: 'success', text: successMessage });
-    setSectionEditMode(false);
-    setSectionUpdatePending(false);
-  };
-
-  const addForumSection = () => {
-    const normalizedSection = normalizeSectionInput(sectionDraft);
-    if (!normalizedSection) {
-      setSectionNotice({ type: 'error', text: 'Enter a section name first.' });
-      return;
-    }
-    if (sectionScopeDraft.includes(normalizedSection)) {
-      setSectionNotice({ type: 'error', text: 'That section already exists in this forum.' });
-      return;
-    }
-    if (persistedSectionScope.includes(normalizedSection)) {
-      restoreSectionIntoDraft(normalizedSection);
-      setSectionDraft('');
-      setSectionNotice({ type: '', text: '' });
-      return;
-    }
-
-    setSectionScopeDraft((current) => mergeSectionIntoScope(current, normalizedSection));
-    setSectionDraft('');
-    setSectionNotice({ type: '', text: '' });
-  };
-
-  const markSectionForRemoval = (sectionValue) => {
-    if (!sectionEditMode) {
-      return;
-    }
-
-    if (!sectionScopeDraft.includes(sectionValue)) {
-      restoreSectionIntoDraft(sectionValue);
-      setSectionNotice({ type: '', text: '' });
-      return;
-    }
-
-    if ((sectionScopeDraft || []).length <= 1) {
-      setSectionNotice({ type: 'error', text: 'A forum must keep at least one section.' });
-      return;
-    }
-
-    setSectionScopeDraft((current) => current.filter((value) => value !== sectionValue));
-    setSectionNotice({ type: '', text: '' });
-  };
-
-  const cancelSectionChanges = () => {
-    setSectionScopeDraft(selectedForum?.sectionScope || availableSectionValues);
-    setSectionDraft('');
-    setSectionEditMode(false);
-    setSectionNotice({ type: '', text: '' });
-  };
-
-  const saveSectionChanges = async () => {
-    const pendingSectionValue = normalizeSectionInput(sectionDraft);
-    if (sectionDraft.trim() && !pendingSectionValue) {
-      setSectionNotice({ type: 'error', text: 'Enter letters or numbers for the section name.' });
-      return;
-    }
-
-    const nextSectionScope = pendingSectionValue
-      ? mergeSectionIntoScope(sectionScopeDraft, pendingSectionValue)
-      : sectionScopeDraft;
-
-    if (JSON.stringify(nextSectionScope) === JSON.stringify(selectedForum?.sectionScope || [])) {
-      setSectionDraft('');
-      setSectionEditMode(false);
-      return;
-    }
-
-    await persistForumSections(nextSectionScope, 'Forum sections saved.');
-  };
 
   const isFollowingSelectedForum = Boolean(currentUser && selectedForum?.isFollowing);
 
@@ -698,36 +502,6 @@ export default function Home({
         </div>
       </section>
 
-      <div className={`forum-workspace-float ${isWorkspaceCollapsed ? 'is-collapsed' : ''}`.trim()}>
-        <div
-          id="forum-workspace-panel"
-          className={`forum-workspace-panel ${isWorkspaceCollapsed ? 'is-collapsed' : ''}`.trim()}
-        >
-          <div className={`forum-workspace-panel-bar ${isWorkspaceCollapsed ? 'is-collapsed' : ''}`.trim()}>
-            <button
-              type="button"
-              className="forum-workspace-toggle"
-              onClick={() => setIsWorkspaceCollapsed((current) => !current)}
-              aria-expanded={!isWorkspaceCollapsed}
-              aria-controls="forum-workspace-panel"
-              aria-label={isWorkspaceCollapsed ? 'Expand forum panel' : 'Collapse forum panel'}
-              title={isWorkspaceCollapsed ? 'Expand forum panel' : 'Collapse forum panel'}
-            >
-              <WorkspaceToggleIcon collapsed={isWorkspaceCollapsed} />
-            </button>
-          </div>
-          {!isWorkspaceCollapsed && (
-            <div className="forum-workspace-panel-body">
-              <ForumSidebar
-                currentUser={currentUser}
-                forums={forums}
-                currentForum={selectedForum}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
       <div className="forum-layout">
         <div className="forum-main forum-main-full">
           {!isAggregateView && (
@@ -745,7 +519,7 @@ export default function Home({
               <div className="section-grid">
                 <div className="section-card is-open">
                   <div className="section-chip-wrap">
-                    {sectionItems.map((item) => (
+                    {visibleSections.map((item) => (
                       <div
                         key={item.value}
                         className="section-chip-row"

@@ -34,8 +34,8 @@ export default function ForumRequestHistoryPage({ forumWorkspace }) {
             <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
               New Request
             </Link>
-            <Link to="/forum" className="forum-secondary-btn text-decoration-none">
-              Back to Forum
+            <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
+              Back to My Forums
             </Link>
           </div>
         </div>

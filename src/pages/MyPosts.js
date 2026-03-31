@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
@@ -88,14 +88,14 @@ export default function MyPosts({
   const [expandedPosts, setExpandedPosts] = useState({});
   const [showPreview, setShowPreview] = useState(false);
 
-  const loadPosts = async () => {
+  const loadPosts = useCallback(async () => {
     const result = await onGetMyPosts();
     if (!result.ok) {
       setError(result.message);
       return;
     }
     setMyPosts((result.posts || []).sort((a, b) => b.createdAt - a.createdAt));
-  };
+  }, [onGetMyPosts]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -127,7 +127,7 @@ export default function MyPosts({
     return getSectionSelectOptions(scopedSections?.length ? scopedSections : forums);
   }, [editingPost, forums]);
 
-  const startEdit = (post, options = {}) => {
+  const startEdit = useCallback((post, options = {}) => {
     rewriteAbortController?.abort();
     setRewriteAbortController(null);
     setEditingId(post.id);
@@ -144,7 +144,7 @@ export default function MyPosts({
     setShowPreview(false);
     setMessage('');
     setError('');
-  };
+  }, [forums, rewriteAbortController]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -164,7 +164,7 @@ export default function MyPosts({
     if (mode === 'ai-rewrite' && !aiRewriteOpen) {
       setAiRewriteOpen(true);
     }
-  }, [location.search, visiblePosts, editingId, aiRewriteOpen]);
+  }, [location.search, visiblePosts, editingId, aiRewriteOpen, startEdit]);
 
   const submitEdit = async (event) => {
     event.preventDefault();

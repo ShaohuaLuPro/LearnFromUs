@@ -8,6 +8,7 @@ import {
   apiTransferForumOwnership,
   apiUpsertForumManager
 } from '../api';
+import Select from '../components/Select';
 import { authStorage } from '../lib/authStorage';
 import { getSectionLabel } from '../lib/sections';
 
@@ -55,6 +56,7 @@ function scopesMatch(left = [], right = []) {
 
 export default function MyForums({ currentUser, forums = [], onLoadForums }) {
   const [selectedForumId, setSelectedForumId] = useState('');
+  const [forumSearchQuery, setForumSearchQuery] = useState('');
   const [accessByForumId, setAccessByForumId] = useState({});
   const [accessLoading, setAccessLoading] = useState(false);
   const [accessMessage, setAccessMessage] = useState('');
@@ -99,6 +101,39 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
     () => manageableForums.find((forum) => forum.id === selectedForumId) || null,
     [manageableForums, selectedForumId]
   );
+
+  const filteredManageableForums = useMemo(() => {
+    const query = forumSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return manageableForums;
+    }
+
+    return manageableForums.filter((forum) => {
+      const sectionText = (forum.sectionScope || []).map((section) => getSectionLabel(section)).join(' ');
+      return [
+        forum.name,
+        forum.description,
+        forum.isOwner ? 'owner' : 'manager',
+        sectionText
+      ].some((value) => String(value || '').toLowerCase().includes(query));
+    });
+  }, [forumSearchQuery, manageableForums]);
+
+  const forumSelectOptions = useMemo(() => {
+    const options = filteredManageableForums.map((forum) => ({
+      value: forum.id,
+      label: forum.name
+    }));
+
+    if (selectedForum && !options.some((option) => option.value === selectedForum.id)) {
+      options.unshift({
+        value: selectedForum.id,
+        label: selectedForum.name
+      });
+    }
+
+    return options;
+  }, [filteredManageableForums, selectedForum]);
 
   const selectedAccess = selectedForumId ? accessByForumId[selectedForumId] || null : null;
   const activeForum = selectedAccess?.forum || selectedForum;
@@ -418,9 +453,14 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
               Manage forums you own or help run. You can assign focused permissions instead of giving everyone full control.
             </p>
           </div>
-          <Link to="/forum" className="forum-secondary-btn text-decoration-none">
-            Back to Forum
-          </Link>
+          <div className="forum-actions">
+            <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
+              Apply for a Forum
+            </Link>
+            <Link to="/forum" className="forum-secondary-btn text-decoration-none">
+              Back to Forum
+            </Link>
+          </div>
         </div>
 
         {actionError && <div className="settings-alert is-error mb-3">{actionError}</div>}
@@ -437,7 +477,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                 {inviteInboxLoading ? 'Manager Invitations' : `Manager Invitations${incomingInvites.length > 0 ? ` (${incomingInvites.length})` : ''}`}
               </Link>
               <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
-                Create Forum
+                Apply for a Forum
               </Link>
             </div>
           </section>
@@ -463,7 +503,75 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                 </span>
               </Link>
 
-              {manageableForums.map((forum) => {
+              <section className="forum-admin-panel forum-admin-selector-card">
+                <div className="forum-admin-panel-head">
+                  <div>
+                    <h5 className="mb-1">Owned or Managed Forums</h5>
+                    <p className="muted mb-0">Search first, then choose a forum from the dropdown.</p>
+                  </div>
+                </div>
+
+                <div className="forum-admin-selector-tools">
+                  <label className="w-100">
+                    <span className="form-label">Search</span>
+                    <input
+                      className="form-control forum-input"
+                      value={forumSearchQuery}
+                      onChange={(event) => setForumSearchQuery(event.target.value)}
+                      placeholder="Search by forum name, role, or section"
+                    />
+                  </label>
+
+                  <label className="w-100">
+                    <span className="form-label">Forum</span>
+                    <Select
+                      options={forumSelectOptions}
+                      value={selectedForumId}
+                      onChange={setSelectedForumId}
+                      placeholder={forumSelectOptions.length ? 'Choose a forum' : 'No matching forums'}
+                      disabled={forumSelectOptions.length === 0}
+                    />
+                  </label>
+                </div>
+
+                <div className="forum-admin-selector-status">
+                  <span className="muted">
+                    {filteredManageableForums.length} match{filteredManageableForums.length === 1 ? '' : 'es'}
+                  </span>
+                  {forumSearchQuery.trim() && (
+                    <button
+                      type="button"
+                      className="forum-secondary-btn"
+                      onClick={() => setForumSearchQuery('')}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {selectedForum && (
+                  <div className="forum-admin-current-card">
+                    <div className="forum-follow-card-topline">
+                      <span className="forum-tag">{selectedForum.isOwner ? 'Owner' : 'Manager'}</span>
+                      <span className="muted">{selectedForum.followerCount ?? 0} followers</span>
+                    </div>
+                    <strong>{selectedForum.name}</strong>
+                    <p className="muted mb-0">{selectedForum.description || 'Manage this forum from here.'}</p>
+                    <span className="forum-follow-meta">
+                      {(selectedForum.sectionScope || []).slice(0, 4).map((section) => getSectionLabel(section)).join(' / ') || 'No sections'}
+                    </span>
+                    <span className="forum-follow-meta">
+                      {selectedForum.isOwner
+                        ? 'Owner'
+                        : currentUser?.isAdmin
+                          ? 'Site admin'
+                          : `${(selectedForum.currentUserPermissions || []).length} permissions`}
+                    </span>
+                  </div>
+                )}
+              </section>
+
+              {false && manageableForums.map((forum) => {
                 const isActive = forum.id === selectedForumId;
                 const forumPermissionSummary = forum.isOwner
                   ? 'Owner'

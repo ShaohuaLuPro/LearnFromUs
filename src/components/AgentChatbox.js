@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getSectionLabel } from '../lib/sections';
 
@@ -32,14 +32,14 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
         'draft a post about password reset',
         'find posts about analytics'
       ];
-  const buildWelcomeMessage = () => ({
+  const buildWelcomeMessage = useCallback(() => ({
     id: 'welcome',
     role: 'agent',
     reply: currentUser
       ? 'Ask me to navigate the site, recommend posts to learn a topic, surface active authors, draft a post in your style, or draft a new forum request.'
       : 'Ask me to navigate the site, recommend posts to learn a topic, surface active authors, draft a post, or draft a new forum request.',
     quickActions: ['search-posts', 'show-trending', 'draft-post']
-  });
+  }), [currentUser]);
   const [messages, setMessages] = useState([buildWelcomeMessage()]);
   const [loading, setLoading] = useState(false);
 
@@ -50,7 +50,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
       }
       return [buildWelcomeMessage()];
     });
-  }, [currentUser]);
+  }, [buildWelcomeMessage]);
 
   useEffect(() => {
     if (!isOpen || !threadRef.current) {

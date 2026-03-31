@@ -225,8 +225,8 @@ export default function ForumRequestPage({
             <Link to="/forums/request/history" className="forum-primary-btn text-decoration-none">
               Request History
             </Link>
-            <Link to="/forum" className="forum-secondary-btn text-decoration-none">
-              Back to Forum
+            <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
+              Back to My Forums
             </Link>
           </div>
         </div>

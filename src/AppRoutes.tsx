@@ -7,6 +7,7 @@ import RouteSeo from './components/RouteSeo';
 import { useAuth } from './context/AuthContext';
 import { usePosts } from './context/PostsContext';
 import About from './pages/About';
+import OriginPurpose from './pages/OriginPurpose';
 import AdminAccess from './pages/AdminAccess';
 import AdminAccessDetail from './pages/AdminAccessDetail';
 import AdminPasswordReset from './pages/AdminPasswordReset';
@@ -181,9 +182,11 @@ export default function AppRoutes() {
             )}
           />
           <Route path="/about" element={<About />} />
+          <Route path="/about/why-we-exist" element={<About />} />
           <Route path="/about/leadership" element={<About />} />
           <Route path="/about/leadership/founder" element={<About />} />
           <Route path="/about/leadership/team-members" element={<About />} />
+          <Route path="/origin-purpose" element={<OriginPurpose />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/legal" element={<Legal />} />

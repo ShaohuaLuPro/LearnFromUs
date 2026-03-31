@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 const SECTION_CONTENT = {
   story: {
@@ -102,14 +104,82 @@ const SECTION_CONTENT = {
 
 const SECTION_ROUTES = {
   story: '/about',
+  whyWeExist: '/about/why-we-exist',
   leadership: '/about/leadership',
   founder: '/about/leadership/founder',
   teamMembers: '/about/leadership/team-members'
 };
+const DIRECTION_CARDS = [
+  {
+    key: 'experience',
+    icon: 'lightning',
+    title: 'EXPERIENCE BEATS OPINIONS.',
+    copy: 'Real delivery notes beat vague takes. Constraints, tradeoffs, and outcomes create reusable learning.',
+    tags: []
+  },
+  {
+    key: 'execution',
+    icon: 'check',
+    title: 'VISIBLE EXECUTION.',
+    copy: 'Milestones, commits, and clear updates make progress visible and collaboration measurable.',
+    tags: []
+  },
+  {
+    key: 'compounding',
+    icon: 'folder',
+    title: 'KNOWLEDGE COMPOUNDING.',
+    copy: 'Useful patterns stack across domains and become faster to apply with context.',
+    tags: ['Software', 'Fitness', 'Everyday Life']
+  }
+];
+
+const BENTO_SCROLL_CARDS = [
+  {
+    key: 'cardA',
+    image: `${process.env.PUBLIC_URL}/images/bento/1.jpg`,
+    alt: 'Monitor workspace',
+    x: '-45vw',
+    y: '-26vh',
+    rotate: -10,
+    scale: 1.2,
+    depth: 1.3
+  },
+  {
+    key: 'cardB',
+    image: `${process.env.PUBLIC_URL}/images/bento/2.jpg`,
+    alt: 'Coffee shop conversation',
+    x: '40vw',
+    y: '-18vh',
+    rotate: 10,
+    scale: 1.15,
+    depth: 1.15
+  },
+  {
+    key: 'cardC',
+    image: `${process.env.PUBLIC_URL}/images/bento/3.jpg`,
+    alt: 'Family cooking scene',
+    x: '-38vw',
+    y: '28vh',
+    rotate: -8,
+    scale: 1.1,
+    depth: 1.05
+  },
+  {
+    key: 'cardD',
+    image: `${process.env.PUBLIC_URL}/images/bento/4.jpg`,
+    alt: 'Forum discussion UI',
+    x: '42vw',
+    y: '32vh',
+    rotate: 8,
+    scale: 1.2,
+    depth: 1.25
+  }
+];
 
 export default function About() {
   const location = useLocation();
   const navigate = useNavigate();
+  const bentoScrollRef = useRef(null);
   const normalizedPath = useMemo(() => {
     const pathname = location.pathname.replace(/\/+$/, '');
     return pathname || '/';
@@ -126,6 +196,9 @@ export default function About() {
   }, [location.search, navigate]);
 
   const activeSection = useMemo(() => {
+    if (normalizedPath === SECTION_ROUTES.whyWeExist) {
+      return 'whyWeExist';
+    }
     if (normalizedPath === SECTION_ROUTES.leadership) {
       return 'leadership';
     }
@@ -137,6 +210,63 @@ export default function About() {
     }
     return 'story';
   }, [normalizedPath]);
+
+  useEffect(() => {
+    if (activeSection !== 'story' || !bentoScrollRef.current) {
+      return;
+    }
+
+    gsap.registerPlugin(ScrollTrigger);
+
+    const ctx = gsap.context(() => {
+      const cards = gsap.utils.toArray('.about-bento-scroll-card');
+      const loops = cards.map((card) => {
+        const depth = Number(card.dataset.depth || 1);
+        const init = {
+          xPercent: -50,
+          yPercent: -50,
+          x: card.dataset.x || 0,
+          y: card.dataset.y || 0,
+          rotate: Number(card.dataset.rotate || 0),
+          scale: Number(card.dataset.scale || 1),
+          opacity: 0.96,
+          filter: 'blur(0px) brightness(1)',
+          zIndex: Math.round(depth * 10),
+          force3D: true
+        };
+        const centerScale = 0.78 + Math.max(0, 1.1 - depth) * 0.12;
+        const duration = Math.max(0.5, 1.1 + depth * 0.2 + 2.1);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.5, paused: true });
+        tl.set(card, init);
+        tl.to(card, {
+          ...init,
+          x: 0,
+          y: 0,
+          rotate: 0,
+          scale: centerScale,
+          opacity: 0,
+          filter: 'blur(6px) brightness(0.82)',
+          duration,
+          ease: 'power2.inOut'
+        });
+        tl.set(card, init);
+        return tl;
+      });
+
+      ScrollTrigger.create({
+        trigger: '.about-bento-scroll-section',
+        start: 'top center',
+        end: 'bottom center',
+        once: false,
+        onEnter: () => loops.forEach((tl) => tl.restart().play()),
+        onLeave: () => loops.forEach((tl) => tl.pause(0)),
+        onEnterBack: () => loops.forEach((tl) => tl.restart().play()),
+        onLeaveBack: () => loops.forEach((tl) => tl.pause(0))
+      });
+    }, bentoScrollRef);
+
+    return () => ctx.revert();
+  }, [activeSection]);
   const section = useMemo(() => SECTION_CONTENT[activeSection], [activeSection]);
   const setActiveSection = (nextSection) => {
     navigate(SECTION_ROUTES[nextSection] || SECTION_ROUTES.story);
@@ -162,129 +292,125 @@ export default function About() {
         {activeSection === 'story' ? (
           <div className="col-lg-12">
             <section className="panel about-story-panel h-100">
-              <section className="about-story-hero" aria-label="Story hero">
+              <section className="about-story-hero about-story-hero-v2" aria-label="Story hero">
                 <p className="about-story-hero-eyebrow">A Forum For Doers</p>
                 <h2 className="about-story-hero-title mb-0">
-                  <span className="about-story-hero-title-main">Most platforms are full of opinions.</span>
+                  <span className="about-story-hero-title-main">OPINIONS ARE CHEAP.</span>
                   <span className="about-story-hero-title-em">
-                    Very few show <span className="about-word-bounce about-word-bounce-delay-0">real</span>{' '}
-                    <span className="about-word-bounce about-word-bounce-delay-1">execution</span>.
+                    REAL EXECUTION IS RARE.
+                    <br />
+                    JOIN THE EXECUTORS.
                   </span>
                 </h2>
               </section>
 
-              {section.blocks.map((block, idx) => (
-                <div
-                  key={block.kicker}
-                  className={`about-story-block ${idx === section.blocks.length - 1 ? 'is-last' : ''} ${
-                    block.kicker === 'Why This Exists' ? 'no-divider' : ''
-                  }`}
-                >
-                  <p
-                    className={`about-story-kicker ${
-                      highlightedLabels.has(block.kicker)
-                        ? 'about-story-kicker-highlight'
-                        : ''
-                    } ${
-                      largeKickers.has(block.kicker)
-                        ? 'about-story-kicker-xl'
-                        : ''
-                    }`}
-                  >
-                    {block.kicker}
-                  </p>
-                  {['Why This Exists', 'Long-Term Direction'].includes(block.kicker) ? null : (
-                    <h3
-                      className={`about-story-title ${
-                        block.kicker === 'Long-Term Direction' ? 'about-story-title-why' : ''
-                      }`}
-                    >
-                      {block.title}
-                    </h3>
-                  )}
-                  <p
-                    className={`about-story-copy mb-0 ${
-                      ['Why This Exists', 'Long-Term Direction'].includes(block.kicker)
-                        ? 'about-story-copy-highlight'
-                        : ''
-                    }`}
-                  >
-                    {block.kicker === 'Why This Exists' ? (
-                      <>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-1">
-                          LearnFromUs began as a platform for deep, meaningful discussions - built for people who
-                          expect more than surface-level content. It was designed as a space where ideas are explored
-                          with clarity, and knowledge is built through thoughtful exchange rather than quick takes.
-                        </span>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-2">
-                          From the beginning, Shaohua&apos;s vision centered on ownership. Not just participation, but
-                          true control - giving users the ability to create, lead, and shape their own communities. The
-                          goal was to move beyond passive consumption and toward active contribution, where individuals
-                          don&apos;t just follow conversations, but define them.
-                        </span>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
-                          As the platform evolved, Ben joined and helped expand that vision. Living in Boston - a city
-                          defined by its academic depth and culture of learning - brought a new perspective. It
-                          reinforced the belief that meaningful knowledge is not accidental. It is built, tested, and
-                          refined over time, through real experience and shared insight.
-                        </span>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
-                          The mission grew from building a discussion platform into something more deliberate: a place
-                          where knowledge compounds, where signal rises above noise, and where people are encouraged to
-                          contribute what they&apos;ve actually learned through doing.
-                        </span>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
-                          Today, we focus on one thing:
-                        </span>
-                        <span className="about-longterm-stair-line about-longterm-stair-line-3">
-                          Building a space where real experience is shared, trusted, and continuously refined.
-                        </span>
-                      </>
-                    ) : block.kicker === 'Long-Term Direction' ? (
-                      <>
-                        <div className="about-longterm-cards">
-                          <article className="about-longterm-card">
-                            <span className="about-longterm-icon" aria-hidden="true">
-                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                                <path d="M13.5 2 5 13h6l-1 9 9-12h-6l.5-8z" />
-                              </svg>
-                            </span>
-                            <h4 className="about-longterm-card-title">Real experience beats opinions</h4>
-                          </article>
-                          <article className="about-longterm-card">
-                            <span className="about-longterm-icon" aria-hidden="true">
-                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                                <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
-                                <path d="m8 12 2.6 2.6L16 9.2" />
-                              </svg>
-                            </span>
-                            <h4 className="about-longterm-card-title">Execution is visible</h4>
-                          </article>
-                          <article className="about-longterm-card">
-                            <span className="about-longterm-icon" aria-hidden="true">
-                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                                <path d="m12 3 8.5 4.9L12 12.8 3.5 7.9 12 3z" />
-                                <path d="m3.5 12.5 8.5 4.9 8.5-4.9" />
-                              </svg>
-                            </span>
-                            <p className="about-longterm-card-copy mb-0">
-                              Useful knowledge compounds - across software, fitness, and everyday life.
-                            </p>
-                          </article>
-                        </div>
-                        <Link
-                          to={SECTION_ROUTES.leadership}
-                          className="founder-link-pill is-bright d-inline-flex mt-4 text-decoration-none"
-                        >
-                          Meet Our Leadership
-                        </Link>
-                      </>
-                    ) : (
-                      block.copy
-                    )}
-                  </p>
+              <section className="about-bento-scroll-section" ref={bentoScrollRef} aria-label="Bento scroll hero">
+                <div className="about-bento-scroll-pin">
+                  <div className="about-bento-scroll-stage">
+                    <div className="about-bento-scroll-copy">
+                      <h3 className="about-bento-scroll-title mb-2">Why We Exist</h3>
+                      <p className="about-bento-scroll-subtitle mb-2">
+                        Our Origin & Purpose: Built to turn shared knowledge into visible execution. View the full
+                        story of how LearnFromUs evolved from Shaohua&apos;s original vision into the collaborative,
+                        execution-focused space it is today.
+                      </p>
+                      <Link to="/origin-purpose" className="about-bento-scroll-link text-decoration-none">
+                        Enter
+                      </Link>
+                    </div>
+
+                    {BENTO_SCROLL_CARDS.map((card) => (
+                      <article
+                        key={card.key}
+                        className={`about-bento-scroll-card about-bento-scroll-card-${card.key}`}
+                        data-x={card.x}
+                        data-y={card.y}
+                        data-rotate={card.rotate}
+                        data-scale={card.scale}
+                        data-depth={card.depth}
+                      >
+                        <img src={card.image} alt={card.alt} className="about-bento-scroll-image" />
+                      </article>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              </section>
+
+              <section className="about-leadership-cta">
+                <div className="about-leadership-cta-glass">
+                  <p className="about-story-copy mb-0">
+                    Meet the people shaping LearnFromUs with long-term product and engineering ownership.
+                  </p>
+                  <Link
+                    to={SECTION_ROUTES.leadership}
+                    className="founder-link-pill is-bright d-inline-flex text-decoration-none"
+                  >
+                    Meet Our Leadership
+                  </Link>
+                </div>
+              </section>
+
+              <section className="about-direction-section">
+                <header className="about-section-head">
+                  <p className="about-story-kicker about-story-kicker-highlight mb-2">Long-Term Direction</p>
+                </header>
+
+                <div className="about-longterm-cards">
+                  {DIRECTION_CARDS.map((card) => (
+                    <article key={card.key} className={`about-longterm-card about-longterm-card-${card.key}`}>
+                      <span className="about-longterm-icon-shell" aria-hidden="true">
+                        {card.icon === 'lightning' ? (
+                          <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                            <path d="M13.5 2 5 13h6l-1 9 9-12h-6l.5-8z" />
+                          </svg>
+                        ) : null}
+                        {card.icon === 'check' ? (
+                          <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                            <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
+                            <path d="m8 12 2.6 2.6L16 9.2" />
+                          </svg>
+                        ) : null}
+                        {card.icon === 'folder' ? (
+                          <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                            <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l1.7 2h6.8A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
+                          </svg>
+                        ) : null}
+                      </span>
+                      <h4 className="about-longterm-card-title">{card.title}</h4>
+                      <p className="about-longterm-card-copy mb-0">{card.copy}</p>
+                      {card.tags.length ? (
+                        <div className="about-longterm-tags">
+                          {card.tags.map((tag) => (
+                            <span key={tag} className="about-longterm-tag">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </section>
+          </div>
+        ) : activeSection === 'whyWeExist' ? (
+          <div className="col-lg-12">
+            <section className="panel about-story-panel h-100">
+              <header className="leadership-hero">
+                <Link
+                  to={SECTION_ROUTES.story}
+                  className="about-back-link text-decoration-none"
+                  aria-label="Back to About"
+                >
+                  <span className="about-back-link-icon" aria-hidden="true">←</span>
+                  <span className="about-back-link-text">Back</span>
+                </Link>
+                <h2 className="leadership-hero-title mb-0">Why We Exist</h2>
+              </header>
+
+              <div className="about-why-exit-panel">
+                <p className="about-story-copy mb-0">hello everyone，lalala</p>
+              </div>
             </section>
           </div>
         ) : activeSection === 'leadership' ? (

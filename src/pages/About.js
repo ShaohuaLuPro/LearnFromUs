@@ -295,11 +295,10 @@ export default function About() {
               <section className="about-story-hero about-story-hero-v2" aria-label="Story hero">
                 <p className="about-story-hero-eyebrow">A Forum For Doers</p>
                 <h2 className="about-story-hero-title mb-0">
-                  <span className="about-story-hero-title-main">OPINIONS ARE CHEAP.</span>
+                  <span className="about-story-hero-title-main">OPINIONS ARE CHEAP</span>
                   <span className="about-story-hero-title-em">
-                    REAL EXECUTION IS RARE.
-                    <br />
-                    JOIN THE EXECUTORS.
+                    <span className="about-story-hero-title-em-small">REAL EXECUTION IS RARE</span>
+                    <span className="about-story-hero-title-main about-story-hero-title-main-late">JOIN THE EXECUTORS</span>
                   </span>
                 </h2>
               </section>
@@ -310,9 +309,14 @@ export default function About() {
                     <div className="about-bento-scroll-copy">
                       <h3 className="about-bento-scroll-title mb-2">Why We Exist</h3>
                       <p className="about-bento-scroll-subtitle mb-2">
-                        Our Origin & Purpose: Built to turn shared knowledge into visible execution. View the full
-                        story of how LearnFromUs evolved from Shaohua&apos;s original vision into the collaborative,
-                        execution-focused space it is today.
+                        Ideas don&apos;t change the present — action does.
+                      </p>
+                      <p className="about-bento-scroll-subtitle mb-2">
+                        We built LearnFromUs to turn shared knowledge into real execution.
+                      </p>
+                      <p className="about-bento-scroll-subtitle mb-2">
+                        From one person&apos;s vision to a growing community — this is a place where you don&apos;t
+                        just learn, you do.
                       </p>
                       <Link to="/origin-purpose" className="about-bento-scroll-link text-decoration-none">
                         Enter
@@ -338,12 +342,16 @@ export default function About() {
 
               <section className="about-leadership-cta">
                 <div className="about-leadership-cta-glass">
-                  <p className="about-story-copy mb-0">
-                    Meet the people shaping LearnFromUs with long-term product and engineering ownership.
+                  <p className="about-bento-scroll-subtitle mb-2">
+                    LearnFromUs grew from a single vision into a space where you can learn, execute, and grow
+                    alongside others.
+                  </p>
+                  <p className="about-bento-scroll-subtitle mb-0">
+                    We want you to know us — and we&apos;d love to hear from you too.
                   </p>
                   <Link
                     to={SECTION_ROUTES.leadership}
-                    className="founder-link-pill is-bright d-inline-flex text-decoration-none"
+                    className="about-bento-scroll-link d-inline-flex text-decoration-none"
                   >
                     Meet Our Leadership
                   </Link>
@@ -351,8 +359,8 @@ export default function About() {
               </section>
 
               <section className="about-direction-section">
-                <header className="about-section-head">
-                  <p className="about-story-kicker about-story-kicker-highlight mb-2">Long-Term Direction</p>
+                <header className="about-section-head text-center pt-2">
+                  <h3 className="about-bento-scroll-title mb-2">Long-Term Direction</h3>
                 </header>
 
                 <div className="about-longterm-cards">
@@ -415,16 +423,8 @@ export default function About() {
           </div>
         ) : activeSection === 'leadership' ? (
           <div className="col-lg-12">
-            <section className="panel leadership-panel h-100">
+            <section className="leadership-panel h-100">
               <header className="leadership-hero">
-                <Link
-                  to={SECTION_ROUTES.story}
-                  className="about-back-link text-decoration-none"
-                  aria-label="Back to About"
-                >
-                  <span className="about-back-link-icon" aria-hidden="true">←</span>
-                  <span className="about-back-link-text">Back</span>
-                </Link>
                 <h2 className="leadership-hero-title mb-0">{section.heroTitle}</h2>
                 {section.heroCopy ? <p className="leadership-hero-copy mb-0">{section.heroCopy}</p> : null}
               </header>
@@ -457,6 +457,17 @@ export default function About() {
                     </div>
                   </article>
                 ))}
+              </div>
+
+              <div className="founder-link-row mt-3">
+                <Link
+                  to={SECTION_ROUTES.story}
+                  className="about-back-link text-decoration-none"
+                  aria-label="Back to About"
+                >
+                  <span className="about-back-link-icon" aria-hidden="true">←</span>
+                  <span className="about-back-link-text">Back</span>
+                </Link>
               </div>
             </section>
           </div>

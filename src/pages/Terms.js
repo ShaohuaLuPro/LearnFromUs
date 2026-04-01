@@ -1,48 +1,61 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 
 export default function Terms() {
   return (
     <div className="container page-shell">
-      <section className="panel">
-        <p className="type-kicker mb-2">Terms</p>
-        <h1 className="type-title-md mb-3">Terms of Use</h1>
-        <p className="type-body mb-3">Last updated: March 27, 2026</p>
-
-        <h2 className="type-title-sm mb-2">1. Platform Purpose</h2>
-        <p className="type-body mb-3">
-          LearnFromUs is a community for practical knowledge-sharing. Members can publish posts, join forums,
-          follow builders, and discuss implementation across software, AI, and everyday skill domains.
+      <section className="panel terms-page">
+        <p className="type-kicker terms-page-kicker mb-2">Terms</p>
+        <p className="type-body mb-3">Last updated: March 2026</p>
+        <p className="type-body mb-4">
+          Welcome to LearnFromUs. This is a space built on shared knowledge, honest execution, and mutual respect.
+          By joining our community, you agree to the following terms.
         </p>
 
-        <h2 className="type-title-sm mb-2">2. Accounts and Access</h2>
+        <h2 className="type-title-sm mb-2">1. Be Respectful</h2>
         <p className="type-body mb-3">
-          You are responsible for your account activity. Some features require login, including posting, following,
-          and requesting forum actions. Administrative tools are permission-gated.
+          Treat every member with respect. Healthy debate is encouraged — personal attacks, harassment, or
+          discriminatory language of any kind will not be tolerated.
         </p>
 
-        <h2 className="type-title-sm mb-2">3. Community Content Rules</h2>
+        <h2 className="type-title-sm mb-2">2. Post with Purpose</h2>
         <p className="type-body mb-3">
-          Keep content constructive, lawful, and relevant to forum topics. Do not post harmful, abusive, or
-          intentionally misleading material. Moderators and authorized admins may review and take action on content
-          when needed.
+          Share content that adds value. Spam, self-promotion without contribution, and off-topic posts may be removed
+          at the discretion of our moderators.
         </p>
 
-        <h2 className="type-title-sm mb-2">4. User Content and Responsibility</h2>
+        <h2 className="type-title-sm mb-2">3. Give Honest Feedback</h2>
         <p className="type-body mb-3">
-          You keep ownership of content you submit, but you grant LearnFromUs permission to host, display, and process
-          it for platform operation. You are responsible for ensuring your content does not violate others&apos; rights.
+          When leaving comments or reviews on others&apos; work, be constructive. Feedback should help people grow
+          — not tear them down.
         </p>
 
-        <h2 className="type-title-sm mb-2">5. Product Changes</h2>
+        <h2 className="type-title-sm mb-2">4. Respect Privacy in Direct Messages</h2>
         <p className="type-body mb-3">
-          Features, route access, and moderation flows may evolve over time. We may update or remove parts of the
-          service to keep quality, safety, and reliability aligned with community needs.
+          Private conversations stay private. Screenshots or sharing of DMs without consent is a violation of
+          community trust and may result in account suspension.
         </p>
 
-        <h2 className="type-title-sm mb-2">6. Contact and Support</h2>
+        <h2 className="type-title-sm mb-2">5. Share Responsibly</h2>
+        <p className="type-body mb-3">
+          When sharing resources or files, ensure you have the right to share them. Do not upload copyrighted
+          material without permission.
+        </p>
+
+        <h2 className="type-title-sm mb-2">6. No Misinformation</h2>
+        <p className="type-body mb-3">
+          Share what you know — but be honest about what you don&apos;t. Deliberately spreading false information
+          undermines the trust this community is built on.
+        </p>
+
+        <h2 className="type-title-sm mb-2">7. Consequences</h2>
+        <p className="type-body mb-4">
+          Violations of these terms may result in content removal, temporary suspension, or permanent ban, depending
+          on severity.
+        </p>
+
         <p className="type-body mb-0">
-          For account or policy questions, use the <Link to="/forums/request">Support request page</Link>.
+          LearnFromUs reserves the right to update these terms at any time. Continued use of the platform constitutes
+          acceptance of any changes.
         </p>
       </section>
     </div>

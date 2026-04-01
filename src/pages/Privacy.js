@@ -3,45 +3,70 @@ import React from 'react';
 export default function Privacy() {
   return (
     <div className="container page-shell">
-      <section className="panel">
-        <p className="type-kicker mb-2">Privacy</p>
-        <h1 className="type-title-md mb-3">Privacy Notice</h1>
-        <p className="type-body mb-3">Last updated: March 27, 2026</p>
+      <section className="panel terms-page">
+        <p className="type-kicker privacy-page-kicker mb-2">Privacy</p>
+        <p className="type-body mb-3">Last updated: March 2026</p>
+        <p className="type-body mb-4">
+          At LearnFromUs, your privacy matters. This policy explains what data we collect, how we use it, and how we
+          protect it.
+        </p>
 
         <h2 className="type-title-sm mb-2">1. What We Collect</h2>
         <p className="type-body mb-3">
-          We collect account profile information, forum and post activity, and moderation or request workflow data
-          needed to operate LearnFromUs.
+          When you join LearnFromUs, we may collect the following:
         </p>
-
-        <h2 className="type-title-sm mb-2">2. How Data Is Used</h2>
         <p className="type-body mb-3">
-          Data is used to provide core features such as publishing posts, following creators, forum management,
-          moderation review, and account security.
+          Name — to personalize your experience
+          <br />
+          Email address — to manage your account and send notifications
+          <br />
+          Profile information &amp; avatar — to build your community presence
+          <br />
+          Usage data — including how you interact with the platform, pages visited, and features used
         </p>
 
-        <h2 className="type-title-sm mb-2">3. AI-Assisted Features</h2>
+        <h2 className="type-title-sm mb-2">2. How We Use Your Data</h2>
         <p className="type-body mb-3">
-          Some workflows may offer AI-assisted draft improvements. Inputs are processed for feature functionality and
-          quality improvement within the product experience.
+          We use your information to:
         </p>
-
-        <h2 className="type-title-sm mb-2">4. Access and Retention</h2>
         <p className="type-body mb-3">
-          Access to sensitive operations is role-based (for example, moderation or admin tools). Data is retained as
-          required to run platform features and maintain safety logs.
+          Send platform updates, announcements, and relevant notifications
+          <br />
+          Improve the overall experience and functionality of LearnFromUs
+          <br />
+          Analyze platform usage through third-party analytics tools (e.g. Google Analytics or similar)
         </p>
+        <p className="type-body mb-3">We do not sell or share your personal data with third parties for marketing purposes.</p>
 
-        <h2 className="type-title-sm mb-2">5. Your Controls</h2>
+        <h2 className="type-title-sm mb-2">3. Third-Party Tools</h2>
         <p className="type-body mb-3">
-          You can update profile details, update credentials, and request account deletion through account settings,
-          where available in-app.
+          We may use trusted third-party analytics tools to understand how our community uses the platform. These
+          tools may collect anonymized usage data. They are bound by their own privacy policies and do not have access
+          to your personal identifiable information beyond what is necessary.
         </p>
 
-        <h2 className="type-title-sm mb-2">6. Updates to This Notice</h2>
+        <h2 className="type-title-sm mb-2">4. Your Rights</h2>
+        <p className="type-body mb-3">
+          You have the right to:
+        </p>
+        <p className="type-body mb-3">
+          Access the personal data we hold about you
+          <br />
+          Request correction or deletion of your data
+          <br />
+          Opt out of non-essential communications at any time
+        </p>
+
+        <h2 className="type-title-sm mb-2">5. Data Security</h2>
+        <p className="type-body mb-3">
+          We take reasonable measures to protect your information. However, no platform can guarantee absolute
+          security. Please use a strong password and keep your account credentials safe.
+        </p>
+
+        <h2 className="type-title-sm mb-2">6. Changes to This Policy</h2>
         <p className="type-body mb-0">
-          We may revise this page when product behavior changes. Continued use after updates means you acknowledge the
-          revised privacy notice.
+          We may update this Privacy Policy from time to time. We&apos;ll notify you of significant changes via email
+          or platform announcement.
         </p>
       </section>
     </div>

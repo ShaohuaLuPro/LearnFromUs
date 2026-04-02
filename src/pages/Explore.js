@@ -1,69 +1,14 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import ForumSectionPills from '../components/ForumSectionPills';
 import { buildForumDirectory, sortByPopularity, sortByRecentActivity } from '../lib/forumInsights';
-import { getSectionLabel } from '../lib/sections';
-
-const OVERVIEW_SLOT_COUNT = 4;
-
-function buildOverviewSlots(forums, placeholderTitle, placeholderCopy) {
-  const slots = [...forums];
-  while (slots.length < OVERVIEW_SLOT_COUNT) {
-    slots.push({
-      id: `placeholder-${placeholderTitle}-${slots.length}`,
-      isPlaceholder: true,
-      placeholderTitle,
-      placeholderCopy
-    });
-  }
-  return slots;
-}
-
-function ForumOverviewColumn({ title, description, forums, placeholderTitle, placeholderCopy }) {
-  const overviewSlots = buildOverviewSlots(forums, placeholderTitle, placeholderCopy);
-
-  return (
-    <section className="forum-overview-column">
-      <div className="forum-overview-head">
-        <h4 className="mb-1 type-title-sm">{title}</h4>
-        <p className="muted mb-0">{description}</p>
-      </div>
-
-      <div className="forum-overview-list">
-        {overviewSlots.map((forum) => (
-          forum.isPlaceholder ? (
-            <div key={forum.id} className="forum-overview-link is-placeholder">
-              <strong>{forum.placeholderTitle}</strong>
-              <span className="forum-overview-meta">{forum.placeholderCopy}</span>
-            </div>
-          ) : (
-            <Link key={forum.id || forum.slug} to={`/forum/${forum.slug}`} className="forum-overview-link">
-              <div className="forum-overview-link-top">
-                <span className="forum-tag">{forum.isFollowing ? 'Following' : forum.isCore ? 'Core Forum' : 'Forum'}</span>
-                <span className="muted">{forum.followerCount ?? 0} followers</span>
-              </div>
-              <strong>{forum.name}</strong>
-              <span className="forum-overview-meta">{forum.livePostCount ?? forum.postCount ?? 0} posts</span>
-            </Link>
-          )
-        ))}
-      </div>
-    </section>
-  );
-}
 
 export default function Explore({ forums, posts, currentUser }) {
+  void currentUser;
   const forumDirectory = useMemo(() => buildForumDirectory(forums, posts), [forums, posts]);
 
-  const followedForumCards = useMemo(
-    () => forumDirectory.filter((forum) => forum.isFollowing).sort(sortByRecentActivity).slice(0, 4),
-    [forumDirectory]
-  );
   const popularForumCards = useMemo(
-    () => [...forumDirectory].sort(sortByPopularity).slice(0, 4),
-    [forumDirectory]
-  );
-  const recentForumCards = useMemo(
-    () => [...forumDirectory].sort(sortByRecentActivity).slice(0, 4),
+    () => [...forumDirectory].sort(sortByPopularity).slice(0, 6),
     [forumDirectory]
   );
   const allForums = useMemo(() => {
@@ -72,6 +17,11 @@ export default function Explore({ forums, posts, currentUser }) {
       || sortByRecentActivity(a, b)
     );
   }, [forumDirectory]);
+  const loopingTrendingCards = useMemo(() => (
+    popularForumCards.length > 1
+      ? [...popularForumCards, ...popularForumCards]
+      : popularForumCards
+  ), [popularForumCards]);
 
   return (
     <div className="container page-shell">
@@ -84,9 +34,17 @@ export default function Explore({ forums, posts, currentUser }) {
               This page is for discovering which forums exist. It highlights followed, popular, and recently updated forums without dropping you into post content first.
             </p>
           </div>
-          <Link to="/forum" className="forum-primary-btn text-decoration-none">
-            Go to Feed
-          </Link>
+          <div className="forum-view-intro-actions">
+            <Link to="/forum" className="explore-intro-link text-decoration-none">
+              <span className="explore-intro-link-kicker">Back to Feed</span>
+              <strong>Forum Feed</strong>
+              <span className="explore-intro-link-copy">Return to the live cross-forum stream.</span>
+              <span className="explore-intro-link-footer">
+                <span>Live posts</span>
+                <span className="explore-intro-link-arrow" aria-hidden="true">↗</span>
+              </span>
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -95,37 +53,57 @@ export default function Explore({ forums, posts, currentUser }) {
           <section className="panel mb-4">
             <div className="forum-sections-head mb-3">
               <div>
-                <h3 className="mb-1 type-title-md">Quick Paths</h3>
+                <h3 className="mb-1 type-title-md">Trending</h3>
                 <p className="type-body mb-0">
-                  Use this as a forum directory, then open the forum that looks most relevant.
+                  The busiest forums right now, arranged in a fast horizontal lane.
                 </p>
               </div>
-              <span className="muted">{forumDirectory.length} forums</span>
+              <span className="muted">{popularForumCards.length} featured</span>
             </div>
 
-            <div className="forum-overview-grid">
-              <ForumOverviewColumn
-                title="Following"
-                description={currentUser ? 'Forums you already follow stay easy to reach.' : 'Login to personalize this lane.'}
-                forums={followedForumCards}
-                placeholderTitle={currentUser ? 'Follow more forums' : 'Login to personalize'}
-                placeholderCopy={currentUser ? 'Save more forums and they will appear here.' : 'Your followed forums will appear here after login.'}
-              />
-              <ForumOverviewColumn
-                title="Popular Now"
-                description="High-activity forums with the strongest post volume."
-                forums={popularForumCards}
-                placeholderTitle="More forums soon"
-                placeholderCopy="This slot stays reserved so the layout stays aligned."
-              />
-              <ForumOverviewColumn
-                title="Fresh Activity"
-                description="Forums with the most recent movement when you want something active."
-                forums={recentForumCards}
-                placeholderTitle="Quiet for now"
-                placeholderCopy="Freshly active forums will appear here as the community grows."
-              />
-            </div>
+            {popularForumCards.length ? (
+              <div className="explore-trending-marquee">
+                <div className={`explore-trending-row ${popularForumCards.length > 1 ? 'is-animated' : ''}`.trim()}>
+                  {loopingTrendingCards.map((forum, index) => {
+                    const isClone = popularForumCards.length > 1 && index >= popularForumCards.length;
+                    const displayIndex = (index % popularForumCards.length) + 1;
+
+                    return (
+                      <Link
+                        key={`${forum.id || forum.slug}-${isClone ? 'clone' : 'primary'}-${index}`}
+                        to={`/forum/${forum.slug}`}
+                        className="explore-trending-card"
+                        aria-hidden={isClone ? 'true' : undefined}
+                        tabIndex={isClone ? -1 : undefined}
+                      >
+                        <div className="explore-trending-card-head">
+                          <span className="explore-trending-rank">{String(displayIndex).padStart(2, '0')}</span>
+                          <span className="forum-tag">{forum.isFollowing ? 'Following' : forum.isCore ? 'Core Forum' : 'Community Forum'}</span>
+                        </div>
+                        <strong>{forum.name}</strong>
+                        <p className="explore-trending-copy mb-0">
+                          {forum.description || 'Open this forum to see the latest posts and active discussions.'}
+                        </p>
+                        <ForumSectionPills
+                          sections={forum.sectionScope || []}
+                          visibleCount={2}
+                          className="explore-trending-pill-group"
+                        />
+                        <div className="explore-trending-meta">
+                          <span>{forum.livePostCount ?? forum.postCount ?? 0} posts</span>
+                          <span>{forum.followerCount ?? 0} followers</span>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <section className="settings-card">
+                <h4 className="mb-2">No trending forums yet</h4>
+                <p className="muted mb-0">This lane will fill in as forum activity grows.</p>
+              </section>
+            )}
           </section>
 
           <section className="panel">
@@ -153,11 +131,11 @@ export default function Explore({ forums, posts, currentUser }) {
                   </p>
 
                   <div className="explore-forum-sections">
-                    {(forum.sectionScope || []).slice(0, 4).map((section) => (
-                      <span key={`${forum.id}-${section}`} className="forum-tag">
-                        {getSectionLabel(section)}
-                      </span>
-                    ))}
+                    <ForumSectionPills
+                      sections={forum.sectionScope || []}
+                      visibleCount={3}
+                      className="explore-section-pill-group"
+                    />
                   </div>
 
                   <div className="explore-forum-footer">

@@ -48,6 +48,7 @@ export type Forum = {
   ownerId: string | null;
   ownerName?: string;
   sectionScope: string[];
+  showCodeBlockTools?: boolean;
   postCount?: number;
   livePostCount?: number;
   moderatedCount?: number;
@@ -158,12 +159,26 @@ export type NetworkUser = {
 
 export type ModerationState = {
   isDeleted: boolean;
+  isPermanentlyDeleted: boolean;
   deletedAt: number | null;
   deletedByAdminId: string | null;
   deletedReason: string;
   appealRequestedAt: number | null;
   appealNote: string;
+  appealLog: AppealMessage[];
+  permanentlyDeletedAt: number | null;
+  permanentDeleteNote: string;
   restoredAt: number | null;
+};
+
+export type AppealMessage = {
+  id: string;
+  postId: string;
+  authorId: string | null;
+  authorName: string;
+  authorRole: 'author' | 'admin';
+  message: string;
+  createdAt: number | null;
 };
 
 export type Post = {

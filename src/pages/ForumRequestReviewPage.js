@@ -58,6 +58,9 @@ export default function ForumRequestReviewPage({
                 <strong>{request.name}</strong>
                 <p className="muted mb-2">{request.description}</p>
                 <p className="muted mb-2">{request.rationale}</p>
+                {request.reviewNote && (
+                  <p className="muted mb-2">Last rejection note: {request.reviewNote}</p>
+                )}
                 <span className="forum-follow-meta">
                   {request.requesterName} / {request.sectionScope.map(getSectionLabel).join(', ')}
                 </span>

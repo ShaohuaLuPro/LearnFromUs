@@ -68,6 +68,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
   const [transferIdentifier, setTransferIdentifier] = useState('');
   const [overviewDraft, setOverviewDraft] = useState('');
   const [sectionScopeDraft, setSectionScopeDraft] = useState([]);
+  const [showCodeBlockToolsDraft, setShowCodeBlockToolsDraft] = useState(true);
   const [sectionDraft, setSectionDraft] = useState('');
   const [incomingInvites, setIncomingInvites] = useState([]);
   const [inviteInboxLoading, setInviteInboxLoading] = useState(false);
@@ -229,8 +230,9 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
   useEffect(() => {
     setOverviewDraft(activeForum?.description || '');
     setSectionScopeDraft(activeForum?.sectionScope || []);
+    setShowCodeBlockToolsDraft(activeForum?.showCodeBlockTools ?? true);
     setSectionDraft('');
-  }, [activeForum?.id, activeForum?.description, activeForum?.sectionScope]);
+  }, [activeForum?.description, activeForum?.id, activeForum?.sectionScope, activeForum?.showCodeBlockTools]);
 
   const selectedPermissionKeys = selectedAccess?.viewerPermissions || selectedForum?.currentUserPermissions || [];
   const canManageAdmins = Boolean(selectedAccess?.canManageAdmins);
@@ -331,8 +333,11 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       return;
     }
 
-    if ((overviewDraft || '').trim() === String(activeForum?.description || '').trim()) {
-      setActionMessage('Forum overview is already up to date.');
+    if (
+      (overviewDraft || '').trim() === String(activeForum?.description || '').trim()
+      && showCodeBlockToolsDraft === Boolean(activeForum?.showCodeBlockTools ?? true)
+    ) {
+      setActionMessage('Forum details are already up to date.');
       setActionError('');
       return;
     }
@@ -346,12 +351,15 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
         throw new Error('Please login first.');
       }
 
-      const response = await apiUpdateForumDetails(selectedForumId, { description: overviewDraft }, token);
+      const response = await apiUpdateForumDetails(selectedForumId, {
+        description: overviewDraft,
+        showCodeBlockTools: showCodeBlockToolsDraft
+      }, token);
       await onLoadForums?.();
       await refreshSelectedForum();
-      setActionMessage(response.message || 'Forum overview updated.');
+      setActionMessage(response.message || 'Forum details updated.');
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Failed to update forum overview.');
+      setActionError(error instanceof Error ? error.message : 'Failed to update forum details.');
     } finally {
       setActionKey('');
     }
@@ -657,13 +665,25 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                               disabled={!canManageForumDetails || actionKey === 'save-overview'}
                             />
                           </label>
+                          <label className="forum-admin-checkbox forum-admin-single-toggle">
+                            <input
+                              type="checkbox"
+                              checked={showCodeBlockToolsDraft}
+                              onChange={(event) => setShowCodeBlockToolsDraft(event.target.checked)}
+                              disabled={!canManageForumDetails || actionKey === 'save-overview'}
+                            />
+                            <span>
+                              <strong>Show code block shortcut in composer</strong>
+                              <small>Turn this off for forums that do not need the language picker and quick code insert tool.</small>
+                            </span>
+                          </label>
                           {canManageForumDetails && (
                             <button
                               type="submit"
                               className="forum-primary-btn"
                               disabled={actionKey === 'save-overview'}
                             >
-                              {actionKey === 'save-overview' ? 'Saving...' : 'Save Overview'}
+                              {actionKey === 'save-overview' ? 'Saving...' : 'Save Details'}
                             </button>
                           )}
                         </form>

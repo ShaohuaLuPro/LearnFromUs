@@ -27,9 +27,20 @@ CREATE TABLE IF NOT EXISTS post (
   deleted_reason TEXT,
   appeal_requested_at TIMESTAMPTZ,
   appeal_note TEXT,
+  permanent_deleted_at TIMESTAMPTZ,
+  permanent_delete_note TEXT,
   restored_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS post_appeal_message (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id UUID NOT NULL REFERENCES post(id) ON DELETE CASCADE,
+  author_id UUID REFERENCES app_user(id) ON DELETE SET NULL,
+  author_role TEXT NOT NULL CHECK (author_role IN ('author', 'admin')),
+  message TEXT NOT NULL CHECK (length(trim(message)) > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS forum (
@@ -38,12 +49,16 @@ CREATE TABLE IF NOT EXISTS forum (
   name TEXT NOT NULL,
   description TEXT,
   section_scope TEXT[] NOT NULL DEFAULT '{}',
+  show_code_block_tools BOOLEAN NOT NULL DEFAULT TRUE,
   owner_id UUID REFERENCES app_user(id) ON DELETE SET NULL,
   created_by_id UUID REFERENCES app_user(id) ON DELETE SET NULL,
   is_core BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE forum
+ADD COLUMN IF NOT EXISTS show_code_block_tools BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS forum_request (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -127,9 +142,11 @@ CREATE TABLE IF NOT EXISTS ai_daily_usage (
 );
 
 CREATE INDEX IF NOT EXISTS idx_post_author_created ON post(author_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_appeal_message_post_created ON post_appeal_message(post_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_post_created ON post(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_deleted_by_admin_at ON post(deleted_by_admin_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_forum_created ON post(forum_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_permanent_deleted_at ON post(permanent_deleted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comment_post_created ON comment(post_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vote_post ON post_vote(post_id);
 CREATE INDEX IF NOT EXISTS idx_forum_owner_created ON forum(owner_id, created_at DESC);

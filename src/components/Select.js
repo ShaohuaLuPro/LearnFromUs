@@ -22,6 +22,7 @@ export default function Select({
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const optionRefs = useRef([]);
+  const optionLabelRefs = useRef([]);
   const listboxId = useId();
   const flatOptions = useMemo(() => flattenOptions(options), [options]);
   const selectedIndex = useMemo(
@@ -31,6 +32,7 @@ export default function Select({
   const selectedOption = selectedIndex >= 0 ? flatOptions[selectedIndex] : null;
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(selectedIndex >= 0 ? selectedIndex : 0);
+  const [optionOverflowMeta, setOptionOverflowMeta] = useState({});
 
   useEffect(() => {
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
@@ -63,6 +65,58 @@ export default function Select({
       optionRefs.current[activeIndex].focus();
     }
   }, [activeIndex, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setOptionOverflowMeta({});
+      return undefined;
+    }
+
+    const updateOverflowState = () => {
+      const nextMeta = {};
+
+      optionLabelRefs.current.forEach((node, index) => {
+        const textNode = node?.querySelector('.forum-select-option-text');
+        if (!node || !textNode) {
+          return;
+        }
+
+        const scrollDistance = Math.max(0, textNode.scrollWidth - node.clientWidth);
+        if (scrollDistance > 2) {
+          nextMeta[index] = {
+            isOverflowing: true,
+            scrollDistance,
+            scrollDuration: `${Math.max(4.5, Math.min(12, scrollDistance / 24 + 4.2))}s`
+          };
+        }
+      });
+
+      setOptionOverflowMeta(nextMeta);
+    };
+
+    updateOverflowState();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateOverflowState);
+      return () => {
+        window.removeEventListener('resize', updateOverflowState);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateOverflowState();
+    });
+
+    optionLabelRefs.current.forEach((node) => {
+      if (node) {
+        observer.observe(node);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isOpen, options]);
 
   const selectOption = (nextValue) => {
     setIsOpen(false);
@@ -188,7 +242,18 @@ export default function Select({
                         onKeyDown={(event) => handleOptionKeyDown(event, optionIndex)}
                         onMouseEnter={() => setActiveIndex(optionIndex)}
                       >
-                        {option.label}
+                        <span
+                          ref={(element) => {
+                            optionLabelRefs.current[optionIndex] = element;
+                          }}
+                          className={`forum-select-option-label ${optionOverflowMeta[optionIndex]?.isOverflowing ? 'is-overflowing' : ''}`.trim()}
+                          style={optionOverflowMeta[optionIndex]?.isOverflowing ? {
+                            '--option-scroll-distance': `${optionOverflowMeta[optionIndex].scrollDistance}px`,
+                            '--option-scroll-duration': optionOverflowMeta[optionIndex].scrollDuration
+                          } : undefined}
+                        >
+                          <span className="forum-select-option-text">{option.label}</span>
+                        </span>
                       </button>
                     );
                   })}
@@ -212,7 +277,18 @@ export default function Select({
                 onKeyDown={(event) => handleOptionKeyDown(event, optionIndex)}
                 onMouseEnter={() => setActiveIndex(optionIndex)}
               >
-                {item.label}
+                <span
+                  ref={(element) => {
+                    optionLabelRefs.current[optionIndex] = element;
+                  }}
+                  className={`forum-select-option-label ${optionOverflowMeta[optionIndex]?.isOverflowing ? 'is-overflowing' : ''}`.trim()}
+                  style={optionOverflowMeta[optionIndex]?.isOverflowing ? {
+                    '--option-scroll-distance': `${optionOverflowMeta[optionIndex].scrollDistance}px`,
+                    '--option-scroll-duration': optionOverflowMeta[optionIndex].scrollDuration
+                  } : undefined}
+                >
+                  <span className="forum-select-option-text">{item.label}</span>
+                </span>
               </button>
             );
           })}

@@ -1,5 +1,8 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  apiAdminPermanentDeletePost,
+  apiAdminReplyToPostAppeal,
+  apiAppealForumRequest,
   apiApproveForumRequest,
   apiAdminRemovePost,
   apiAdminRestorePost,
@@ -77,9 +80,15 @@ type PostsContextValue = {
   getModerationPosts: () => Promise<ActionResult<Post[]>>;
   adminRemovePost: (postId: string, reason: string) => Promise<ActionResult>;
   adminRestorePost: (postId: string) => Promise<ActionResult>;
+  adminReplyToPostAppeal: (postId: string, reason: string) => Promise<ActionResult>;
+  adminPermanentDeletePost: (postId: string, reason?: string) => Promise<ActionResult>;
   ownerRemovePost: (forumId: string, postId: string, reason: string) => Promise<ActionResult>;
   ownerRestorePost: (forumId: string, postId: string) => Promise<ActionResult>;
   requestForum: (input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string }) => Promise<ActionResult>;
+  appealForumRequest: (
+    requestId: string,
+    input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string }
+  ) => Promise<ActionResult>;
   updateForumSections: (forumId: string, sectionScope: string[]) => Promise<ActionResult>;
   approveForumRequest: (requestId: string, reviewNote?: string) => Promise<ActionResult>;
   rejectForumRequest: (requestId: string, reviewNote?: string) => Promise<ActionResult>;
@@ -359,6 +368,34 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [getToken, loadForums, refreshPosts]);
 
+  const adminReplyToPostAppeal = useCallback(async (postId: string, reason: string) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiAdminReplyToPostAppeal(postId, { reason }, token);
+      await Promise.all([refreshPosts(), loadForums()]);
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to send admin appeal reply.' };
+    }
+  }, [getToken, loadForums, refreshPosts]);
+
+  const adminPermanentDeletePost = useCallback(async (postId: string, reason = '') => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiAdminPermanentDeletePost(postId, { reason }, token);
+      await Promise.all([refreshPosts(), loadForums()]);
+      return { ok: true, message: data.message };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to permanently delete post.' };
+    }
+  }, [getToken, loadForums, refreshPosts]);
+
   const ownerRemovePost = useCallback(async (forumId: string, postId: string, reason: string) => {
     const token = getToken();
     if (!token) {
@@ -398,6 +435,23 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
       return { ok: true, message: data.message, request: data.request };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to request forum.' };
+    }
+  }, [getToken, loadForums]);
+
+  const appealForumRequest = useCallback(async (
+    requestId: string,
+    input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string }
+  ) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiAppealForumRequest(requestId, input, token);
+      await loadForums();
+      return { ok: true, message: data.message, request: data.request };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to submit forum appeal.' };
     }
   }, [getToken, loadForums]);
 
@@ -574,9 +628,12 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     getModerationPosts,
     adminRemovePost,
     adminRestorePost,
+    adminReplyToPostAppeal,
+    adminPermanentDeletePost,
     ownerRemovePost,
     ownerRestorePost,
     requestForum,
+    appealForumRequest,
     updateForumSections,
     approveForumRequest,
     rejectForumRequest,
@@ -612,9 +669,12 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     getModerationPosts,
     adminRemovePost,
     adminRestorePost,
+    adminReplyToPostAppeal,
+    adminPermanentDeletePost,
     ownerRemovePost,
     ownerRestorePost,
     requestForum,
+    appealForumRequest,
     updateForumSections,
     approveForumRequest,
     rejectForumRequest,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { getSectionLabel } from '../lib/sections';
 
 function formatDate(timestamp) {
@@ -17,7 +17,9 @@ function formatDate(timestamp) {
 }
 
 export default function ForumRequestHistoryPage({ forumWorkspace }) {
+  const location = useLocation();
   const myRequests = forumWorkspace?.myRequests || [];
+  const message = location.state?.message || '';
 
   return (
     <div className="container page-shell">
@@ -40,12 +42,20 @@ export default function ForumRequestHistoryPage({ forumWorkspace }) {
           </div>
         </div>
 
+        {message && (
+          <div className="settings-alert is-success mb-4">
+            {message}
+          </div>
+        )}
+
         {myRequests.length ? (
           <div className="forum-follow-list">
             {myRequests.map((request) => (
               <article key={request.id} className="forum-follow-card">
                 <div className="forum-follow-card-topline">
-                  <span className="forum-tag">{request.status}</span>
+                  <span className="forum-tag">
+                    {request.status === 'pending' && request.reviewNote ? 'appeal pending' : request.status}
+                  </span>
                   <span className="muted">{formatDate(request.createdAt)}</span>
                 </div>
                 <strong>{request.name}</strong>
@@ -55,17 +65,28 @@ export default function ForumRequestHistoryPage({ forumWorkspace }) {
                 </span>
                 <p className="muted mb-0">{request.rationale || 'No rationale provided.'}</p>
                 {request.reviewNote && (
-                  <p className="muted mb-0">Review note: {request.reviewNote}</p>
+                  <p className="muted mb-0">
+                    {request.status === 'pending' ? 'Last review note: ' : 'Review note: '}
+                    {request.reviewNote}
+                  </p>
                 )}
                 {request.reviewedAt && (
                   <p className="muted mb-0">Reviewed {formatDate(request.reviewedAt)}</p>
                 )}
-                {request.status === 'approved' && request.forumSlug && (
-                  <div className="forum-actions">
+                <div className="forum-actions">
+                  {request.status === 'rejected' && (
+                    <Link to={`/forums/request/${request.id}/appeal`} className="forum-primary-btn text-decoration-none">
+                      Appeal
+                    </Link>
+                  )}
+                  {request.status === 'approved' && request.forumSlug && (
                     <Link to={`/forum/${request.forumSlug}`} className="forum-secondary-btn text-decoration-none">
                       Open Forum
                     </Link>
-                  </div>
+                  )}
+                </div>
+                {request.status === 'pending' && request.reviewNote && (
+                  <p className="muted mb-0">This request was resubmitted after rejection and is waiting for another review.</p>
                 )}
               </article>
             ))}

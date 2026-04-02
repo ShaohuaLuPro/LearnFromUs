@@ -1,6 +1,6 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import MDEditor from '@uiw/react-md-editor';
+import MDEditor, { commands as mdCommands } from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
 import { apiFollowForum, apiUnfollowForum } from '../api';
@@ -226,6 +226,42 @@ export default function Home({
     ];
   }, [sortedComposerForums]);
 
+  const followedForumOptions = useMemo(() => {
+    const followedForums = [...forums]
+      .filter((forum) => forum.isFollowing)
+      .sort((a, b) => {
+        const aInsight = forumInsightMap.get(a.id) || forumInsightMap.get(a.slug) || {};
+        const bInsight = forumInsightMap.get(b.id) || forumInsightMap.get(b.slug) || {};
+        return sortByRecentActivity(aInsight, bInsight);
+      });
+
+    const options = [
+      { value: '__all__', label: 'All Forums' }
+    ];
+
+    if (followedForums.length > 0) {
+      options.push({
+        label: 'Subscribed Forums',
+        options: followedForums.map((forum) => ({
+          value: forum.slug,
+          label: forum.name
+        }))
+      });
+    }
+
+    return options;
+  }, [forumInsightMap, forums]);
+
+  const selectedFeedSwitcherValue = useMemo(() => {
+    if (isAggregateView) {
+      return '__all__';
+    }
+    if (selectedForum?.isFollowing) {
+      return selectedForum.slug;
+    }
+    return '';
+  }, [isAggregateView, selectedForum]);
+
   useEffect(() => {
     if (sectionId) {
       setSelectedSections([sectionId]);
@@ -284,7 +320,7 @@ export default function Home({
     }
 
     setForm((current) => {
-      const nextForumId = current.forumId || defaultForum.id;
+      const nextForumId = selectedForumOption ? selectedForumOption.id : (current.forumId || defaultForum.id);
       const activeForum = forums.find((forum) => forum.id === nextForumId) || defaultForum;
       const nextSection = activeForum.sectionScope.includes(current.section)
         ? current.section
@@ -432,8 +468,29 @@ export default function Home({
     setMessage(result.message || (result.ok ? 'Post removed.' : 'Failed to remove post.'));
   };
 
-  const activeForumForComposer = forums.find((forum) => forum.id === form.forumId) || selectedForumOption || preferredComposerForum;
+  const switchForumFeed = (nextValue) => {
+    if (!nextValue || nextValue === selectedFeedSwitcherValue) {
+      return;
+    }
+
+    if (nextValue === '__all__') {
+      navigate('/forum');
+      return;
+    }
+
+    navigate(`/forum/${nextValue}`);
+  };
+
+  const activeForumForComposer = selectedForumOption || forums.find((forum) => forum.id === form.forumId) || preferredComposerForum;
   const activeSectionOptions = buildSectionOptionsForForum(activeForumForComposer);
+  const showComposerCodeTools = Boolean(activeForumForComposer?.showCodeBlockTools ?? true);
+  const composerToolbarCommands = useMemo(() => {
+    if (showComposerCodeTools) {
+      return undefined;
+    }
+
+    return mdCommands.getCommands().filter((command) => !['code', 'codeBlock'].includes(command?.name || command?.keyCommand || ''));
+  }, [showComposerCodeTools]);
   const canSiteModerate = Boolean(currentUser?.isAdmin || currentUser?.adminPermissions?.includes('moderation'));
   const canManagePost = (post) => {
     if (!currentUser || !post.forum?.id) {
@@ -456,49 +513,91 @@ export default function Home({
     <div className="container page-shell">
       <section className="panel mb-4 forum-view-intro">
         <div className="forum-view-intro-row">
-          <div>
-            <p className="type-kicker mb-1">{isAggregateView ? 'Forum Feed' : 'Forum'}</p>
-            <h3 className="mb-1 type-title-md">
-              {isAggregateView ? 'All forums, one smart feed' : selectedForum?.name || 'Forum'}
-            </h3>
-            <p className="forum-view-intro-copy mb-0">
-              {isAggregateView
-                ? 'Posts here are prioritized by the forums you follow, recent updates, and overall forum activity.'
-                : (selectedForum?.description || 'Browse posts and practical writeups from this forum.')}
-            </p>
+          <div className="forum-view-intro-main">
+            <div className="forum-view-intro-copy-block">
+              <p className="type-kicker mb-1">{isAggregateView ? 'Forum Feed' : 'Forum'}</p>
+              <h3 className="mb-1 type-title-md">
+                {isAggregateView ? 'All forums, one smart feed' : selectedForum?.name || 'Forum'}
+              </h3>
+              <p className="forum-view-intro-copy mb-0">
+                {isAggregateView
+                  ? 'Posts here are prioritized by the forums you follow, recent updates, and overall forum activity.'
+                  : (selectedForum?.description || 'Browse posts and practical writeups from this forum.')}
+              </p>
+              {isAggregateView && (
+                <div className="forum-view-intro-meta-row">
+                  <span className="forum-view-intro-badge">
+                    <strong>{forums.length}</strong>
+                    <span>Forums in feed</span>
+                  </span>
+                </div>
+              )}
+            </div>
+
             {selectedForum && (
-              <div className="forum-post-kicker mt-2">
-                <span className="forum-tag">{selectedForum.followerCount ?? 0} followers</span>
-                <span className="forum-tag">{selectedForum.livePostCount ?? selectedForum.postCount ?? 0} posts</span>
+              <div className="forum-view-intro-stats">
+                <>
+                  <span className="forum-view-intro-stat">
+                    <strong>{selectedForum.followerCount ?? 0}</strong>
+                    <span>Followers</span>
+                  </span>
+                  <span className="forum-view-intro-stat">
+                    <strong>{selectedForum.livePostCount ?? selectedForum.postCount ?? 0}</strong>
+                    <span>Posts</span>
+                  </span>
+                </>
               </div>
             )}
           </div>
-          {selectedForum && (
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              {canViewForumFollowers && (
-                <Link
-                  to={`/forum/${selectedForum.slug}/followers`}
-                  className="forum-secondary-btn text-decoration-none"
-                >
-                  View Followers
-                </Link>
-              )}
-              {currentUser ? (
-                <button
-                  type="button"
-                  className={isFollowingSelectedForum ? 'forum-secondary-btn' : 'forum-primary-btn'}
-                  onClick={toggleForumFollow}
-                  disabled={followPending}
-                >
-                  {followPending ? 'Updating...' : isFollowingSelectedForum ? 'Unfollow Forum' : 'Follow Forum'}
-                </button>
-              ) : (
-                <Link to="/login" className="forum-secondary-btn text-decoration-none">
-                  Login to Follow
-                </Link>
-              )}
-            </div>
-          )}
+          <div className="forum-view-intro-actions">
+            <Link to="/explore" className="explore-intro-link text-decoration-none">
+              <span className="explore-intro-link-kicker">Discover</span>
+              <strong>Explore</strong>
+              <span className="explore-intro-link-copy">Browse more forums and trending spaces.</span>
+              <span className="explore-intro-link-footer">
+                <span>Forum directory</span>
+                <span className="explore-intro-link-arrow" aria-hidden="true">↗</span>
+              </span>
+            </Link>
+            {currentUser && followedForumOptions.length > 1 && (
+              <div className="forum-feed-switcher">
+                <Select
+                  options={followedForumOptions}
+                  value={selectedFeedSwitcherValue}
+                  onChange={switchForumFeed}
+                  placeholder="Subscribed forums"
+                  triggerClassName="forum-feed-switcher-trigger"
+                  menuClassName="forum-feed-switcher-menu"
+                />
+              </div>
+            )}
+            {selectedForum && (
+              <div className="forum-view-intro-action-row">
+                {canViewForumFollowers && (
+                  <Link
+                    to={`/forum/${selectedForum.slug}/followers`}
+                    className="forum-secondary-btn forum-intro-btn text-decoration-none"
+                  >
+                    View Followers
+                  </Link>
+                )}
+                {currentUser ? (
+                  <button
+                    type="button"
+                    className={`${isFollowingSelectedForum ? 'forum-secondary-btn' : 'forum-primary-btn'} forum-intro-btn`.trim()}
+                    onClick={toggleForumFollow}
+                    disabled={followPending}
+                  >
+                    {followPending ? 'Updating...' : isFollowingSelectedForum ? 'Unfollow Forum' : 'Follow Forum'}
+                  </button>
+                ) : (
+                  <Link to="/login" className="forum-secondary-btn forum-intro-btn text-decoration-none">
+                    Login to Follow
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
@@ -740,29 +839,36 @@ export default function Home({
 
               <div className="mb-2">
                 <label className="form-label">Content</label>
-                <div className="composer-toolbar">
-                  <Select
-                    options={codeLanguageOptions}
-                    value={composerLanguage}
-                    onChange={setComposerLanguage}
-                    className="code-language-select"
-                  />
-                  <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
-                    Insert Code Block
-                  </button>
-                </div>
+                {showComposerCodeTools && (
+                  <div className="composer-toolbar">
+                    <Select
+                      options={codeLanguageOptions}
+                      value={composerLanguage}
+                      onChange={setComposerLanguage}
+                      className="code-language-select"
+                    />
+                    <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
+                      Insert Code Block
+                    </button>
+                  </div>
+                )}
                 <div data-color-mode="dark" className="markdown-editor-shell">
                   <MDEditor
                     value={form.content}
                     onChange={(value) => setForm((prev) => ({ ...prev, content: value || '' }))}
                     preview="edit"
+                    commands={composerToolbarCommands}
                     height={320}
                     textareaProps={{
                       placeholder: 'Share the idea, code approach, and why it worked.'
                     }}
                   />
                 </div>
-                <div className="form-help">Choose a language, insert a code block, then paste your code inside it.</div>
+                <div className="form-help">
+                  {showComposerCodeTools
+                    ? 'Choose a language, insert a code block, then paste your code inside it.'
+                    : 'This forum keeps the composer simple, so the code block shortcut is hidden.'}
+                </div>
               </div>
 
               {message && <p className="mt-3 mb-0 muted">{message}</p>}

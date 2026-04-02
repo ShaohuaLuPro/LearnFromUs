@@ -194,7 +194,11 @@ export async function apiUpdateForumSections(forumId: string, input: { sectionSc
   });
 }
 
-export async function apiUpdateForumDetails(forumId: string, input: { description: string }, token: string) {
+export async function apiUpdateForumDetails(
+  forumId: string,
+  input: { description: string; showCodeBlockTools?: boolean },
+  token: string
+) {
   return request<{ ok: boolean; message?: string; forum?: Forum | null }>(`/api/forums/${forumId}/details`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
@@ -459,6 +463,18 @@ export async function apiRejectForumRequest(requestId: string, input: { reviewNo
   });
 }
 
+export async function apiAppealForumRequest(
+  requestId: string,
+  input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string },
+  token: string
+) {
+  return request<{ ok: boolean; message?: string; request: ForumRequest }>(`/api/forums/requests/${requestId}/appeal`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
 export async function apiUpdatePost(postId: string, input: PostPayload, token: string) {
   return request<{ post: Post }>(`/api/posts/${postId}`, {
     method: 'PUT',
@@ -560,6 +576,23 @@ export async function apiAdminRestorePost(postId: string, token: string) {
   return request<MessageResponse>(`/api/admin/posts/${postId}/restore`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiAdminReplyToPostAppeal(postId: string, input: { reason: string }, token: string) {
+  return request<MessageResponse>(`/api/admin/posts/${postId}/reject-appeal`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+    ,
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiAdminPermanentDeletePost(postId: string, input: { reason?: string }, token: string) {
+  return request<MessageResponse>(`/api/admin/posts/${postId}/permanent-delete`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
   });
 }
 

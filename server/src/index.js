@@ -2808,6 +2808,7 @@ function mapForumRow(row) {
     ownerId: row.owner_id || null,
     ownerName: row.owner_name || '',
     sectionScope: row.section_scope || [],
+    showCodeBlockTools: row.show_code_block_tools == null ? true : Boolean(row.show_code_block_tools),
     postCount: Number(row.post_count || 0),
     livePostCount: Number(row.live_post_count || 0),
     moderatedCount: Number(row.moderated_count || 0),
@@ -3118,7 +3119,8 @@ async function ensureCoreForums(client) {
 async function getForumById(client, forumId) {
   const result = await client.query(
     `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
-            COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+            COALESCE(f.section_scope, '{}') AS section_scope,
+            COALESCE(f.show_code_block_tools, TRUE) AS show_code_block_tools, f.is_core,
             COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
             COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
             COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
@@ -3138,7 +3140,8 @@ async function getForumById(client, forumId) {
 async function getForumBySlug(client, slug) {
   const result = await client.query(
     `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
-            COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+            COALESCE(f.section_scope, '{}') AS section_scope,
+            COALESCE(f.show_code_block_tools, TRUE) AS show_code_block_tools, f.is_core,
             COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
             COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
             COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
@@ -3186,7 +3189,8 @@ async function getForumWorkspace(client, user) {
   const forumsResult = user?.sub
     ? await client.query(
         `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
-                COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+                COALESCE(f.section_scope, '{}') AS section_scope,
+                COALESCE(f.show_code_block_tools, TRUE) AS show_code_block_tools, f.is_core,
                 COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
                 COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
                 COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
@@ -3211,7 +3215,8 @@ async function getForumWorkspace(client, user) {
       )
     : await client.query(
         `SELECT f.id, f.slug, f.name, f.description, f.owner_id, owner.username AS owner_name,
-                COALESCE(f.section_scope, '{}') AS section_scope, f.is_core,
+                COALESCE(f.section_scope, '{}') AS section_scope,
+                COALESCE(f.show_code_block_tools, TRUE) AS show_code_block_tools, f.is_core,
                 COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE) AS post_count,
                 COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL) AS live_post_count,
                 COUNT(DISTINCT p.id) FILTER (WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NOT NULL) AS moderated_count,
@@ -3251,7 +3256,7 @@ async function getForumWorkspace(client, user) {
     ),
     client.query(
       `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
-              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
+              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.permanent_deleted_at, p.permanent_delete_note, p.restored_at,
               u.username AS author_name, u.email AS author_email,
               f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
               owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope, f.is_core AS forum_is_core,
@@ -3317,20 +3322,91 @@ function mapPostRow(row) {
       ownerId: row.forum_owner_id || null,
       ownerName: row.forum_owner_name || '',
       sectionScope: row.forum_section_scope || [],
+      showCodeBlockTools: row.forum_show_code_block_tools == null ? true : Boolean(row.forum_show_code_block_tools),
       isCore: Boolean(row.forum_is_core)
     } : null,
     section: row.section || 'sde-general',
     tags: row.tags || [],
     moderation: {
       isDeleted: Boolean(row.deleted_by_admin_at),
+      isPermanentlyDeleted: Boolean(row.permanent_deleted_at),
       deletedAt: row.deleted_by_admin_at ? new Date(row.deleted_by_admin_at).getTime() : null,
       deletedByAdminId: row.deleted_by_admin_id || null,
       deletedReason: row.deleted_reason || '',
       appealRequestedAt: row.appeal_requested_at ? new Date(row.appeal_requested_at).getTime() : null,
       appealNote: row.appeal_note || '',
+      appealLog: [],
+      permanentlyDeletedAt: row.permanent_deleted_at ? new Date(row.permanent_deleted_at).getTime() : null,
+      permanentDeleteNote: row.permanent_delete_note || '',
       restoredAt: row.restored_at ? new Date(row.restored_at).getTime() : null
     }
   };
+}
+
+function mapAppealMessageRow(row) {
+  return {
+    id: row.id,
+    postId: row.post_id,
+    authorId: row.author_id || null,
+    authorName: row.author_name || (row.author_role === 'admin' ? 'Admin' : 'Author'),
+    authorRole: row.author_role,
+    message: row.message || '',
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null
+  };
+}
+
+async function getPostAppealLogMap(client, postIds) {
+  const uniquePostIds = [...new Set((postIds || []).filter(Boolean))];
+  if (uniquePostIds.length === 0) {
+    return new Map();
+  }
+
+  const result = await client.query(
+    `SELECT pam.id, pam.post_id, pam.author_id, pam.author_role, pam.message, pam.created_at,
+            u.username AS author_name
+     FROM post_appeal_message pam
+     LEFT JOIN app_user u ON u.id = pam.author_id
+     WHERE pam.post_id = ANY($1::uuid[])
+     ORDER BY pam.created_at ASC, pam.id ASC`,
+    [uniquePostIds]
+  );
+
+  const logMap = new Map();
+  uniquePostIds.forEach((postId) => {
+    logMap.set(postId, []);
+  });
+
+  result.rows.forEach((row) => {
+    if (!logMap.has(row.post_id)) {
+      logMap.set(row.post_id, []);
+    }
+    logMap.get(row.post_id).push(mapAppealMessageRow(row));
+  });
+
+  return logMap;
+}
+
+function attachAppealLogs(posts, appealLogMap) {
+  return posts.map((post) => ({
+    ...post,
+    moderation: {
+      ...post.moderation,
+      appealLog: appealLogMap.get(post.id) || []
+    }
+  }));
+}
+
+async function getLatestPostAppealMessage(client, postId) {
+  const result = await client.query(
+    `SELECT id, author_role, created_at
+     FROM post_appeal_message
+     WHERE post_id = $1
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [postId]
+  );
+
+  return result.rows[0] || null;
 }
 
 function mapCommentRow(row) {
@@ -3368,7 +3444,8 @@ async function getPostsByAuthor(client, userId) {
             p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
             u.username AS author_name, u.email AS author_email,
             f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
-            owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope, f.is_core AS forum_is_core,
+            owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope,
+            COALESCE(f.show_code_block_tools, TRUE) AS forum_show_code_block_tools, f.is_core AS forum_is_core,
             COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
      FROM post p
      JOIN app_user u ON u.id = p.author_id
@@ -3377,7 +3454,8 @@ async function getPostsByAuthor(client, userId) {
      LEFT JOIN post_tag pt ON pt.post_id = p.id
      LEFT JOIN tag t ON t.id = pt.tag_id
      WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL AND p.author_id = $1
-     GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
+     GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, owner.username,
+              f.section_scope, f.show_code_block_tools, f.is_core
      ORDER BY p.created_at DESC`,
     [userId]
   );
@@ -4379,12 +4457,17 @@ app.patch('/api/forums/:forumId/details', authRequired, async (req, res) => {
       return res.status(403).json({ message: 'You do not have permission to edit forum details.' });
     }
 
+    const nextShowCodeBlockTools = typeof req.body?.showCodeBlockTools === 'boolean'
+      ? req.body.showCodeBlockTools
+      : Boolean(forum.showCodeBlockTools ?? true);
+
     await client.query(
       `UPDATE forum
        SET description = $1,
+           show_code_block_tools = $2,
            updated_at = NOW()
-       WHERE id = $2`,
-      [cleanDescription, req.params.forumId]
+       WHERE id = $3`,
+      [cleanDescription, nextShowCodeBlockTools, req.params.forumId]
     );
 
     await recordActivity('forum.details_updated', {
@@ -4396,7 +4479,7 @@ app.patch('/api/forums/:forumId/details', authRequired, async (req, res) => {
 
     return res.json({
       ok: true,
-      message: 'Forum overview updated.',
+      message: 'Forum details updated.',
       forum: updatedForum
     });
   } catch (error) {
@@ -4759,6 +4842,106 @@ app.post('/api/forums/requests/:requestId/reject', authRequired, siteAdminPermis
   }
 });
 
+app.post('/api/forums/requests/:requestId/appeal', authRequired, async (req, res) => {
+  const cleanName = normalizeForumName(req.body?.name);
+  const cleanDescription = normalizeForumDescription(req.body?.description);
+  const cleanRationale = normalizeForumRationale(req.body?.rationale);
+  const cleanScope = normalizeSectionScope(req.body?.sectionScope);
+  const cleanAppealNote = normalizeForumRationale(req.body?.appealNote);
+  const cleanSlug = generateForumSlug(req.body?.slug, cleanName, cleanScope);
+
+  if (!cleanName) {
+    return res.status(400).json({ message: 'Forum name is required.' });
+  }
+  if (cleanName.length < 4) {
+    return res.status(400).json({ message: 'Forum name must be at least 4 characters.' });
+  }
+  if (!cleanDescription) {
+    return res.status(400).json({ message: 'Forum description is required.' });
+  }
+  if (!cleanRationale) {
+    return res.status(400).json({ message: 'Please explain why this forum should exist.' });
+  }
+  if (cleanScope.length === 0) {
+    return res.status(400).json({ message: 'Choose at least one section for this forum.' });
+  }
+  if (!cleanAppealNote) {
+    return res.status(400).json({ message: 'Please explain why this request should be reviewed again.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await ensureCoreForums(client);
+
+    const existing = await client.query(
+      `SELECT id, requester_id, status
+       FROM forum_request
+       WHERE id = $1`,
+      [req.params.requestId]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Forum request not found.' });
+    }
+    if (existing.rows[0].requester_id !== req.user.sub) {
+      return res.status(403).json({ message: 'You can only appeal your own forum requests.' });
+    }
+    if (existing.rows[0].status !== 'rejected') {
+      return res.status(400).json({ message: 'Only rejected forum requests can be appealed.' });
+    }
+
+    const [forumConflict, requestConflict] = await Promise.all([
+      client.query(`SELECT id FROM forum WHERE slug = $1`, [cleanSlug]),
+      client.query(`SELECT id FROM forum_request WHERE slug = $1 AND id <> $2`, [cleanSlug, req.params.requestId])
+    ]);
+
+    if (forumConflict.rows[0]) {
+      return res.status(400).json({ message: 'A forum with this slug already exists.' });
+    }
+    if (requestConflict.rows[0]) {
+      return res.status(400).json({ message: 'Another forum request already uses this slug.' });
+    }
+
+    const combinedRationale = [cleanRationale, `Appeal update:\n${cleanAppealNote}`].join('\n\n');
+    const updated = await client.query(
+      `UPDATE forum_request
+       SET slug = $1,
+           name = $2,
+           description = $3,
+           section_scope = $4::text[],
+           rationale = $5,
+           status = 'pending',
+           reviewed_by_id = NULL,
+           reviewed_at = NULL,
+           updated_at = NOW()
+       WHERE id = $6
+       RETURNING id, requester_id, forum_id, slug, name, description, section_scope, rationale, status, review_note,
+                 reviewed_by_id, created_at, reviewed_at`,
+      [cleanSlug, cleanName, cleanDescription, cleanScope, combinedRationale, req.params.requestId]
+    );
+
+    await recordActivity('forum.request_appealed', {
+      requestId: req.params.requestId,
+      requesterId: req.user.sub,
+      slug: cleanSlug
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Appeal submitted. Your forum request is back in the review queue.',
+      request: mapForumRequestRow({
+        ...updated.rows[0],
+        requester_name: req.user.name || ''
+      })
+    });
+  } catch (error) {
+    console.error('Failed to appeal forum request.', error);
+    return res.status(500).json({ message: 'Failed to appeal forum request.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/api/account/posts', authRequired, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -4780,7 +4963,9 @@ app.get('/api/account/posts', authRequired, async (req, res) => {
        ORDER BY p.created_at DESC`,
       [req.user.sub]
     );
-    return res.json({ posts: result.rows.map(mapPostRow) });
+    const posts = result.rows.map(mapPostRow);
+    const appealLogMap = await getPostAppealLogMap(client, posts.map((post) => post.id));
+    return res.json({ posts: attachAppealLogs(posts, appealLogMap) });
   } finally {
     client.release();
   }
@@ -5069,18 +5254,25 @@ app.get('/api/admin/posts/moderation', authRequired, siteAdminPermissionRequired
   try {
     const result = await client.query(
       `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
-              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
+              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.permanent_deleted_at, p.permanent_delete_note, p.restored_at,
               u.username AS author_name, u.email AS author_email,
+              f.id AS forum_id, f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
+              owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope, f.is_core AS forum_is_core,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
        FROM post p
        JOIN app_user u ON u.id = p.author_id
+       LEFT JOIN forum f ON f.id = p.forum_id
+       LEFT JOIN app_user owner ON owner.id = f.owner_id
        LEFT JOIN post_tag pt ON pt.post_id = p.id
        LEFT JOIN tag t ON t.id = pt.tag_id
        WHERE p.deleted_by_admin_at IS NOT NULL
-       GROUP BY p.id, u.username, u.email
+         AND p.permanent_deleted_at IS NULL
+       GROUP BY p.id, u.username, u.email, f.id, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
        ORDER BY p.deleted_by_admin_at DESC, p.created_at DESC`
     );
-    return res.json({ posts: result.rows.map(mapPostRow) });
+    const posts = result.rows.map(mapPostRow);
+    const appealLogMap = await getPostAppealLogMap(client, posts.map((post) => post.id));
+    return res.json({ posts: attachAppealLogs(posts, appealLogMap) });
   } finally {
     client.release();
   }
@@ -5142,6 +5334,12 @@ app.get('/api/admin/analytics/parquet/:dataset', authRequired, siteAdminPermissi
 
 app.post('/api/posts/:postId/appeal', authRequired, async (req, res) => {
   const appealNote = String(req.body?.note || '').trim();
+  if (!appealNote) {
+    return res.status(400).json({ message: 'Add a message before sending your appeal.' });
+  }
+  if (appealNote.length > 200) {
+    return res.status(400).json({ message: 'Appeal messages must be 200 characters or fewer.' });
+  }
   const client = await pool.connect();
   try {
     const existing = await client.query(
@@ -5160,25 +5358,28 @@ app.post('/api/posts/:postId/appeal', authRequired, async (req, res) => {
     if (!post.deleted_by_admin_at) {
       return res.status(400).json({ message: 'This post is not under moderation.' });
     }
-    if (post.appeal_requested_at) {
-      return res.status(400).json({ message: 'An appeal has already been submitted for this post.' });
-    }
-    if (Date.now() - new Date(post.deleted_by_admin_at).getTime() > 15 * 24 * 60 * 60 * 1000) {
-      return res.status(400).json({ message: 'The 15-day appeal window has expired.' });
+    const latestAppealMessage = await getLatestPostAppealMessage(client, req.params.postId);
+    if (latestAppealMessage?.author_role === 'author') {
+      return res.status(400).json({ message: 'Your latest appeal note is already saved. Wait for an admin reply before appealing again.' });
     }
 
     await client.query(
       `UPDATE post
-       SET appeal_requested_at = NOW(), appeal_note = $1, updated_at = NOW()
+       SET appeal_requested_at = COALESCE(appeal_requested_at, NOW()), appeal_note = $1, updated_at = NOW()
        WHERE id = $2`,
       [appealNote || null, req.params.postId]
+    );
+    await client.query(
+      `INSERT INTO post_appeal_message (post_id, author_id, author_role, message)
+       VALUES ($1, $2, 'author', $3)`,
+      [req.params.postId, req.user.sub, appealNote]
     );
     await recordActivity('post.appeal_requested', {
       userId: req.user.sub,
       postId: req.params.postId,
       note: appealNote
     });
-    return res.json({ ok: true, message: 'Appeal submitted. An admin can review and restore the post.' });
+    return res.json({ ok: true, message: 'Appeal note saved to the record.' });
   } finally {
     client.release();
   }
@@ -5289,6 +5490,8 @@ app.post('/api/admin/posts/:postId/remove', authRequired, siteAdminPermissionReq
            deleted_reason = $2,
            appeal_requested_at = NULL,
            appeal_note = NULL,
+           permanent_deleted_at = NULL,
+           permanent_delete_note = NULL,
            updated_at = NOW()
        WHERE id = $3`,
       [req.user.sub, reason, req.params.postId]
@@ -5340,7 +5543,9 @@ app.post('/api/forums/:forumId/posts/:postId/remove', authRequired, async (req, 
            deleted_by_admin_id = $1,
            deleted_reason = $2,
            appeal_requested_at = NULL,
-           appeal_note = NULL
+           appeal_note = NULL,
+           permanent_deleted_at = NULL,
+           permanent_delete_note = NULL
        WHERE id = $3`,
       [req.user.sub, reason, req.params.postId]
     );
@@ -5364,7 +5569,7 @@ app.post('/api/admin/posts/:postId/restore', authRequired, siteAdminPermissionRe
   const client = await pool.connect();
   try {
     const existing = await client.query(
-      `SELECT id, author_id, deleted_by_admin_at
+      `SELECT id, author_id, deleted_by_admin_at, permanent_deleted_at
        FROM post
        WHERE id = $1`,
       [req.params.postId]
@@ -5375,6 +5580,9 @@ app.post('/api/admin/posts/:postId/restore', authRequired, siteAdminPermissionRe
     if (!existing.rows[0].deleted_by_admin_at) {
       return res.status(400).json({ message: 'This post is not currently under moderation.' });
     }
+    if (existing.rows[0].permanent_deleted_at) {
+      return res.status(400).json({ message: 'This post was permanently deleted and can no longer be restored.' });
+    }
 
     await client.query(
       `UPDATE post
@@ -5383,6 +5591,8 @@ app.post('/api/admin/posts/:postId/restore', authRequired, siteAdminPermissionRe
            deleted_reason = NULL,
            appeal_requested_at = NULL,
            appeal_note = NULL,
+           permanent_deleted_at = NULL,
+           permanent_delete_note = NULL,
            restored_at = NOW(),
            updated_at = NOW()
        WHERE id = $1`,
@@ -5395,6 +5605,123 @@ app.post('/api/admin/posts/:postId/restore', authRequired, siteAdminPermissionRe
       moderatorId: req.user.sub
     });
     return res.json({ ok: true, message: 'Post restored.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/posts/:postId/permanent-delete', authRequired, siteAdminPermissionRequired('moderation'), async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length > 200) {
+    return res.status(400).json({ message: 'Permanent delete notes must be 200 characters or fewer.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const existing = await client.query(
+      `SELECT id, author_id, deleted_by_admin_at, deleted_reason, permanent_deleted_at
+       FROM post
+       WHERE id = $1`,
+      [req.params.postId]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+    if (!existing.rows[0].deleted_by_admin_at) {
+      return res.status(400).json({ message: 'This post is not currently under moderation.' });
+    }
+    if (existing.rows[0].permanent_deleted_at) {
+      return res.status(400).json({ message: 'This post has already been permanently deleted.' });
+    }
+
+    const note = reason || String(existing.rows[0].deleted_reason || '').trim();
+    if (!note) {
+      return res.status(400).json({ message: 'Leave a permanent delete note so the author can see the decision.' });
+    }
+
+    await client.query(
+      `UPDATE post
+       SET permanent_deleted_at = NOW(),
+           permanent_delete_note = $1,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [note, req.params.postId]
+    );
+
+    await client.query(
+      `INSERT INTO post_appeal_message (post_id, author_id, author_role, message)
+       VALUES ($1, $2, 'admin', $3)`,
+      [req.params.postId, req.user.sub, `Permanent delete decision: ${note}`]
+    );
+
+    await recordActivity('post.permanently_deleted_by_admin', {
+      userId: existing.rows[0].author_id,
+      postId: req.params.postId,
+      moderatorId: req.user.sub,
+      reason: note
+    });
+
+    return res.json({ ok: true, message: 'Post permanently deleted. The author can now remove it from their list.' });
+  } catch (error) {
+    console.error('Failed to permanently delete post.', error);
+    return res.status(500).json({ message: 'Failed to permanently delete post.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/posts/:postId/reject-appeal', authRequired, siteAdminPermissionRequired('moderation'), async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) {
+    return res.status(400).json({ message: 'An admin reply is required.' });
+  }
+  if (reason.length > 200) {
+    return res.status(400).json({ message: 'Admin notes must be 200 characters or fewer.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const existing = await client.query(
+      `SELECT id, author_id, deleted_by_admin_at, deleted_reason, appeal_requested_at
+       FROM post
+       WHERE id = $1`,
+      [req.params.postId]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+    if (!existing.rows[0].deleted_by_admin_at) {
+      return res.status(400).json({ message: 'This post is not currently under moderation.' });
+    }
+    const latestAppealMessage = await getLatestPostAppealMessage(client, req.params.postId);
+    if (!latestAppealMessage || latestAppealMessage.author_role !== 'author') {
+      return res.status(400).json({ message: 'There is no new user appeal waiting for review.' });
+    }
+    await client.query(
+      `INSERT INTO post_appeal_message (post_id, author_id, author_role, message)
+       VALUES ($1, $2, 'admin', $3)`,
+      [req.params.postId, req.user.sub, reason]
+    );
+    await client.query(
+      `UPDATE post
+       SET updated_at = NOW()
+       WHERE id = $1`,
+      [req.params.postId]
+    );
+
+    await recordActivity('post.appeal_admin_replied', {
+      userId: existing.rows[0].author_id,
+      postId: req.params.postId,
+      moderatorId: req.user.sub,
+      reason
+    });
+
+    return res.json({ ok: true, message: 'Admin note saved to the record.' });
+  } catch (error) {
+    console.error('Failed to save admin moderation reply.', error);
+    return res.status(500).json({ message: 'Failed to save admin moderation reply.' });
   } finally {
     client.release();
   }
@@ -5731,7 +6058,7 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
   try {
     await client.query('BEGIN');
     const existing = await client.query(
-      `SELECT id, author_id, forum_id, created_at, deleted_by_admin_at FROM post WHERE id = $1`,
+      `SELECT id, author_id, forum_id, created_at, deleted_by_admin_at, permanent_deleted_at FROM post WHERE id = $1`,
       [req.params.postId]
     );
     if (!existing.rows[0]) {
@@ -5742,9 +6069,9 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({ message: 'You can only edit your own posts.' });
     }
-    if (existing.rows[0].deleted_by_admin_at) {
+    if (existing.rows[0].permanent_deleted_at) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ message: 'This post is under moderation and cannot be edited.' });
+      return res.status(403).json({ message: 'This post was permanently deleted and can no longer be edited.' });
     }
     const forum = await resolveWritableForum(client, forumId, cleanSection, existing.rows[0].forum_id || '');
     if (isAnnouncementSection(cleanSection)) {
@@ -5764,7 +6091,7 @@ app.put('/api/posts/:postId', authRequired, async (req, res) => {
     await attachTags(client, req.params.postId, cleanTags);
     await client.query('COMMIT');
     await refreshUserWritingProfile(client, req.user.sub);
-    await recordActivity('post.updated', {
+    await recordActivity(existing.rows[0].deleted_by_admin_at ? 'post.updated_under_moderation' : 'post.updated', {
       userId: req.user.sub,
       postId: req.params.postId,
       title: updated.rows[0].title,
@@ -5800,7 +6127,7 @@ app.delete('/api/posts/:postId', authRequired, async (req, res) => {
   const client = await pool.connect();
   try {
     const existing = await client.query(
-      `SELECT id, author_id, deleted_by_admin_at FROM post WHERE id = $1`,
+      `SELECT id, author_id, deleted_by_admin_at, permanent_deleted_at FROM post WHERE id = $1`,
       [req.params.postId]
     );
     if (!existing.rows[0]) {
@@ -5809,7 +6136,7 @@ app.delete('/api/posts/:postId', authRequired, async (req, res) => {
     if (existing.rows[0].author_id !== req.user.sub) {
       return res.status(403).json({ message: 'You can only delete your own posts.' });
     }
-    if (existing.rows[0].deleted_by_admin_at) {
+    if (existing.rows[0].deleted_by_admin_at && !existing.rows[0].permanent_deleted_at) {
       return res.status(403).json({ message: 'This post is under moderation and cannot be deleted by the author.' });
     }
     await client.query(`DELETE FROM post WHERE id = $1`, [req.params.postId]);

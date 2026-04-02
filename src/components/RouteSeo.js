@@ -123,7 +123,9 @@ function routeConfig(pathname) {
     pathname === '/my-forums/invitations' ||
     matchPath('/my-forums/:forumId/managers/:managerId', pathname) ||
     pathname === '/my-posts' ||
+    matchPath('/my-posts/:postId/appeal', pathname) ||
     pathname === '/moderation' ||
+    matchPath('/moderation/posts/:postId/appeal', pathname) ||
     pathname === '/analytics' ||
     pathname === '/admin/access' ||
     pathname === '/admin/password-reset' ||

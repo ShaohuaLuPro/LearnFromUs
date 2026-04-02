@@ -14,6 +14,7 @@ import Analytics from './pages/Analytics';
 import Explore from './pages/Explore';
 import Following from './pages/Following';
 import ForumFollowersPage from './pages/ForumFollowersPage';
+import ForumRequestAppealPage from './pages/ForumRequestAppealPage';
 import ForumRequestHistoryPage from './pages/ForumRequestHistoryPage';
 import ForumRequestPage from './pages/ForumRequestPage';
 import ForumRequestReviewPage from './pages/ForumRequestReviewPage';
@@ -27,6 +28,7 @@ import MyForums from './pages/MyForums';
 import MyForumInvitations from './pages/MyForumInvitations';
 import MyForumManagers from './pages/MyForumManagers';
 import MyPosts from './pages/MyPosts';
+import PostAppealRecordPage from './pages/PostAppealRecordPage';
 import PostDetail from './pages/PostDetail';
 import Privacy from './pages/Privacy';
 import Settings from './pages/Settings';
@@ -216,6 +218,18 @@ export default function AppRoutes() {
             )}
           />
           <Route
+            path="/forums/request/:requestId/appeal"
+            element={auth.currentUser ? (
+              <ForumRequestAppealPage
+                forumWorkspace={posts.forumWorkspace}
+                loadingWorkspace={posts.loadingForums}
+                onAppealForumRequest={posts.appealForumRequest}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
             path="/forums/request/review"
             element={canReviewForumRequests ? (
               <ForumRequestReviewPage
@@ -249,8 +263,21 @@ export default function AppRoutes() {
                 onUpdatePost={posts.updatePost}
                 onAiRewritePost={posts.aiRewritePost}
                 onDeletePost={posts.deletePost}
-                onAppealPost={posts.appealPost}
                 onGetMyPosts={posts.getMyPosts}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
+            path="/my-posts/:postId/appeal"
+            element={auth.currentUser ? (
+              <PostAppealRecordPage
+                mode="author"
+                currentUser={auth.currentUser}
+                onGetMyPosts={posts.getMyPosts}
+                onAppealPost={posts.appealPost}
+                onDeletePost={posts.deletePost}
               />
             ) : (
               <Navigate to="/login" replace />
@@ -294,7 +321,23 @@ export default function AppRoutes() {
             path="/moderation"
             element={canModerate ? (
               <Moderation
+                currentUser={auth.currentUser}
+                forums={posts.forums}
                 onGetModerationPosts={posts.getModerationPosts}
+              />
+            ) : (
+              <Navigate to="/forum" replace />
+            )}
+          />
+          <Route
+            path="/moderation/posts/:postId/appeal"
+            element={canModerate ? (
+              <PostAppealRecordPage
+                mode="admin"
+                currentUser={auth.currentUser}
+                onGetModerationPosts={posts.getModerationPosts}
+                onReplyToPostAppeal={posts.adminReplyToPostAppeal}
+                onPermanentDeletePost={posts.adminPermanentDeletePost}
                 onRestorePost={posts.adminRestorePost}
               />
             ) : (

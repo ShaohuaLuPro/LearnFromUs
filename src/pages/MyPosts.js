@@ -49,13 +49,6 @@ function formatTime(timestamp) {
   });
 }
 
-function getAppealDeadline(moderation) {
-  if (!moderation?.deletedAt) {
-    return null;
-  }
-  return moderation.deletedAt + 15 * 24 * 60 * 60 * 1000;
-}
-
 function hasExpandablePreview(content) {
   const text = String(content || '').trim();
   const nonEmptyLines = text.split(/\r?\n/).filter((line) => line.trim()).length;
@@ -68,9 +61,14 @@ export default function MyPosts({
   onUpdatePost,
   onAiRewritePost,
   onDeletePost,
-  onAppealPost,
   onGetMyPosts
 }) {
+  const postFilterOptions = [
+    { value: 'all', label: 'All Posts' },
+    { value: 'successful', label: 'Successful Posts' },
+    { value: 'appeal', label: 'Appeal' },
+    { value: 'permanent-deleted', label: 'Permanent Deleted' }
+  ];
   const location = useLocation();
   const fallbackSectionValue = useMemo(() => getDefaultSectionValue(forums), [forums]);
   const [rewriteAbortController, setRewriteAbortController] = useState(null);
@@ -80,13 +78,13 @@ export default function MyPosts({
   const [error, setError] = useState('');
   const [editorLanguage, setEditorLanguage] = useState('javascript');
   const [myPosts, setMyPosts] = useState([]);
-  const [appealNotes, setAppealNotes] = useState({});
   const [aiRewriteOpen, setAiRewriteOpen] = useState(false);
   const [aiInstruction, setAiInstruction] = useState('');
   const [aiRewriteMessage, setAiRewriteMessage] = useState('');
   const [aiRewriteLoading, setAiRewriteLoading] = useState(false);
   const [expandedPosts, setExpandedPosts] = useState({});
   const [showPreview, setShowPreview] = useState(false);
+  const [selectedPostFilter, setSelectedPostFilter] = useState('all');
 
   const loadPosts = useCallback(async () => {
     const result = await onGetMyPosts();
@@ -112,14 +110,32 @@ export default function MyPosts({
     bootstrap();
   }, [currentUser, onGetMyPosts]);
 
-  const visiblePosts = useMemo(
+  const authoredPosts = useMemo(
     () => myPosts.filter((post) => post.authorId === currentUser?.id),
     [myPosts, currentUser]
   );
 
+  const visiblePosts = useMemo(() => (
+    authoredPosts.filter((post) => {
+      const isModerated = Boolean(post.moderation?.isDeleted);
+      const isPermanentlyDeleted = Boolean(post.moderation?.isPermanentlyDeleted);
+
+      if (selectedPostFilter === 'successful') {
+        return !isModerated;
+      }
+      if (selectedPostFilter === 'appeal') {
+        return isModerated && !isPermanentlyDeleted;
+      }
+      if (selectedPostFilter === 'permanent-deleted') {
+        return isPermanentlyDeleted;
+      }
+      return true;
+    })
+  ), [authoredPosts, selectedPostFilter]);
+
   const editingPost = useMemo(
-    () => visiblePosts.find((post) => post.id === editingId) || null,
-    [editingId, visiblePosts]
+    () => authoredPosts.find((post) => post.id === editingId) || null,
+    [authoredPosts, editingId]
   );
 
   const editSectionOptions = useMemo(() => {
@@ -153,7 +169,7 @@ export default function MyPosts({
     if (!targetPostId) {
       return;
     }
-    const targetPost = visiblePosts.find((post) => post.id === targetPostId);
+    const targetPost = authoredPosts.find((post) => post.id === targetPostId);
     if (!targetPost) {
       return;
     }
@@ -164,7 +180,7 @@ export default function MyPosts({
     if (mode === 'ai-rewrite' && !aiRewriteOpen) {
       setAiRewriteOpen(true);
     }
-  }, [location.search, visiblePosts, editingId, aiRewriteOpen, startEdit]);
+  }, [location.search, authoredPosts, editingId, aiRewriteOpen, startEdit]);
 
   const submitEdit = async (event) => {
     event.preventDefault();
@@ -198,18 +214,6 @@ export default function MyPosts({
       setAiRewriteMessage('');
     }
     setMessage('Post deleted.');
-    await loadPosts();
-  };
-
-  const handleAppeal = async (postId) => {
-    setError('');
-    setMessage('');
-    const result = await onAppealPost(postId, appealNotes[postId] || '');
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    setMessage(result.message);
     await loadPosts();
   };
 
@@ -308,9 +312,21 @@ export default function MyPosts({
           <div>
             <p className="type-kicker mb-2">Workspace</p>
             <h2 className="mb-1 type-title-md">My Posts</h2>
-            <p className="type-body mb-0">Review active posts, moderated removals, and appeal windows.</p>
+            <p className="type-body mb-0">Review active posts, moderation history, and saved appeal records.</p>
           </div>
-          <Link to="/forum" className="forum-secondary-btn text-decoration-none">Back to Forum</Link>
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <div className="forum-feed-switcher">
+              <Select
+                options={postFilterOptions}
+                value={selectedPostFilter}
+                onChange={setSelectedPostFilter}
+                placeholder="Choose posts"
+                triggerClassName="forum-feed-switcher-trigger"
+                menuClassName="forum-feed-switcher-menu"
+              />
+            </div>
+            <Link to="/forum" className="forum-secondary-btn text-decoration-none">Back to Forum</Link>
+          </div>
         </div>
 
         {(message || error) && (
@@ -323,8 +339,23 @@ export default function MyPosts({
           {visiblePosts.map((post) => {
             const isEditing = editingId === post.id;
             const isModerated = Boolean(post.moderation?.isDeleted);
-            const deadline = getAppealDeadline(post.moderation);
-            const appealExpired = Boolean(deadline && Date.now() > deadline);
+            const isPermanentlyDeleted = Boolean(post.moderation?.isPermanentlyDeleted);
+            const appealLog = post.moderation?.appealLog || [];
+            const hasAppealHistory = appealLog.length > 0 || Boolean(post.moderation?.appealRequestedAt);
+            const latestAppealEntry = appealLog.length > 0 ? appealLog[appealLog.length - 1] : null;
+            const canLeaveAppealMessage = isModerated && !isPermanentlyDeleted && latestAppealEntry?.authorRole !== 'author';
+            const appealHelperText = canLeaveAppealMessage
+              ? 'One saved appeal note per round. After an admin reply, you can leave another one.'
+              : latestAppealEntry?.authorRole === 'author'
+                ? 'Your latest appeal note is already saved. Wait for an admin reply before leaving another one.'
+                : 'Appeal notes stay saved in this record.';
+            const appealSummaryStatus = isPermanentlyDeleted
+              ? 'Final decision recorded'
+              : canLeaveAppealMessage
+                ? 'You can appeal again'
+                : latestAppealEntry?.authorRole === 'author'
+                  ? 'Waiting for admin reply'
+                  : 'Record saved';
 
             return (
               <article key={post.id} className={`forum-post-card ${isModerated ? 'moderated-post-card' : ''}`}>
@@ -347,20 +378,35 @@ export default function MyPosts({
                 </div>
 
                 {isModerated && (
+                  <div className={`moderation-banner mb-3 ${isPermanentlyDeleted ? 'is-danger' : ''}`}>
+                    <strong>{isPermanentlyDeleted ? 'Permanently deleted by admin.' : 'Removed by admin.'}</strong>{' '}
+                    {isPermanentlyDeleted
+                      ? (post.moderation.permanentDeleteNote || post.moderation.deletedReason || 'No final decision note provided.')
+                      : (post.moderation.deletedReason || 'No reason provided.')}
+                    {post.moderation.appealRequestedAt && !isPermanentlyDeleted && (
+                      <span> Appeal record started on {formatTime(post.moderation.appealRequestedAt)}.</span>
+                    )}
+                    {post.moderation.permanentlyDeletedAt && (
+                      <span> Finalized on {formatTime(post.moderation.permanentlyDeletedAt)}.</span>
+                    )}
+                  </div>
+                )}
+
+                {hasAppealHistory && !isModerated && (
                   <div className="moderation-banner mb-3">
-                    <strong>Removed by admin.</strong>{' '}
-                    {post.moderation.deletedReason || 'No reason provided.'}
-                    {deadline && (
-                      <span> Appeal deadline: {formatTime(deadline)}</span>
-                    )}
-                    {post.moderation.appealRequestedAt && (
-                      <span> Appeal submitted on {formatTime(post.moderation.appealRequestedAt)}.</span>
-                    )}
+                    <strong>Moderation history.</strong>{' '}
+                    This post has a saved appeal record you can review below.
                   </div>
                 )}
 
                 {isEditing ? (
                   <form onSubmit={submitEdit} className="forum-form">
+                    {isModerated && !isPermanentlyDeleted && (
+                      <div className="moderation-banner mb-3">
+                        <strong>Editing a moderated post.</strong>{' '}
+                        Your changes will be saved, but the post will stay hidden until an admin restores it.
+                      </div>
+                    )}
                     <div className="mb-2">
                       <input
                         className="form-control forum-input"
@@ -559,33 +605,43 @@ export default function MyPosts({
                     </div>
                     <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                       <small className="muted">
-                        {isModerated ? 'Hidden from public forum' : 'Published by you'}
+                        {isPermanentlyDeleted ? 'Awaiting removal from your list' : isModerated ? 'Hidden from public forum' : 'Published by you'}
                       </small>
-                      {!isModerated && (
-                        <div className="forum-actions">
+                      <div className="forum-actions">
+                        {!isPermanentlyDeleted && (
                           <button type="button" className="forum-secondary-btn" onClick={() => startEdit(post)}>Edit</button>
+                        )}
+                        {!isModerated && (
                           <button type="button" className="forum-secondary-btn" onClick={() => startEdit(post, { openAiPanel: true })}>AI Improve</button>
+                        )}
+                        {(isPermanentlyDeleted || !isModerated) && (
                           <button type="button" className="forum-danger-btn" onClick={() => handleDelete(post.id)}>Delete</button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
 
-                    {isModerated && !post.moderation.appealRequestedAt && !appealExpired && (
-                      <div className="mt-3">
-                        <label className="form-label">Appeal message</label>
-                        <textarea
-                          className="form-control forum-input"
-                          rows={3}
-                          value={appealNotes[post.id] || ''}
-                          onChange={(e) => setAppealNotes((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                          placeholder="Explain why this post should be restored."
-                        />
-                        <div className="forum-actions mt-2">
-                          <button type="button" className="forum-primary-btn" onClick={() => handleAppeal(post.id)}>
-                            Request Restore
-                          </button>
+                    {(isModerated || hasAppealHistory) && (
+                      <section className="appeal-record-strip">
+                        <div className="appeal-record-strip-main">
+                          <span className="appeal-record-strip-label">Appeal Record</span>
+                          <span className="appeal-record-strip-chip">
+                            {appealLog.length > 0 ? `${appealLog.length} notes` : 'No notes yet'}
+                          </span>
+                          {latestAppealEntry?.createdAt && (
+                            <span className="appeal-record-strip-chip">
+                              Updated {formatTime(latestAppealEntry.createdAt)}
+                            </span>
+                          )}
                         </div>
-                      </div>
+                        <div className="appeal-record-strip-side">
+                          <span className="appeal-record-strip-status" title={appealHelperText}>
+                            {appealSummaryStatus}
+                          </span>
+                          <Link to={`/my-posts/${post.id}/appeal`} className="forum-secondary-btn text-decoration-none appeal-record-strip-link">
+                            Open
+                          </Link>
+                        </div>
+                      </section>
                     )}
                   </>
                 )}
@@ -595,9 +651,19 @@ export default function MyPosts({
 
           {visiblePosts.length === 0 && (
             <section className="settings-card">
-              <h4 className="mb-2">No posts yet</h4>
-              <p className="muted mb-3">Once you publish in the forum, your posts will appear here for management.</p>
-              <Link to="/forum" className="forum-primary-btn text-decoration-none">Create Your First Post</Link>
+              <h4 className="mb-2">
+                {selectedPostFilter === 'all' ? 'No posts yet' : 'No posts in this category'}
+              </h4>
+              <p className="muted mb-3">
+                {selectedPostFilter === 'all'
+                  ? 'Once you publish in the forum, your posts will appear here for management.'
+                  : selectedPostFilter === 'permanent-deleted'
+                    ? 'Posts that receive a final permanent delete decision will appear here.'
+                  : 'Try another filter or create a new post to populate this view.'}
+              </p>
+              {selectedPostFilter !== 'permanent-deleted' && (
+                <Link to="/forum" className="forum-primary-btn text-decoration-none">Create Your First Post</Link>
+              )}
             </section>
           )}
         </div>

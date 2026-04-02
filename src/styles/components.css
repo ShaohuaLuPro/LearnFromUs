@@ -20,6 +20,11 @@
 
 .forum-select-value {
   color: var(--text-main);
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .forum-select-value.is-placeholder {
@@ -75,15 +80,44 @@
   text-align: left;
 }
 
+.forum-select-option-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.forum-select-option-text {
+  display: inline-block;
+  white-space: nowrap;
+  transform: translateX(0);
+}
+
 .forum-select-option:hover,
 .forum-select-option:focus,
 .forum-select-option.is-active {
   background: var(--brand-wash);
 }
 
+.forum-select-option:hover .forum-select-option-label.is-overflowing .forum-select-option-text,
+.forum-select-option:focus .forum-select-option-label.is-overflowing .forum-select-option-text,
+.forum-select-option.is-active .forum-select-option-label.is-overflowing .forum-select-option-text {
+  padding-right: 0.85rem;
+  animation: forum-select-option-scroll var(--option-scroll-duration, 6s) ease-in-out infinite alternate;
+}
+
 .forum-select-option.is-selected {
   color: var(--bg);
   background: linear-gradient(130deg, var(--brand), var(--brand-2));
+}
+
+@keyframes forum-select-option-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(var(--option-scroll-distance, 0px) * -1));
+  }
 }
 
 .workspace-dock {

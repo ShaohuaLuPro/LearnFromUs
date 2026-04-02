@@ -861,6 +861,14 @@ a {
   text-shadow: none !important;
 }
 
+.about-story-hero-title-em-left {
+  transform: translateX(-1.4rem);
+}
+
+.about-story-hero-title-main-right {
+  transform: translateX(8.4rem);
+}
+
 .about-story-hero-tags {
   margin-top: 1.4rem;
   display: flex;

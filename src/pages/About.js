@@ -327,8 +327,8 @@ export default function About() {
                 </div>
                 <h2 className="about-story-hero-title mb-0">
                   <span className="about-story-hero-title-em">
-                    <span className="about-story-hero-title-em-small">Real Execution is Rare</span>
-                    <span className="about-story-hero-title-main about-story-hero-title-main-late">Join the Executors</span>
+                    <span className="about-story-hero-title-em-small about-story-hero-title-em-left">Real Execution is Rare</span>
+                    <span className="about-story-hero-title-main about-story-hero-title-main-late about-story-hero-title-main-right">Join the Executors</span>
                   </span>
                 </h2>
               </section>

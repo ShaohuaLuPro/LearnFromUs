@@ -131,6 +131,7 @@ export default function AppRoutes() {
                 onLoadPosts={posts.loadPosts}
                 onLoadForums={posts.loadForums}
                 onCreatePost={posts.createPost}
+                onAiRewritePostDraft={posts.aiRewritePostDraft}
                 onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
               />
@@ -149,6 +150,7 @@ export default function AppRoutes() {
                 onLoadPosts={posts.loadPosts}
                 onLoadForums={posts.loadForums}
                 onCreatePost={posts.createPost}
+                onAiRewritePostDraft={posts.aiRewritePostDraft}
                 onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
               />
@@ -178,6 +180,7 @@ export default function AppRoutes() {
                 onLoadPosts={posts.loadPosts}
                 onLoadForums={posts.loadForums}
                 onCreatePost={posts.createPost}
+                onAiRewritePostDraft={posts.aiRewritePostDraft}
                 onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
               />

@@ -9,6 +9,7 @@ import {
   apiAgentChat,
   apiAiRewriteForumRequest,
   apiAiRewritePost,
+  apiAiRewritePostDraft,
   apiAppealPost,
   apiCreateComment,
   apiCreatePost,
@@ -65,6 +66,10 @@ type PostsContextValue = {
   aiRewritePost: (
     postId: string,
     input: { instruction: string; draft?: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] } },
+    signal?: AbortSignal
+  ) => Promise<ActionResult<Record<string, unknown>>>;
+  aiRewritePostDraft: (
+    input: { instruction: string; draft: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] } },
     signal?: AbortSignal
   ) => Promise<ActionResult<Record<string, unknown>>>;
   aiRewriteForumRequest: (
@@ -234,6 +239,25 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, message: 'Request cancelled.' };
       }
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to rewrite post with AI.' };
+    }
+  }, [getToken]);
+
+  const aiRewritePostDraft = useCallback(async (
+    input: { instruction: string; draft: { title: string; content: string; section: string; forumId?: string; tags?: string | string[] } },
+    signal?: AbortSignal
+  ) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+    try {
+      const data = await apiAiRewritePostDraft(input, token, signal);
+      return { ok: true, data };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return { ok: false, message: 'Request cancelled.' };
+      }
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to rewrite draft with AI.' };
     }
   }, [getToken]);
 
@@ -618,6 +642,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     createPost,
     updatePost,
     aiRewritePost,
+    aiRewritePostDraft,
     aiRewriteForumRequest,
     deletePost,
     getPostDetail,
@@ -659,6 +684,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     createPost,
     updatePost,
     aiRewritePost,
+    aiRewritePostDraft,
     aiRewriteForumRequest,
     deletePost,
     getPostDetail,

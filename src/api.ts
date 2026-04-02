@@ -500,6 +500,22 @@ export async function apiAiRewritePost(
   });
 }
 
+export async function apiAiRewritePostDraft(
+  input: {
+    instruction: string;
+    draft: PostPayload;
+  },
+  token: string,
+  signal?: AbortSignal
+) {
+  return request<{ draft: PostPayload; generation: DraftGeneration }>('/api/posts/ai-rewrite-draft', {
+    method: 'POST',
+    signal,
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
 export async function apiDeletePost(postId: string, token: string) {
   return request<{ ok: boolean }>(`/api/posts/${postId}`, {
     method: 'DELETE',

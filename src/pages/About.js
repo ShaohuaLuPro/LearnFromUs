@@ -220,7 +220,7 @@ export default function About() {
 
     const ctx = gsap.context(() => {
       const cards = gsap.utils.toArray('.about-bento-scroll-card');
-      const loops = cards.map((card) => {
+      const loops = cards.map((card, index) => {
         const depth = Number(card.dataset.depth || 1);
         const init = {
           xPercent: -50,
@@ -235,8 +235,8 @@ export default function About() {
           force3D: true
         };
         const centerScale = 0.78 + Math.max(0, 1.1 - depth) * 0.12;
-        const duration = Math.max(0.5, 1.1 + depth * 0.2 + 2.1);
-        const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.5, paused: true });
+        const duration = Math.max(0.5, 4.8 + depth * 0.55);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.15, paused: true });
         tl.set(card, init);
         tl.to(card, {
           ...init,
@@ -246,6 +246,7 @@ export default function About() {
           scale: centerScale,
           opacity: 0,
           filter: 'blur(6px) brightness(0.82)',
+          delay: index * 0.32,
           duration,
           ease: 'power2.inOut'
         });

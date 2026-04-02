@@ -27,6 +27,24 @@ const codeLanguageOptions = codeLanguages.map((language) => ({
   label: language
 }));
 
+const AI_REWRITE_PRESETS = [
+  {
+    id: 'polish',
+    label: 'Polish',
+    instruction: 'Polish this draft for clarity and flow while preserving my original meaning and voice.'
+  },
+  {
+    id: 'shorter',
+    label: 'Shorter',
+    instruction: 'Make this draft shorter and tighter while keeping the key ideas and examples.'
+  },
+  {
+    id: 'stronger',
+    label: 'More Technical',
+    instruction: 'Make this draft more technical and concrete with sharper implementation detail.'
+  }
+];
+
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
     month: 'short',
@@ -62,6 +80,7 @@ export default function Home({
   onLoadPosts,
   onLoadForums,
   onCreatePost,
+  onAiRewritePostDraft,
   onUpdateForumSections,
   onOwnerRemovePost
 }) {
@@ -107,6 +126,11 @@ export default function Home({
     sectionId ? [sectionId] : (currentFilters?.section || [])
   );
   const [composerLanguage, setComposerLanguage] = useState('javascript');
+  const [composerAiOpen, setComposerAiOpen] = useState(false);
+  const [composerAiInstruction, setComposerAiInstruction] = useState('');
+  const [composerAiMessage, setComposerAiMessage] = useState('');
+  const [composerAiLoading, setComposerAiLoading] = useState(false);
+  const [composerAiAbortController, setComposerAiAbortController] = useState(null);
   const [followPending, setFollowPending] = useState(false);
 
   const forumDirectory = useMemo(() => buildForumDirectory(forums, posts), [forums, posts]);
@@ -430,6 +454,9 @@ export default function Home({
       section: getScopedDefaultSection(resetForum, forums),
       tags: ''
     });
+    setComposerAiOpen(false);
+    setComposerAiInstruction('');
+    setComposerAiMessage('');
     setSearchQuery('');
     setSelectedSections([]);
     await Promise.all([
@@ -451,6 +478,80 @@ export default function Home({
       content: `${String(prev.content || '').trimEnd()}${snippet}`
     }));
   };
+
+  const stopComposerAiRewrite = useCallback(() => {
+    composerAiAbortController?.abort();
+    setComposerAiAbortController(null);
+    setComposerAiLoading(false);
+  }, [composerAiAbortController]);
+
+  const closeComposer = useCallback(() => {
+    stopComposerAiRewrite();
+    setComposerAiOpen(false);
+    setComposerAiInstruction('');
+    setComposerAiMessage('');
+    setIsComposerOpen(false);
+  }, [stopComposerAiRewrite]);
+
+  const runComposerAiRewrite = useCallback(async (instructionOverride) => {
+    const instruction = String(instructionOverride || composerAiInstruction).trim();
+    if (!instruction) {
+      setMessage('Add a rewrite instruction first.');
+      return;
+    }
+
+    if (!form.title.trim()) {
+      setMessage('Add a draft title before using AI.');
+      return;
+    }
+
+    if (!form.content.trim()) {
+      setMessage('Add some draft content before using AI.');
+      return;
+    }
+
+    setMessage('');
+    setComposerAiMessage('');
+    setComposerAiLoading(true);
+    const controller = new AbortController();
+    setComposerAiAbortController(controller);
+    const result = await onAiRewritePostDraft({
+      instruction,
+      draft: {
+        title: form.title,
+        content: form.content,
+        section: form.section,
+        forumId: form.forumId,
+        tags: form.tags
+      }
+    }, controller.signal);
+    setComposerAiAbortController(null);
+    setComposerAiLoading(false);
+
+    if (!result.ok) {
+      if (result.message === 'Request cancelled.') {
+        setComposerAiMessage('AI draft rewrite stopped.');
+        return;
+      }
+      setMessage(result.message || 'Failed to rewrite draft with AI.');
+      return;
+    }
+
+    const rewrittenDraft = result.data?.draft;
+    if (!rewrittenDraft) {
+      setMessage('AI rewrite did not return a draft.');
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      title: rewrittenDraft.title || current.title,
+      content: rewrittenDraft.content || current.content,
+      section: rewrittenDraft.section || current.section,
+      tags: Array.isArray(rewrittenDraft.tags) ? rewrittenDraft.tags.join(', ') : current.tags
+    }));
+    setComposerAiMessage(result.data?.generation?.rationale || 'AI rewrite applied to the draft. Review it, then publish when you are ready.');
+  }, [composerAiInstruction, form, onAiRewritePostDraft]);
 
   const moderatePost = async (post) => {
     const forumId = post.forum?.id;
@@ -773,14 +874,14 @@ export default function Home({
       </div>
 
       {isComposerOpen && currentUser && (
-        <div className="forum-modal-backdrop" onClick={() => setIsComposerOpen(false)}>
+        <div className="forum-modal-backdrop" onClick={closeComposer}>
           <section className="forum-modal-card" onClick={(event) => event.stopPropagation()}>
             <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
               <div>
                 <h3 className="mb-1">Create a Post</h3>
                 <p className="muted mb-0">Posting as {currentUser.name}</p>
               </div>
-              <button type="button" className="forum-close-btn" onClick={() => setIsComposerOpen(false)}>Close</button>
+              <button type="button" className="forum-close-btn" onClick={closeComposer}>Close</button>
             </div>
 
             <form onSubmit={submitPost} className="forum-form">
@@ -871,11 +972,77 @@ export default function Home({
                 </div>
               </div>
 
+              <section className="settings-card mb-3">
+                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                  <div>
+                    <h4 className="mb-1">AI Draft</h4>
+                    <p className="muted mb-0">Use AI on this unpublished draft before you publish it.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="forum-secondary-btn"
+                    onClick={() => setComposerAiOpen((current) => !current)}
+                  >
+                    {composerAiOpen ? 'Hide AI Draft' : 'Open AI Draft'}
+                  </button>
+                </div>
+
+                {composerAiOpen && (
+                  <>
+                    <div className="forum-actions mb-3">
+                      {AI_REWRITE_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className="forum-secondary-btn"
+                          disabled={composerAiLoading}
+                          onClick={() => {
+                            setComposerAiInstruction(preset.instruction);
+                            runComposerAiRewrite(preset.instruction);
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <label className="form-label">Custom instruction</label>
+                    <textarea
+                      className="form-control forum-input"
+                      rows={3}
+                      value={composerAiInstruction}
+                      onChange={(event) => setComposerAiInstruction(event.target.value)}
+                      placeholder="Example: tighten the intro, keep the technical details, and make the conclusion more actionable."
+                    />
+                    <div className="forum-actions mt-3">
+                      {composerAiLoading && (
+                        <button
+                          type="button"
+                          className="forum-secondary-btn"
+                          onClick={stopComposerAiRewrite}
+                        >
+                          Stop
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="forum-primary-btn"
+                        disabled={composerAiLoading}
+                        onClick={() => runComposerAiRewrite()}
+                      >
+                        {composerAiLoading ? 'Rewriting...' : 'Rewrite Draft with AI'}
+                      </button>
+                    </div>
+                    {composerAiMessage && <p className="muted mt-3 mb-0">{composerAiMessage}</p>}
+                  </>
+                )}
+              </section>
+
               {message && <p className="mt-3 mb-0 muted">{message}</p>}
 
               <div className="forum-actions mt-4">
                 <button type="submit" className="forum-primary-btn">Publish</button>
-                <button type="button" className="forum-secondary-btn" onClick={() => setIsComposerOpen(false)}>Cancel</button>
+                <button type="button" className="forum-secondary-btn" onClick={closeComposer}>Cancel</button>
               </div>
             </form>
           </section>

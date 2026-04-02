@@ -5961,6 +5961,77 @@ app.post('/api/posts/:postId/ai-rewrite', authRequired, async (req, res) => {
   }
 });
 
+app.post('/api/posts/ai-rewrite-draft', authRequired, async (req, res) => {
+  if (!openAiPostRewriter.isEnabled()) {
+    return res.status(503).json({ message: 'AI Rewrite is not configured for this server.' });
+  }
+
+  const instruction = String(req.body?.instruction || '').trim();
+  if (!instruction) {
+    return res.status(400).json({ message: 'A rewrite instruction is required.' });
+  }
+
+  const draftInput = req.body?.draft || {};
+  const rewriteSource = {
+    title: String(draftInput.title || '').trim(),
+    content: String(draftInput.content || '').trim(),
+    section: normalizeSection(draftInput.section || '') || 'sde-general',
+    tags: normalizeTags(Array.isArray(draftInput.tags) ? draftInput.tags : draftInput.tags || [])
+  };
+
+  if (!rewriteSource.title) {
+    return res.status(400).json({ message: 'Draft title is required.' });
+  }
+  if (!rewriteSource.content) {
+    return res.status(400).json({ message: 'Draft content is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const usage = await consumeDailyAiUsage(client, req.user);
+    if (!usage.allowed) {
+      await recordActivity('ai.daily_limit_reached', {
+        userId: req.user.sub,
+        limit: usage.limit
+      });
+      return res.status(429).json({
+        message: `Daily AI limit reached. Non-admin accounts can use AI ${usage.limit} times per day.`
+      });
+    }
+
+    const { styleProfile } = await refreshUserWritingProfile(client, req.user.sub);
+    const rewritten = await openAiPostRewriter.rewritePost({
+      post: rewriteSource,
+      instruction,
+      styleProfile,
+      currentUserName: req.user.name || ''
+    });
+
+    await recordActivity('post.ai_rewrite_draft_requested', {
+      userId: req.user.sub,
+      instruction,
+      provider: rewritten.provider,
+      model: rewritten.model
+    });
+
+    return res.json({
+      draft: rewritten.draft,
+      generation: {
+        mode: 'llm',
+        provider: rewritten.provider,
+        model: rewritten.model,
+        fallback: false,
+        rationale: rewritten.summary
+      }
+    });
+  } catch (error) {
+    console.error('Failed to rewrite draft with AI.', error);
+    return res.status(500).json({ message: 'Failed to rewrite draft with AI.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/api/posts', authRequired, async (req, res) => {
   const { title, content, section, tags, forumId } = req.body || {};
   const cleanTitle = String(title || '').trim();

@@ -24,7 +24,7 @@ const SECTION_CONTENT = {
     ]
   },
   leadership: {
-    heroTitle: 'Leadership',
+    heroTitle: 'Executive Profiles',
     heroCopy: '',
     members: [
       {
@@ -293,12 +293,42 @@ export default function About() {
           <div className="col-lg-12">
             <section className="panel about-story-panel h-100">
               <section className="about-story-hero about-story-hero-v2" aria-label="Story hero">
-                <p className="about-story-hero-eyebrow">A Forum For Doers</p>
+                <div className="about-story-hero-lines" aria-hidden="true">
+                  <span className="about-story-hero-line about-story-hero-line-1" />
+                  <span className="about-story-hero-line about-story-hero-line-2" />
+                  <span className="about-story-hero-line about-story-hero-line-3" />
+                  <span className="about-story-hero-line about-story-hero-line-4" />
+                  <span className="about-story-hero-line about-story-hero-line-5" />
+                  <span className="about-story-hero-line about-story-hero-line-6" />
+                  <span className="about-story-hero-line about-story-hero-line-7" />
+                  <span className="about-story-hero-line about-story-hero-line-8" />
+                  <span className="about-story-hero-line about-story-hero-line-9" />
+                  <span className="about-story-hero-line about-story-hero-line-10" />
+                  <span className="about-story-hero-line about-story-hero-line-11" />
+                  <span className="about-story-hero-line about-story-hero-line-12" />
+                  <span className="about-story-hero-line about-story-hero-line-13" />
+                  <span className="about-story-hero-line about-story-hero-line-14" />
+                  <span className="about-story-hero-line about-story-hero-line-15" />
+                  <span className="about-story-hero-line about-story-hero-line-16" />
+                  <span className="about-story-hero-line about-story-hero-line-17" />
+                  <span className="about-story-hero-line about-story-hero-line-18" />
+                  <span className="about-story-hero-line about-story-hero-line-19" />
+                  <span className="about-story-hero-line about-story-hero-line-20" />
+                  <span className="about-story-hero-line about-story-hero-line-21" />
+                  <span className="about-story-hero-line about-story-hero-line-22" />
+                  <span className="about-story-hero-line about-story-hero-line-23" />
+                  <span className="about-story-hero-line about-story-hero-line-24" />
+                  <span className="about-story-hero-line about-story-hero-line-25" />
+                  <span className="about-story-hero-line about-story-hero-line-26" />
+                  <span className="about-story-hero-line about-story-hero-line-27" />
+                  <span className="about-story-hero-line about-story-hero-line-28" />
+                  <span className="about-story-hero-line about-story-hero-line-29" />
+                  <span className="about-story-hero-line about-story-hero-line-30" />
+                </div>
                 <h2 className="about-story-hero-title mb-0">
-                  <span className="about-story-hero-title-main">OPINIONS ARE CHEAP</span>
                   <span className="about-story-hero-title-em">
-                    <span className="about-story-hero-title-em-small">REAL EXECUTION IS RARE</span>
-                    <span className="about-story-hero-title-main about-story-hero-title-main-late">JOIN THE EXECUTORS</span>
+                    <span className="about-story-hero-title-em-small">Real Execution is Rare</span>
+                    <span className="about-story-hero-title-main about-story-hero-title-main-late">Join the Executors</span>
                   </span>
                 </h2>
               </section>
@@ -425,6 +455,16 @@ export default function About() {
           <div className="col-lg-12">
             <section className="leadership-panel h-100">
               <header className="leadership-hero">
+                <nav className="about-breadcrumb" aria-label="Breadcrumb">
+                  <Link
+                    to={SECTION_ROUTES.story}
+                    className="about-breadcrumb-link text-decoration-none"
+                  >
+                    <span className="about-breadcrumb-root">About</span>
+                  </Link>
+                  <span className="about-breadcrumb-separator" aria-hidden="true">›</span>
+                  <span className="about-breadcrumb-current">Leadership</span>
+                </nav>
                 <h2 className="leadership-hero-title mb-0">{section.heroTitle}</h2>
                 {section.heroCopy ? <p className="leadership-hero-copy mb-0">{section.heroCopy}</p> : null}
               </header>
@@ -459,21 +499,30 @@ export default function About() {
                 ))}
               </div>
 
-              <div className="founder-link-row mt-3">
-                <Link
-                  to={SECTION_ROUTES.story}
-                  className="about-back-link text-decoration-none"
-                  aria-label="Back to About"
-                >
-                  <span className="about-back-link-icon" aria-hidden="true">←</span>
-                  <span className="about-back-link-text">Back</span>
-                </Link>
-              </div>
             </section>
           </div>
         ) : (
           <>
             <div className="col-lg-8 about-detail-col">
+              <div className="about-detail-breadcrumb-row">
+                <nav className="about-breadcrumb" aria-label="Breadcrumb">
+                  <Link
+                    to={SECTION_ROUTES.story}
+                    className="about-breadcrumb-link text-decoration-none"
+                  >
+                    <span className="about-breadcrumb-root">About</span>
+                  </Link>
+                  <span className="about-breadcrumb-separator" aria-hidden="true">›</span>
+                  <Link
+                    to={SECTION_ROUTES.leadership}
+                    className="about-breadcrumb-link text-decoration-none"
+                  >
+                    <span className="about-breadcrumb-section">Leadership</span>
+                  </Link>
+                  <span className="about-breadcrumb-separator" aria-hidden="true">›</span>
+                  <span className="about-breadcrumb-current">{profile.name}</span>
+                </nav>
+              </div>
               <section className="panel about-story-panel about-detail-panel h-100">
                 <div className="about-story-block">
                   {profile.eyebrow ? (
@@ -585,19 +634,9 @@ export default function About() {
 
                 </div>
               </section>
-              <div className="founder-link-row mt-3">
-                <Link
-                  to={SECTION_ROUTES.leadership}
-                  className="about-back-link text-decoration-none"
-                  aria-label="Back to Leadership"
-                >
-                  <span className="about-back-link-icon" aria-hidden="true">←</span>
-                  <span className="about-back-link-text">Back</span>
-                </Link>
-              </div>
             </div>
 
-            <div className="col-lg-4">
+            <div className="col-lg-4 about-detail-portrait-col">
               <section className="about-portrait-panel h-100">
                 <img
                   src={profile.image}

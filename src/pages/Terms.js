@@ -1,8 +1,16 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 export default function Terms() {
   return (
     <div className="container page-shell">
+      <nav className="about-breadcrumb mb-3" aria-label="Breadcrumb">
+        <Link to="/about" className="about-breadcrumb-link text-decoration-none">
+          <span className="about-breadcrumb-root">About</span>
+        </Link>
+        <span className="about-breadcrumb-separator" aria-hidden="true">›</span>
+        <span className="about-breadcrumb-current">Terms</span>
+      </nav>
       <section className="panel terms-page">
         <p className="type-kicker terms-page-kicker mb-2">Terms</p>
         <p className="type-body mb-3">Last updated: March 2026</p>

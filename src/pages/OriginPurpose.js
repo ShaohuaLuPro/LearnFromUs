@@ -1,30 +1,131 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ORIGIN_PANELS } from '../data/originPanels';
 
 export default function OriginPurpose() {
+  const [isVisionExpanded, setIsVisionExpanded] = useState(false);
+  const [isEvolutionExpanded, setIsEvolutionExpanded] = useState(false);
+  const [isFocusExpanded, setIsFocusExpanded] = useState(false);
+
   return (
     <div className="container page-shell about-page-shell" data-page="origin-purpose">
-      <section className="panel about-origin-full h-100">
-        <header className="about-section-head mb-4">
-          <div className="d-flex flex-column gap-2">
-            <p className="about-story-kicker about-story-kicker-highlight mb-0">Our Origin & Purpose</p>
-            <h2 className="about-story-title mb-0">Built to turn shared knowledge into visible execution.</h2>
-            <p className="about-story-copy mb-0">Explore the story behind Shaohua&apos;s vision, Ben&apos;s evolution, and what we focus on today.</p>
+      <section className="about-origin-full h-100">
+        <header className="about-section-head about-origin-hero-head mb-4">
+          <div className="d-flex flex-column">
+            <nav className="about-breadcrumb" aria-label="Breadcrumb">
+              <Link to="/about" className="about-breadcrumb-link text-decoration-none">
+                <span className="about-breadcrumb-root">About</span>
+              </Link>
+              <span className="about-breadcrumb-separator" aria-hidden="true">›</span>
+              <span className="about-breadcrumb-current">Why We Exist</span>
+            </nav>
           </div>
-          <Link to="/about" className="founder-link-pill text-decoration-none mt-2 align-self-start">
-            ← Back
-          </Link>
         </header>
 
         <div className="about-origin-grid">
           {ORIGIN_PANELS.map((panel) => (
             <article key={panel.key} className={`about-origin-panel about-origin-panel-${panel.key}`}>
               <div className="about-origin-copy">
-                <p className="about-story-kicker mb-2">{panel.title}</p>
-                <h3 className="about-story-title mb-2">{panel.lead}</h3>
-                <p className="about-story-copy mb-0">{panel.copy}</p>
+                <h3 className="about-story-title about-origin-panel-title mb-2">{panel.lead}</h3>
+                {panel.key === 'vision' ? (
+                  <div className="about-origin-copy-stack">
+                    <p className="about-story-copy mb-0">
+                      {panel.copyIntro}
+                      {!isVisionExpanded ? (
+                        <>
+                          {' '}
+                          <button
+                            type="button"
+                            className="about-origin-more-btn"
+                            onClick={() => setIsVisionExpanded((expanded) => !expanded)}
+                          >
+                            More
+                          </button>
+                        </>
+                      ) : null}
+                    </p>
+                    {isVisionExpanded ? (
+                      <p className="about-story-copy mb-0">
+                        {panel.copyMore}{' '}
+                        <button
+                          type="button"
+                          className="about-origin-more-btn"
+                          onClick={() => setIsVisionExpanded((expanded) => !expanded)}
+                        >
+                          Less
+                        </button>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : panel.key === 'evolution' ? (
+                  <div className="about-origin-copy-stack">
+                    <p className="about-story-copy mb-0">
+                      {panel.copyIntro}
+                      {!isEvolutionExpanded ? (
+                        <>
+                          {' '}
+                          <button
+                            type="button"
+                            className="about-origin-more-btn"
+                            onClick={() => setIsEvolutionExpanded((expanded) => !expanded)}
+                          >
+                            More
+                          </button>
+                        </>
+                      ) : null}
+                    </p>
+                    {isEvolutionExpanded ? (
+                      <p className="about-story-copy mb-0">
+                        {panel.copyMore}{' '}
+                        <button
+                          type="button"
+                          className="about-origin-more-btn"
+                          onClick={() => setIsEvolutionExpanded((expanded) => !expanded)}
+                        >
+                          Less
+                        </button>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : panel.key === 'focus' ? (
+                  <div className="about-origin-copy-stack">
+                    <p className="about-story-copy mb-0">
+                      {panel.copyIntro}
+                      {!isFocusExpanded ? (
+                        <>
+                          {' '}
+                          <button
+                            type="button"
+                            className="about-origin-more-btn"
+                            onClick={() => setIsFocusExpanded((expanded) => !expanded)}
+                          >
+                            More
+                          </button>
+                        </>
+                      ) : null}
+                    </p>
+                    {isFocusExpanded ? (
+                      <p className="about-story-copy mb-0">
+                        {panel.copyMore}{' '}
+                        <button
+                          type="button"
+                          className="about-origin-more-btn"
+                          onClick={() => setIsFocusExpanded((expanded) => !expanded)}
+                        >
+                          Less
+                        </button>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="about-story-copy mb-0">{panel.copy}</p>
+                )}
               </div>
+              {panel.image ? (
+                <div className="about-origin-visual">
+                  <img src={panel.image} alt={panel.imageAlt} className="about-origin-image" />
+                </div>
+              ) : null}
             </article>
           ))}
         </div>

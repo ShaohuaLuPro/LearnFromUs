@@ -40,6 +40,13 @@ const SECTION_CONTENT = {
         role: 'Software Developer',
         image: `${process.env.PUBLIC_URL}/images/33.jpg`,
         imageAlt: 'Ben He'
+      },
+      {
+        key: 'sallyHuang',
+        name: 'Sally Huang',
+        role: 'Digital Designer',
+        image: `${process.env.PUBLIC_URL}/images/111.png`,
+        imageAlt: 'Sally Huang'
       }
     ]
   },
@@ -103,6 +110,36 @@ const SECTION_CONTENT = {
       ]
     },
     blocks: []
+  },
+  sallyHuang: {
+    heroTitle: 'Team Members',
+    heroCopy:
+      'Meet Sally Huang, a digital designer shaping visual direction and product experience at LearnFromUs.',
+    profile: {
+      eyebrow: '',
+      name: 'Sally Huang',
+      role: 'Digital Designer',
+      summary:
+        'Shaping how the world sees, feels, and interacts with ideas through the craft of visual design.',
+      location: 'Boston, MA',
+      email: 'sally.huang1999@gmail.com',
+      image: `${process.env.PUBLIC_URL}/images/111.png`,
+      imageAlt: 'Sally Huang',
+      links: [
+        {
+          label: 'LinkedIn',
+          href: 'https://linkedin.com/in/jing-sally-huang'
+        }
+      ]
+    },
+    blocks: [
+      {
+        kicker: 'What I Bring',
+        title: '',
+        copy:
+          "Professional in Digital Media with a focus on User Experience Design and Research. Holding a Bachelor of Science in Fashion Design with a Fine Arts minor, this uncommon blend of disciplines has shaped a distinctly creative lens — one that bridges artistic intuition with technical rigor to explore the full spectrum of possibilities in digital media.\n\nFluent in web technologies including HTML, CSS, and JavaScript, and deeply versed in Adobe's creative suite, I bring both the craft and the code. My experience as a Digital Product Creator at L.L. Bean honed a sharp instinct for problem-solving, a commitment to creativity, and the discipline of delivering under pressure."
+      }
+    ]
   }
 };
 
@@ -111,7 +148,8 @@ const SECTION_ROUTES = {
   whyWeExist: '/about/why-we-exist',
   leadership: '/about/leadership',
   founder: '/about/leadership/founder',
-  teamMembers: '/about/leadership/team-members'
+  teamMembers: '/about/leadership/team-members',
+  sallyHuang: '/about/leadership/sally-huang'
 };
 const DIRECTION_CARDS = [
   {
@@ -188,6 +226,7 @@ export default function About() {
   const leadershipGridRef = useRef(null);
   const [animatedFounderSummary, setAnimatedFounderSummary] = useState('');
   const [animatedTeamSummary, setAnimatedTeamSummary] = useState('');
+  const [animatedSallySummary, setAnimatedSallySummary] = useState('');
   const normalizedPath = useMemo(() => {
     const pathname = location.pathname.replace(/\/+$/, '');
     return pathname || '/';
@@ -215,6 +254,9 @@ export default function About() {
     }
     if (normalizedPath === SECTION_ROUTES.teamMembers) {
       return 'teamMembers';
+    }
+    if (normalizedPath === SECTION_ROUTES.sallyHuang) {
+      return 'sallyHuang';
     }
     return 'story';
   }, [normalizedPath]);
@@ -319,17 +361,33 @@ export default function About() {
   useEffect(() => {
     const founderSummary = SECTION_CONTENT.founder.profile.summary;
     const teamSummary = SECTION_CONTENT.teamMembers.profile.summary;
+    const sallySummary = SECTION_CONTENT.sallyHuang.profile.summary;
 
-    if (activeSection !== 'founder' && activeSection !== 'teamMembers') {
+    if (activeSection !== 'founder' && activeSection !== 'teamMembers' && activeSection !== 'sallyHuang') {
       setAnimatedFounderSummary(founderSummary);
       setAnimatedTeamSummary(teamSummary);
+      setAnimatedSallySummary(sallySummary);
       return;
     }
 
     let frameId;
-    const isFounderSection = activeSection === 'founder';
-    const summaryText = isFounderSection ? founderSummary : teamSummary;
-    const setSummary = isFounderSection ? setAnimatedFounderSummary : setAnimatedTeamSummary;
+    const summaryMap = {
+      founder: {
+        text: founderSummary,
+        setSummary: setAnimatedFounderSummary
+      },
+      teamMembers: {
+        text: teamSummary,
+        setSummary: setAnimatedTeamSummary
+      },
+      sallyHuang: {
+        text: sallySummary,
+        setSummary: setAnimatedSallySummary
+      }
+    };
+    const activeSummary = summaryMap[activeSection];
+    const summaryText = activeSummary.text;
+    const setSummary = activeSummary.setSummary;
     const durationMs = 2000;
     const startTime = performance.now();
 
@@ -358,7 +416,9 @@ export default function About() {
     navigate(SECTION_ROUTES[nextSection] || SECTION_ROUTES.story);
   };
   const profile = section.profile;
-  const useInlineProfileLayout = activeSection === 'founder' || activeSection === 'teamMembers';
+  const useInlineProfileLayout =
+    activeSection === 'founder' || activeSection === 'teamMembers' || activeSection === 'sallyHuang';
+  const usesFounderDetailStyles = activeSection === 'founder' || activeSection === 'sallyHuang';
   const highlightedLabels = new Set([
     'Why This Exists',
     'Long-Term Direction',
@@ -650,14 +710,16 @@ export default function About() {
                   </h3>
                   <p
                     className={`about-story-copy mb-0 ${
-                      activeSection === 'founder' ? 'about-story-copy-highlight' : ''
-                    } ${activeSection === 'founder' ? 'about-story-copy-story-match' : ''} ${
+                      usesFounderDetailStyles ? 'about-story-copy-highlight' : ''
+                    } ${usesFounderDetailStyles ? 'about-story-copy-story-match' : ''} ${
                       activeSection === 'teamMembers' ? 'about-story-copy-plain' : ''
-                    } ${activeSection === 'founder' ? 'about-founder-summary-offset' : ''
+                    } ${usesFounderDetailStyles ? 'about-founder-summary-offset' : ''
                     }`}
                   >
                     {activeSection === 'founder'
                       ? animatedFounderSummary
+                      : activeSection === 'sallyHuang'
+                        ? animatedSallySummary
                       : activeSection === 'teamMembers'
                         ? animatedTeamSummary
                         : profile.summary}
@@ -679,22 +741,22 @@ export default function About() {
                       >
                         {block.kicker}
                       </p>
-                      {activeSection === 'founder' && block.kicker === 'What I Bring' ? (
+                      {usesFounderDetailStyles && block.kicker === 'What I Bring' ? (
                         <p className="about-story-copy about-story-copy-story-match mb-0">
-                          {`${block.title} ${block.copy}`}
+                          {[block.title, block.copy].filter(Boolean).join(' ')}
                         </p>
                       ) : (
                         <>
                           <h3
                             className={`about-story-title ${
-                              activeSection === 'founder' ? 'about-story-title-story-match' : ''
+                              usesFounderDetailStyles ? 'about-story-title-story-match' : ''
                             }`}
                           >
                             {block.title}
                           </h3>
                           <p
                             className={`about-story-copy mb-0 ${
-                              activeSection === 'founder' ? 'about-story-copy-story-match' : ''
+                              usesFounderDetailStyles ? 'about-story-copy-story-match' : ''
                             }`}
                           >
                             {block.copy}
@@ -718,21 +780,26 @@ export default function About() {
                 )}
 
                 <div className="about-story-block is-last">
-                  <div className="about-connect-list">
-                    <div className="about-connect-row">
-                      <span className="about-connect-label about-story-kicker-highlight about-story-kicker-xl">Location</span>
-                      <span className="about-connect-value">{profile.location}</span>
+                  {profile.location ? (
+                    <div className="about-connect-list">
+                      <div className="about-connect-row">
+                        <span className="about-connect-label about-story-kicker-highlight about-story-kicker-xl">Location</span>
+                        <span className="about-connect-value">{profile.location}</span>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
 
-                  <div className="founder-link-row mt-3">
-                    <a
-                      href={`mailto:${profile.email}`}
-                      className="founder-link-pill"
-                    >
-                      Email
-                    </a>
-                    {profile.links.map((link) => (
+                  {profile.email || profile.links.length ? (
+                    <div className="founder-link-row mt-3">
+                      {profile.email ? (
+                        <a
+                          href={`mailto:${profile.email}`}
+                          className="founder-link-pill"
+                        >
+                          Email
+                        </a>
+                      ) : null}
+                      {profile.links.map((link) => (
                       <a
                         key={link.label}
                         href={link.href}
@@ -742,8 +809,9 @@ export default function About() {
                       >
                         {link.label}
                       </a>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : null}
 
                 </div>
               </section>

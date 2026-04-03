@@ -81,6 +81,15 @@ function routeConfig(pathname) {
     };
   }
 
+  if (pathname === '/about/leadership/sally-huang') {
+    return {
+      title: buildPageTitle('Sally Huang'),
+      description: 'Learn more about Sally Huang, Digital Designer at LearnFromUs.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
   if (pathname === '/terms') {
     return {
       title: buildPageTitle('Terms of Use'),

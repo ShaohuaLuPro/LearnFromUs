@@ -191,6 +191,7 @@ export default function AppRoutes() {
           <Route path="/about/leadership" element={<About />} />
           <Route path="/about/leadership/founder" element={<About />} />
           <Route path="/about/leadership/team-members" element={<About />} />
+          <Route path="/about/leadership/sally-huang" element={<About />} />
           <Route path="/origin-purpose" element={<OriginPurpose />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />

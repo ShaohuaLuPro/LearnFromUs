@@ -55,7 +55,7 @@ MONGODB_DB_NAME=learnfromus
 DUCKDB_PATH=
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5-mini
-DAILY_AI_USAGE_LIMIT=5
+DAILY_AI_USAGE_LIMIT=20
 ```
 
 Notes:
@@ -147,7 +147,7 @@ Required Render environment variables:
 - `DUCKDB_PATH` (optional)
 - `OPENAI_API_KEY` (optional, enables OpenAI drafting)
 - `OPENAI_MODEL` (optional, defaults to `gpt-5-mini`)
-- `DAILY_AI_USAGE_LIMIT` (optional, defaults to `5` for non-admin accounts)
+- `DAILY_AI_USAGE_LIMIT` (optional, defaults to `20` for non-admin accounts)
 
 Before starting the backend in a new environment, run:
 

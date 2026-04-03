@@ -98,12 +98,14 @@ async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
               u.username AS author_name, u.email AS author_email,
               f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
               COALESCE(f.section_scope, '{}') AS forum_section_scope,
-              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+              COUNT(DISTINCT c.id)::int AS comment_count
        FROM post p
        JOIN app_user u ON u.id = p.author_id
        LEFT JOIN forum f ON f.id = p.forum_id
        LEFT JOIN post_tag pt ON pt.post_id = p.id
        LEFT JOIN tag t ON t.id = pt.tag_id
+       LEFT JOIN comment c ON c.post_id = p.id
        WHERE ${whereSql}
        GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, f.section_scope
        ORDER BY p.created_at DESC${limitOffsetSql}`,
@@ -142,12 +144,14 @@ async function getPublicPostById(pool, mapPostRow, postId) {
               u.username AS author_name, u.email AS author_email,
               f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
               COALESCE(f.section_scope, '{}') AS forum_section_scope,
-              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+              COUNT(DISTINCT c.id)::int AS comment_count
        FROM post p
        JOIN app_user u ON u.id = p.author_id
        LEFT JOIN forum f ON f.id = p.forum_id
        LEFT JOIN post_tag pt ON pt.post_id = p.id
        LEFT JOIN tag t ON t.id = pt.tag_id
+       LEFT JOIN comment c ON c.post_id = p.id
        WHERE p.id = $1
          AND p.is_published = TRUE
          AND p.deleted_by_admin_at IS NULL

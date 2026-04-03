@@ -45,6 +45,49 @@ const AI_REWRITE_PRESETS = [
   }
 ];
 
+const FEED_SORT_OPTIONS = [
+  { value: 'best', label: 'Best' },
+  { value: 'hot', label: 'Hot' },
+  { value: 'new', label: 'New' },
+  { value: 'top', label: 'Top' },
+  { value: 'rising', label: 'Rising' }
+];
+
+const FEED_TIME_RANGE_OPTIONS = [
+  { value: 'all', label: 'All time' },
+  { value: '1d', label: 'Past 1 day' },
+  { value: '3d', label: 'Past 3 days' },
+  { value: '7d', label: 'Past 7 days' },
+  { value: '15d', label: 'Past 15 days' },
+  { value: '30d', label: 'Past 30 days' }
+];
+
+function getOptionLabel(options, value, fallback = '') {
+  return options.find((option) => option.value === value)?.label || fallback;
+}
+
+function renderNativeSelectOptions(options) {
+  return options.map((item) => {
+    if (Array.isArray(item.options)) {
+      return (
+        <optgroup key={item.label} label={item.label}>
+          {item.options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </optgroup>
+      );
+    }
+
+    return (
+      <option key={item.value} value={item.value}>
+        {item.label}
+      </option>
+    );
+  });
+}
+
 function formatTime(timestamp) {
   return new Date(timestamp).toLocaleString(undefined, {
     month: 'short',
@@ -62,12 +105,110 @@ function getPreview(content) {
   return `${text.slice(0, 180).trimEnd()}...`;
 }
 
-function buildSectionOptionsForForum(forum) {
-  return getSectionSelectOptions(forum?.sectionScope || []);
-}
-
 function getScopedDefaultSection(forum, forums) {
   return getDefaultSectionValue(forum?.sectionScope || [], forums);
+}
+
+function forumSupportsSection(forum, section) {
+  const cleanSection = String(section || '').trim();
+  if (!forum) {
+    return false;
+  }
+  if (!cleanSection) {
+    return true;
+  }
+  return !Array.isArray(forum.sectionScope) || forum.sectionScope.length === 0 || forum.sectionScope.includes(cleanSection);
+}
+
+function resolveComposerForumForDraft(draft, forums, selectedForumOption, preferredComposerForum) {
+  const draftSection = String(draft?.section || '').trim();
+  const explicitForum = forums.find((forum) => forum.id === draft?.forumId);
+  if (forumSupportsSection(explicitForum, draftSection)) {
+    return explicitForum;
+  }
+  if (forumSupportsSection(selectedForumOption, draftSection)) {
+    return selectedForumOption;
+  }
+
+  const followedMatch = forums.find((forum) => Boolean(forum.isFollowing) && forumSupportsSection(forum, draftSection));
+  if (followedMatch) {
+    return followedMatch;
+  }
+
+  const anyMatch = forums.find((forum) => forumSupportsSection(forum, draftSection));
+  if (anyMatch) {
+    return anyMatch;
+  }
+
+  return explicitForum || selectedForumOption || preferredComposerForum || null;
+}
+
+function getTimeRangeCutoff(rangeValue) {
+  const now = Date.now();
+  switch (String(rangeValue || 'all')) {
+    case '1d':
+      return now - 24 * 60 * 60 * 1000;
+    case '3d':
+      return now - 3 * 24 * 60 * 60 * 1000;
+    case '7d':
+      return now - 7 * 24 * 60 * 60 * 1000;
+    case '15d':
+      return now - 15 * 24 * 60 * 60 * 1000;
+    case '30d':
+      return now - 30 * 24 * 60 * 60 * 1000;
+    default:
+      return null;
+  }
+}
+
+function getPostViewCount(post) {
+  return Number(post?.viewCount || 0);
+}
+
+function getPostCommentCount(post) {
+  return Number(post?.commentCount || 0);
+}
+
+function getTopScore(post) {
+  const viewScore = Math.log2(getPostViewCount(post) + 1) * 34;
+  const commentScore = Math.log2(getPostCommentCount(post) + 1) * 44;
+  return viewScore + commentScore;
+}
+
+function getHotScore(post, forumInsight, now, isAggregateView) {
+  const activityAt = getPostActivityAt(post);
+  const ageHours = Math.max(0, (now - activityAt) / 36e5);
+  const recencyScore = Math.max(0, 168 - Math.min(ageHours, 168)) * 2.8;
+  const topScore = getTopScore(post);
+  const forumScore = isAggregateView
+    ? getFeedScore(post, forumInsight, now) * 0.35
+    : Math.log2((forumInsight?.livePostCount ?? forumInsight?.postCount ?? 0) + 1) * 20;
+
+  return recencyScore + topScore + forumScore;
+}
+
+function getBestScore(post, forumInsight, now, isAggregateView) {
+  const activityAt = getPostActivityAt(post);
+  const ageHours = Math.max(0, (now - activityAt) / 36e5);
+  const qualityScore = getTopScore(post) * 0.75;
+  const freshnessScore = Math.max(0, 120 - Math.min(ageHours, 120)) * 1.9;
+  const baseFeedScore = isAggregateView
+    ? getFeedScore(post, forumInsight, now)
+    : getHotScore(post, forumInsight, now, false);
+
+  return baseFeedScore + qualityScore + freshnessScore;
+}
+
+function getRisingScore(post, forumInsight, now, isAggregateView) {
+  const activityAt = getPostActivityAt(post);
+  const ageHours = Math.max(1, (now - activityAt) / 36e5);
+  const recentBoost = Math.max(0, 72 - Math.min(ageHours, 72)) * 2.4;
+  const engagementVelocity = (getPostViewCount(post) + getPostCommentCount(post) * 4) / Math.pow(ageHours + 2, 0.92);
+  const forumBoost = isAggregateView
+    ? Math.log2((forumInsight?.livePostCount ?? forumInsight?.postCount ?? 0) + 1) * 6
+    : Math.log2((forumInsight?.livePostCount ?? forumInsight?.postCount ?? 0) + 1) * 4;
+
+  return recentBoost + engagementVelocity * 26 + forumBoost;
 }
 
 export default function Home({
@@ -84,6 +225,7 @@ export default function Home({
   onUpdateForumSections,
   onOwnerRemovePost
 }) {
+  void pagination;
   void onUpdateForumSections;
   const location = useLocation();
   const navigate = useNavigate();
@@ -122,9 +264,10 @@ export default function Home({
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(currentFilters?.q || '');
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  const [selectedSections, setSelectedSections] = useState(
-    sectionId ? [sectionId] : (currentFilters?.section || [])
-  );
+  const defaultSortMode = isAggregateView ? 'best' : 'hot';
+  const [selectedSections, setSelectedSections] = useState(sectionId ? [sectionId] : []);
+  const [sortMode, setSortMode] = useState(defaultSortMode);
+  const [timeRange, setTimeRange] = useState('all');
   const [composerLanguage, setComposerLanguage] = useState('javascript');
   const [composerAiOpen, setComposerAiOpen] = useState(false);
   const [composerAiInstruction, setComposerAiInstruction] = useState('');
@@ -147,6 +290,18 @@ export default function Home({
     }
     return nextMap;
   }, [forumDirectory]);
+  const followedForumCount = useMemo(
+    () => forums.filter((forum) => forum.isFollowing).length,
+    [forums]
+  );
+  const activeSortLabel = useMemo(
+    () => getOptionLabel(FEED_SORT_OPTIONS, sortMode, 'Best'),
+    [sortMode]
+  );
+  const activeTimeRangeLabel = useMemo(
+    () => getOptionLabel(FEED_TIME_RANGE_OPTIONS, timeRange, 'All time'),
+    [timeRange]
+  );
 
   const preferredComposerForum = useMemo(() => {
     if (selectedForumOption) {
@@ -173,49 +328,92 @@ export default function Home({
       return;
     }
 
-    const draftForum = forums.find((forum) => forum.id === draft.forumId)
-      || selectedForumOption
-      || preferredComposerForum;
+    const draftForum = resolveComposerForumForDraft(draft, forums, selectedForumOption, preferredComposerForum);
     const defaultSection = getScopedDefaultSection(draftForum, forums);
+    const nextSection = forumSupportsSection(draftForum, draft.section)
+      ? String(draft.section || '')
+      : defaultSection;
 
     setForm({
       title: String(draft.title || ''),
       content: String(draft.content || ''),
-      forumId: String(draft.forumId || draftForum?.id || ''),
-      section: String(draft.section || defaultSection) || defaultSection,
+      forumId: String(draftForum?.id || draft.forumId || ''),
+      section: nextSection || defaultSection,
       tags: Array.isArray(draft.tags) ? draft.tags.join(', ') : String(draft.tags || '')
     });
     setMessage('');
     setIsComposerOpen(true);
   }, [forums, preferredComposerForum, selectedForumOption]);
 
-  const displayedPosts = useMemo(() => {
-    if (!isAggregateView) {
+  const timeFilteredPosts = useMemo(() => {
+    const cutoff = getTimeRangeCutoff(timeRange);
+    if (!cutoff) {
       return posts;
     }
 
+    return posts.filter((post) => getPostActivityAt(post) >= cutoff);
+  }, [posts, timeRange]);
+
+  const filteredPosts = useMemo(() => {
+    if (selectedSections.length === 0) {
+      return timeFilteredPosts;
+    }
+
+    return timeFilteredPosts.filter((post) => selectedSections.includes(post.section || fallbackSectionValue));
+  }, [fallbackSectionValue, selectedSections, timeFilteredPosts]);
+
+  const displayedPosts = useMemo(() => {
     const now = Date.now();
-    return [...posts].sort((a, b) => {
+    return [...filteredPosts].sort((a, b) => {
       const aInsight = forumInsightMap.get(a.forum?.id || '') || forumInsightMap.get(a.forum?.slug || '') || null;
       const bInsight = forumInsightMap.get(b.forum?.id || '') || forumInsightMap.get(b.forum?.slug || '') || null;
-      const scoreDiff = getFeedScore(b, bInsight, now) - getFeedScore(a, aInsight, now);
 
-      if (scoreDiff !== 0) {
-        return scoreDiff;
+      if (sortMode === 'new') {
+        return getPostActivityAt(b) - getPostActivityAt(a);
+      }
+
+      if (sortMode === 'top') {
+        return getTopScore(b) - getTopScore(a)
+          || getPostViewCount(b) - getPostViewCount(a)
+          || getPostActivityAt(b) - getPostActivityAt(a);
+      }
+
+      if (sortMode === 'rising') {
+        const scoreDiff = getRisingScore(b, bInsight, now, isAggregateView)
+          - getRisingScore(a, aInsight, now, isAggregateView);
+        if (scoreDiff !== 0) {
+          return scoreDiff;
+        }
+      }
+
+      if (sortMode === 'hot') {
+        const scoreDiff = getHotScore(b, bInsight, now, isAggregateView)
+          - getHotScore(a, aInsight, now, isAggregateView);
+        if (scoreDiff !== 0) {
+          return scoreDiff;
+        }
+      }
+
+      if (sortMode === 'best') {
+        const scoreDiff = getBestScore(b, bInsight, now, isAggregateView)
+          - getBestScore(a, aInsight, now, isAggregateView);
+        if (scoreDiff !== 0) {
+          return scoreDiff;
+        }
       }
 
       return getPostActivityAt(b) - getPostActivityAt(a);
     });
-  }, [forumInsightMap, isAggregateView, posts]);
+  }, [filteredPosts, forumInsightMap, isAggregateView, sortMode]);
 
   const sectionCounts = useMemo(() => {
     const counts = {};
-    for (const post of displayedPosts) {
+    for (const post of timeFilteredPosts) {
       const key = post.section || fallbackSectionValue;
       counts[key] = (counts[key] || 0) + 1;
     }
     return counts;
-  }, [displayedPosts, fallbackSectionValue]);
+  }, [fallbackSectionValue, timeFilteredPosts]);
 
   const sortedComposerForums = useMemo(() => {
     return [...forums].sort((a, b) => {
@@ -263,6 +461,10 @@ export default function Home({
       { value: '__all__', label: 'All Forums' }
     ];
 
+    if (!isAggregateView && selectedForum?.slug && !selectedForum.isFollowing) {
+      options.push({ value: selectedForum.slug, label: selectedForum.name });
+    }
+
     if (followedForums.length > 0) {
       options.push({
         label: 'Subscribed Forums',
@@ -274,25 +476,25 @@ export default function Home({
     }
 
     return options;
-  }, [forumInsightMap, forums]);
+  }, [forumInsightMap, forums, isAggregateView, selectedForum]);
 
   const selectedFeedSwitcherValue = useMemo(() => {
     if (isAggregateView) {
       return '__all__';
     }
-    if (selectedForum?.isFollowing) {
+    if (selectedForum?.slug) {
       return selectedForum.slug;
     }
     return '';
   }, [isAggregateView, selectedForum]);
 
   useEffect(() => {
-    if (sectionId) {
-      setSelectedSections([sectionId]);
-      return;
-    }
-    setSelectedSections(currentFilters?.section || []);
-  }, [sectionId, currentFilters]);
+    setSelectedSections(sectionId ? [sectionId] : []);
+  }, [sectionId, selectedForumSlug]);
+
+  useEffect(() => {
+    setSortMode(defaultSortMode);
+  }, [defaultSortMode]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -326,7 +528,6 @@ export default function Home({
       onLoadPosts({
         q: deferredSearchQuery.trim(),
         forum: selectedForumSlug,
-        section: selectedSections,
         page: 1,
         pageSize: 'all'
       });
@@ -335,7 +536,7 @@ export default function Home({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [deferredSearchQuery, onLoadPosts, selectedForumSlug, selectedSections]);
+  }, [deferredSearchQuery, onLoadPosts, selectedForumSlug]);
 
   useEffect(() => {
     const defaultForum = selectedForumOption || preferredComposerForum;
@@ -369,6 +570,7 @@ export default function Home({
 
   useEffect(() => {
     if (visibleSectionValues.length === 0) {
+      setSelectedSections([]);
       return;
     }
     setSelectedSections((current) => current.filter((value) => visibleSectionValues.includes(value)));
@@ -384,6 +586,13 @@ export default function Home({
 
   const clearSections = () => {
     setSelectedSections([]);
+  };
+
+  const resetFeedFilters = () => {
+    setSearchQuery('');
+    setSelectedSections([]);
+    setTimeRange('all');
+    setSortMode(defaultSortMode);
   };
 
   const selectedForumPermissions = selectedForum?.currentUserPermissions || [];
@@ -460,7 +669,7 @@ export default function Home({
     setSearchQuery('');
     setSelectedSections([]);
     await Promise.all([
-      onLoadPosts({ q: '', forum: selectedForumSlug, section: [], page: 1, pageSize: 'all' }),
+      onLoadPosts({ q: '', forum: selectedForumSlug, page: 1, pageSize: 'all' }),
       onLoadForums()
     ]);
     setIsComposerOpen(false);
@@ -543,15 +752,24 @@ export default function Home({
       return;
     }
 
-    setForm((current) => ({
-      ...current,
-      title: rewrittenDraft.title || current.title,
-      content: rewrittenDraft.content || current.content,
-      section: rewrittenDraft.section || current.section,
-      tags: Array.isArray(rewrittenDraft.tags) ? rewrittenDraft.tags.join(', ') : current.tags
-    }));
+    setForm((current) => {
+      const nextSection = rewrittenDraft.section || current.section;
+      const currentForum = forums.find((forum) => forum.id === current.forumId) || preferredComposerForum;
+      const nextForum = forumSupportsSection(currentForum, nextSection)
+        ? currentForum
+        : resolveComposerForumForDraft({ forumId: current.forumId, section: nextSection }, forums, selectedForumOption, preferredComposerForum);
+
+      return {
+        ...current,
+        title: rewrittenDraft.title || current.title,
+        content: rewrittenDraft.content || current.content,
+        forumId: nextForum?.id || current.forumId,
+        section: nextSection,
+        tags: Array.isArray(rewrittenDraft.tags) ? rewrittenDraft.tags.join(', ') : current.tags
+      };
+    });
     setComposerAiMessage(result.data?.generation?.rationale || 'AI rewrite applied to the draft. Review it, then publish when you are ready.');
-  }, [composerAiInstruction, form, onAiRewritePostDraft]);
+  }, [composerAiInstruction, form, forums, onAiRewritePostDraft, preferredComposerForum, selectedForumOption]);
 
   const moderatePost = async (post) => {
     const forumId = post.forum?.id;
@@ -583,7 +801,14 @@ export default function Home({
   };
 
   const activeForumForComposer = selectedForumOption || forums.find((forum) => forum.id === form.forumId) || preferredComposerForum;
-  const activeSectionOptions = buildSectionOptionsForForum(activeForumForComposer);
+  const activeSectionOptions = useMemo(() => {
+    const scopedValues = getSectionValues(activeForumForComposer?.sectionScope || []);
+    const currentSection = String(form.section || '').trim();
+    const mergedValues = currentSection && !scopedValues.includes(currentSection)
+      ? [currentSection, ...scopedValues]
+      : scopedValues;
+    return getSectionSelectOptions(mergedValues.length > 0 ? mergedValues : forums);
+  }, [activeForumForComposer?.sectionScope, form.section, forums]);
   const showComposerCodeTools = Boolean(activeForumForComposer?.showCodeBlockTools ?? true);
   const composerToolbarCommands = useMemo(() => {
     if (showComposerCodeTools) {
@@ -612,11 +837,14 @@ export default function Home({
 
   return (
     <div className="container page-shell">
-      <section className="panel mb-4 forum-view-intro">
+      <section className={`panel mb-4 forum-view-intro ${isAggregateView ? 'is-aggregate-view' : 'is-forum-view'}`.trim()}>
         <div className="forum-view-intro-row">
           <div className="forum-view-intro-main">
             <div className="forum-view-intro-copy-block">
-              <p className="type-kicker mb-1">{isAggregateView ? 'Forum Feed' : 'Forum'}</p>
+              <div className="forum-view-intro-kicker-row">
+                <p className="type-kicker mb-0">{isAggregateView ? 'Forum Feed' : 'Forum'}</p>
+                <span className="forum-view-intro-status-pill">{isAggregateView ? 'Cross-forum' : 'Live board'}</span>
+              </div>
               <h3 className="mb-1 type-title-md">
                 {isAggregateView ? 'All forums, one smart feed' : selectedForum?.name || 'Forum'}
               </h3>
@@ -630,6 +858,31 @@ export default function Home({
                   <span className="forum-view-intro-badge">
                     <strong>{forums.length}</strong>
                     <span>Forums in feed</span>
+                  </span>
+                  <span className="forum-view-intro-badge">
+                    <strong>{followedForumCount}</strong>
+                    <span>Following</span>
+                  </span>
+                  <span className="forum-view-intro-badge">
+                    <strong>{displayedPosts.length}</strong>
+                    <span>Visible posts</span>
+                  </span>
+                </div>
+              )}
+
+              {!isAggregateView && (
+                <div className="forum-view-intro-meta-row">
+                  <span className="forum-view-intro-badge">
+                    <strong>{selectedForum?.sectionScope?.length || 0}</strong>
+                    <span>Sections</span>
+                  </span>
+                  <span className="forum-view-intro-badge">
+                    <strong>{activeSortLabel}</strong>
+                    <span>Ranking</span>
+                  </span>
+                  <span className="forum-view-intro-badge">
+                    <strong>{activeTimeRangeLabel}</strong>
+                    <span>Time range</span>
                   </span>
                 </div>
               )}
@@ -660,18 +913,6 @@ export default function Home({
                 <span className="explore-intro-link-arrow" aria-hidden="true">↗</span>
               </span>
             </Link>
-            {currentUser && followedForumOptions.length > 1 && (
-              <div className="forum-feed-switcher">
-                <Select
-                  options={followedForumOptions}
-                  value={selectedFeedSwitcherValue}
-                  onChange={switchForumFeed}
-                  placeholder="Subscribed forums"
-                  triggerClassName="forum-feed-switcher-trigger"
-                  menuClassName="forum-feed-switcher-menu"
-                />
-              </div>
-            )}
             {selectedForum && (
               <div className="forum-view-intro-action-row">
                 {canViewForumFollowers && (
@@ -704,65 +945,134 @@ export default function Home({
 
       <div className="forum-layout">
         <div className="forum-main forum-main-full">
-          {!isAggregateView && (
-            <section className="panel mb-4">
-              <div className="forum-sections-head mb-3">
-                <div>
-                  <h3 className="mb-1 type-title-md">Sections</h3>
-                  <p className="type-body mb-0">Filter posts in this forum by section.</p>
-                </div>
-                <div className="forum-sections-head-actions">
-                  <span className="muted">{sectionDisplayScope.length || 0} sections</span>
-                </div>
+          <section className="panel mb-4 forum-filter-panel">
+            <div className="forum-sections-head mb-3">
+              <div>
+                <h3 className="mb-1 type-title-md">Filters</h3>
+                <p className="type-body mb-0">
+                  {isAggregateView
+                    ? 'Combine section, time window, and ranking filters across all forums.'
+                    : 'Combine section, time window, and ranking filters inside this forum.'}
+                </p>
               </div>
-
-              <div className="section-grid">
-                <div className="section-card is-open">
-                  <div className="section-chip-wrap">
-                    {visibleSections.map((item) => (
-                      <div
-                        key={item.value}
-                        className="section-chip-row"
-                      >
-                        <button
-                          type="button"
-                          className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`.trim()}
-                          onClick={() => toggleSection(item.value)}
-                        >
-                          <span>{item.label}</span>
-                          <span className="section-count">{sectionCounts[item.value] || 0}</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <div className="forum-sections-head-actions">
+                <span className="muted">{sectionDisplayScope.length || 0} sections</span>
               </div>
+            </div>
 
-              {selectedSections.length > 0 && (
-                <div className="section-filter-row mt-3">
-                  <button
-                    type="button"
-                    className="section-filter is-active"
-                    onClick={clearSections}
-                  >
-                    Clear Sections
+            <div className="forum-filter-shell mb-3">
+              <div className="forum-filter-search-row">
+                <input
+                  className="form-control forum-input tag-search-input"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={isAggregateView ? 'Search posts across all forums' : 'Search title, content, tags, author, section'}
+                />
+                {searchQuery && (
+                  <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
+                    Clear Search
                   </button>
-                  {selectedSections.map((sectionValue) => (
-                    <button
-                      key={sectionValue}
-                      type="button"
-                      className="section-filter"
-                      onClick={() => toggleSection(sectionValue)}
+                )}
+              </div>
+
+              <div className="forum-filter-controls">
+                {currentUser && followedForumOptions.length > 1 && (
+                  <label className="forum-filter-control">
+                    <span className="forum-filter-control-label">Forum scope</span>
+                    <div className="forum-native-select-wrap">
+                      <select
+                        className="forum-native-select"
+                        value={selectedFeedSwitcherValue}
+                        onChange={(e) => switchForumFeed(e.target.value)}
+                      >
+                        {renderNativeSelectOptions(followedForumOptions)}
+                      </select>
+                    </div>
+                  </label>
+                )}
+
+                <label className="forum-filter-control">
+                  <span className="forum-filter-control-label">Sort by</span>
+                  <div className="forum-native-select-wrap">
+                    <select
+                      className="forum-native-select"
+                      value={sortMode}
+                      onChange={(e) => setSortMode(e.target.value)}
                     >
-                      {getSectionLabel(sectionValue)}
-                    </button>
-                  ))}
+                      {renderNativeSelectOptions(FEED_SORT_OPTIONS)}
+                    </select>
+                  </div>
+                </label>
+
+                <label className="forum-filter-control">
+                  <span className="forum-filter-control-label">Time range</span>
+                  <div className="forum-native-select-wrap">
+                    <select
+                      className="forum-native-select"
+                      value={timeRange}
+                      onChange={(e) => setTimeRange(e.target.value)}
+                    >
+                      {renderNativeSelectOptions(FEED_TIME_RANGE_OPTIONS)}
+                    </select>
+                  </div>
+                </label>
+              </div>
+
+              {(searchQuery || selectedSections.length > 0 || timeRange !== 'all' || sortMode !== defaultSortMode) && (
+                <div className="forum-filter-footer">
+                  <button type="button" className="forum-secondary-btn" onClick={resetFeedFilters}>
+                    Reset Filters
+                  </button>
                 </div>
               )}
-            </section>
-          )}
+            </div>
 
-          <section className="panel">
+            <div className="section-grid">
+              <div className="section-card is-open">
+                <div className="section-chip-wrap">
+                  {visibleSections.map((item) => (
+                    <div
+                      key={item.value}
+                      className="section-chip-row"
+                    >
+                      <button
+                        type="button"
+                        className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`.trim()}
+                        onClick={() => toggleSection(item.value)}
+                      >
+                        <span>{item.label}</span>
+                        <span className="section-count">{sectionCounts[item.value] || 0}</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {selectedSections.length > 0 && (
+              <div className="section-filter-row mt-3">
+                <button
+                  type="button"
+                  className="section-filter is-active"
+                  onClick={clearSections}
+                >
+                  Clear Sections
+                </button>
+                {selectedSections.map((sectionValue) => (
+                  <button
+                    key={sectionValue}
+                    type="button"
+                    className="section-filter"
+                    onClick={() => toggleSection(sectionValue)}
+                  >
+                    {getSectionLabel(sectionValue)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="panel forum-feed-panel">
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
               <div>
                 <h3 className="mb-1 type-title-md">{isAggregateView ? 'Smart Feed' : 'Forum Posts'}</h3>
@@ -773,7 +1083,10 @@ export default function Home({
                 </p>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
-                <span className="muted">{pagination?.total || 0} posts</span>
+                <span className="muted">
+                  {displayedPosts.length}
+                  {posts.length !== displayedPosts.length ? ` of ${posts.length}` : ''} posts
+                </span>
                 {!currentUser ? (
                   <Link to="/login" className="forum-primary-btn text-decoration-none">
                     Login to Post
@@ -784,20 +1097,6 @@ export default function Home({
                   </button>
                 )}
               </div>
-            </div>
-
-            <div className="tag-toolbar mb-3">
-              <input
-                className="form-control forum-input tag-search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={isAggregateView ? 'Search posts across all forums' : 'Search title, content, tags, author, section'}
-              />
-              {searchQuery && (
-                <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
-                  Clear Search
-                </button>
-              )}
             </div>
 
             {message && <div className="settings-alert is-success mb-3">{message}</div>}
@@ -845,12 +1144,18 @@ export default function Home({
                   )}
                   <p className="mb-2 forum-post-preview">{getPreview(post.content)}</p>
                   <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <small className="muted">
-                      Posted by{' '}
-                      <Link to={`/users/${post.authorId}`} className="post-author-link">
-                        {post.authorName}
-                      </Link>
-                    </small>
+                    <div className="forum-post-footer-meta">
+                      <small className="muted">
+                        Posted by{' '}
+                        <Link to={`/users/${post.authorId}`} className="post-author-link">
+                          {post.authorName}
+                        </Link>
+                      </small>
+                      <div className="forum-post-stats">
+                        <span className="forum-post-stat">{getPostViewCount(post)} views</span>
+                        <span className="forum-post-stat">{getPostCommentCount(post)} comments</span>
+                      </div>
+                    </div>
                     <div className="d-flex align-items-center gap-2 flex-wrap">
                       {canManagePost(post) && (
                         <button type="button" className="forum-danger-btn" onClick={() => moderatePost(post)}>
@@ -866,7 +1171,7 @@ export default function Home({
               ))}
 
               {!loadingPosts && displayedPosts.length === 0 && (
-                <p className="muted mb-0">No posts match the current forum, section, and tag filters.</p>
+                <p className="muted mb-0">No posts match the current search, section, and time filters.</p>
               )}
             </div>
           </section>
@@ -900,7 +1205,9 @@ export default function Home({
                       setForm((prev) => ({
                         ...prev,
                         forumId: nextForumId,
-                        section: getScopedDefaultSection(nextForum, forums)
+                        section: forumSupportsSection(nextForum, prev.section)
+                          ? prev.section
+                          : getScopedDefaultSection(nextForum, forums)
                       }));
                     }}
                     placeholder="Choose a forum"

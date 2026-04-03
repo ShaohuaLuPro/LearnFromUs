@@ -1,6 +1,7 @@
 import type {
   AnalyticsReport,
   AgentAction,
+  AgentForumOption,
   AgentNavigation,
   Comment,
   DraftGeneration,
@@ -85,6 +86,7 @@ type AgentResponse = {
   referencePosts?: Post[];
   generation?: DraftGeneration;
   actions?: AgentAction[];
+  forumMatches?: AgentForumOption[];
   workspacePosts?: WorkspacePostLink[];
 } & AgentNavigation;
 
@@ -421,7 +423,7 @@ export async function apiCreatePost(input: PostPayload, token: string) {
 }
 
 export async function apiRequestForum(
-  input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string },
+  input: { name: string; overview?: string; description: string; rationale: string; sectionScope: string[]; slug?: string },
   token: string
 ) {
   return request<{ ok: boolean; message?: string; request: ForumRequest }>('/api/forums/requests', {
@@ -465,7 +467,7 @@ export async function apiRejectForumRequest(requestId: string, input: { reviewNo
 
 export async function apiAppealForumRequest(
   requestId: string,
-  input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string },
+  input: { name: string; overview?: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string },
   token: string
 ) {
   return request<{ ok: boolean; message?: string; request: ForumRequest }>(`/api/forums/requests/${requestId}/appeal`, {

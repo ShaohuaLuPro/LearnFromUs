@@ -84,12 +84,18 @@ function mergePostMatches(...groups: SearchPostSuggestion[][]) {
 export default function Header({ currentUser, forums, posts, onLogout }: HeaderProps) {
   const navigate = useNavigate();
   const [navExpanded, setNavExpanded] = useState(false);
+  const [isNavbarVisible, setIsNavbarVisible] = useState(true);
   const [adminOpen, setAdminOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [forumQuery, setForumQuery] = useState('');
   const [forumSearchOpen, setForumSearchOpen] = useState(false);
   const [remotePostMatches, setRemotePostMatches] = useState<SearchPostSuggestion[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const lastScrollYRef = useRef(0);
+  const navbarVisibleRef = useRef(true);
+  const scrollFrameRef = useRef<number | null>(null);
+  const downwardScrollDistanceRef = useRef(0);
+  const upwardScrollDistanceRef = useRef(0);
   const adminCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -202,6 +208,87 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     mediaQuery.addEventListener('change', syncDesktopNavState);
     return () => mediaQuery.removeEventListener('change', syncDesktopNavState);
   }, []);
+
+  useEffect(() => {
+    lastScrollYRef.current = window.scrollY || 0;
+    navbarVisibleRef.current = true;
+    downwardScrollDistanceRef.current = 0;
+    upwardScrollDistanceRef.current = 0;
+
+    const syncNavbarVisibility = () => {
+      if (navExpanded) {
+        if (!navbarVisibleRef.current) {
+          navbarVisibleRef.current = true;
+          setIsNavbarVisible(true);
+        }
+        lastScrollYRef.current = window.scrollY || 0;
+        downwardScrollDistanceRef.current = 0;
+        upwardScrollDistanceRef.current = 0;
+        return;
+      }
+
+      const currentScrollY = Math.max(0, window.scrollY || 0);
+      const delta = currentScrollY - lastScrollYRef.current;
+
+      if (currentScrollY <= 12) {
+        if (!navbarVisibleRef.current) {
+          navbarVisibleRef.current = true;
+          setIsNavbarVisible(true);
+        }
+        downwardScrollDistanceRef.current = 0;
+        upwardScrollDistanceRef.current = 0;
+      } else if (delta > 0) {
+        downwardScrollDistanceRef.current += delta;
+        upwardScrollDistanceRef.current = 0;
+
+        if (currentScrollY > 72 && downwardScrollDistanceRef.current >= 18 && navbarVisibleRef.current) {
+          navbarVisibleRef.current = false;
+          setIsNavbarVisible(false);
+          downwardScrollDistanceRef.current = 0;
+        }
+      } else if (delta < 0) {
+        upwardScrollDistanceRef.current += Math.abs(delta);
+        downwardScrollDistanceRef.current = 0;
+
+        if (upwardScrollDistanceRef.current >= 12 && !navbarVisibleRef.current) {
+          navbarVisibleRef.current = true;
+          setIsNavbarVisible(true);
+          upwardScrollDistanceRef.current = 0;
+        }
+      }
+
+      lastScrollYRef.current = currentScrollY;
+    };
+
+    const handleScroll = () => {
+      if (scrollFrameRef.current != null) {
+        return;
+      }
+
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        syncNavbarVisibility();
+      });
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (scrollFrameRef.current != null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
+  }, [navExpanded]);
+
+  useEffect(() => {
+    if (navExpanded) {
+      navbarVisibleRef.current = true;
+      downwardScrollDistanceRef.current = 0;
+      upwardScrollDistanceRef.current = 0;
+      setIsNavbarVisible(true);
+    }
+  }, [navExpanded]);
 
   const postMatches = useMemo(
     () => mergePostMatches(localPostMatches, remotePostMatches),
@@ -619,7 +706,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     <Navbar
       expand="lg"
       sticky="top"
-      className="site-navbar"
+      className={`site-navbar ${isNavbarVisible ? 'is-visible' : 'is-hidden'}`.trim()}
       expanded={navExpanded}
       onToggle={(nextExpanded) => {
         setNavExpanded(Boolean(nextExpanded));

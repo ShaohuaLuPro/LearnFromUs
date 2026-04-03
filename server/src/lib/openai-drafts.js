@@ -81,6 +81,44 @@ function truncateText(value, maxLength) {
   return `${text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
+function sanitizeDraftTitle(value, fallback = '') {
+  const normalized = String(value || fallback || '')
+    .trim()
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^(title|post title|headline|subject|标题)\s*[:：-]\s*/i, '')
+    .split(/\r?\n/)[0]
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return truncateText(normalized, 180);
+}
+
+function sanitizePublishableContent(value, fallback = '') {
+  const lines = String(value || fallback || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n');
+
+  while (lines.length > 0) {
+    const firstLine = String(lines[0] || '').trim();
+    if (!firstLine) {
+      lines.shift();
+      continue;
+    }
+    if (/^(sure|absolutely|certainly|here(?:'s| is))(?:\b.*)?$/i.test(firstLine)) {
+      lines.shift();
+      continue;
+    }
+    if (/^(draft|post|article|content)\s*[:：]\s*$/i.test(firstLine)) {
+      lines.shift();
+      continue;
+    }
+    break;
+  }
+
+  return truncateText(lines.join('\n').trim(), 12000);
+}
+
 function buildPrompt({ message, styleProfile, referencePosts, fallbackDraft, currentUserName }) {
   const referenceSummary = referencePosts.length > 0
     ? referencePosts.map((post, index) => (
@@ -121,8 +159,12 @@ function buildPrompt({ message, styleProfile, referencePosts, fallbackDraft, cur
     'Instructions:',
     '- Write a forum post draft that sounds like the same user, not like a generic assistant.',
     '- Preserve the user’s usual tone, section preference, post length, and structure when the history clearly suggests them.',
+    '- Choose the section that best matches the post topic.',
     '- Use the fallback draft only as a safety rail, not as the final writing style.',
     '- Prefer concrete, experience-based writing over generic advice.',
+    '- Title must be plain title text only. No prefixes, labels, quotes, or markdown.',
+    '- Content must be the post itself, ready to publish immediately.',
+    '- Do not talk to the requester, explain the draft, or wrap the post with commentary.',
     '- Return clean markdown in content.',
     '- Do not mention that an AI wrote the post.',
     '- Keep tags relevant and concise.',
@@ -151,8 +193,8 @@ function extractJsonString(response) {
 
 function normalizeDraftPayload(payload, fallbackDraft) {
   const raw = typeof payload === 'string' ? JSON.parse(payload) : payload;
-  const title = String(raw?.title || fallbackDraft.title || '').trim();
-  const content = String(raw?.content || fallbackDraft.content || '').trim();
+  const title = sanitizeDraftTitle(raw?.title, fallbackDraft.title);
+  const content = sanitizePublishableContent(raw?.content, fallbackDraft.content);
   const section = SECTION_ENUM.includes(String(raw?.section || ''))
     ? String(raw.section)
     : fallbackDraft.section;
@@ -168,10 +210,10 @@ function normalizeDraftPayload(payload, fallbackDraft) {
 
   return {
     draft: {
-      title: truncateText(title, 180),
+      title,
       section,
       tags,
-      content: truncateText(content, 12000)
+      content
     },
     rationale
   };
@@ -238,5 +280,7 @@ function createOpenAIDraftService({ apiKey, model }) {
 
 module.exports = {
   SECTION_ENUM,
-  createOpenAIDraftService
+  createOpenAIDraftService,
+  sanitizeDraftTitle,
+  sanitizePublishableContent
 };

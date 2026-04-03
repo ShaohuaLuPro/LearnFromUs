@@ -10,7 +10,7 @@ const nodemailer = require('nodemailer');
 const { Pool } = require('pg');
 const { createActivityStore } = require('./lib/activity-store');
 const { createOpenAIAgentRouter } = require('./lib/openai-agent-router');
-const { createOpenAIDraftService, SECTION_ENUM } = require('./lib/openai-drafts');
+const { createOpenAIDraftService, SECTION_ENUM, sanitizeDraftTitle, sanitizePublishableContent } = require('./lib/openai-drafts');
 const { createOpenAIForumRequestDraftService } = require('./lib/openai-forum-request-drafts');
 const { createOpenAIPostRewriter } = require('./lib/openai-post-rewriter');
 const { createHybridRateLimitStore, createRateLimitMiddleware } = require('./lib/rate-limit');
@@ -56,7 +56,7 @@ const mongoDbName = String(process.env.MONGODB_DB_NAME || 'learnfromus').trim();
 const duckDbPath = String(process.env.DUCKDB_PATH || path.resolve(__dirname, '../data/learnfromus-analytics.duckdb')).trim();
 const openAiApiKey = String(process.env.OPENAI_API_KEY || '').trim();
 const openAiModel = String(process.env.OPENAI_MODEL || 'gpt-5-mini').trim() || 'gpt-5-mini';
-const dailyAiUsageLimit = Number(process.env.DAILY_AI_USAGE_LIMIT || 5);
+const dailyAiUsageLimit = Number(process.env.DAILY_AI_USAGE_LIMIT || 20);
 const isOpenAiConfigured = Boolean(openAiApiKey);
 
 if (!jwtSecret) {
@@ -179,7 +179,8 @@ const SITE_ADMIN_PERMISSION_ENUM = [
   'moderation',
   'analytics',
   'forum_requests',
-  'password_reset'
+  'password_reset',
+  'unlimited_ai'
 ];
 
 const SITE_ADMIN_PERMISSION_DETAILS = [
@@ -207,6 +208,11 @@ const SITE_ADMIN_PERMISSION_DETAILS = [
     key: 'password_reset',
     label: 'Password Reset',
     description: 'Set temporary passwords for users through the admin panel.'
+  },
+  {
+    key: 'unlimited_ai',
+    label: 'Unlimited AI',
+    description: 'Bypass the daily AI usage limit for this site admin account.'
   }
 ];
 
@@ -453,6 +459,42 @@ async function recordActivity(type, payload = {}) {
 
 function getActivityCollection() {
   return activityStore.getActivityCollection();
+}
+
+async function getPostViewCounts(postIds = []) {
+  const uniquePostIds = [...new Set((postIds || []).map((postId) => String(postId || '').trim()).filter(Boolean))];
+  if (uniquePostIds.length === 0) {
+    return new Map();
+  }
+
+  const activityCollection = getActivityCollection();
+  if (!activityCollection) {
+    return new Map(uniquePostIds.map((postId) => [postId, 0]));
+  }
+
+  const rows = await activityCollection.aggregate([
+    {
+      $match: {
+        type: 'post.viewed',
+        postId: { $in: uniquePostIds }
+      }
+    },
+    {
+      $group: {
+        _id: '$postId',
+        count: { $sum: 1 }
+      }
+    }
+  ]).toArray();
+
+  const counts = new Map(uniquePostIds.map((postId) => [postId, 0]));
+  rows.forEach((row) => {
+    const postId = String(row?._id || '').trim();
+    if (postId) {
+      counts.set(postId, Number(row?.count || 0));
+    }
+  });
+  return counts;
 }
 
 function duckQuery(sql) {
@@ -1247,9 +1289,17 @@ async function consumeDailyAiUsage(client, user) {
     };
   }
 
+  if (hasSiteAdminPermission(user, 'unlimited_ai')) {
+    return {
+      allowed: true,
+      remaining: null,
+      limit: null
+    };
+  }
+
   const normalizedLimit = Number.isFinite(dailyAiUsageLimit) && dailyAiUsageLimit > 0
     ? Math.trunc(dailyAiUsageLimit)
-    : 5;
+    : 20;
 
   const result = await client.query(
     `INSERT INTO ai_daily_usage (user_id, usage_date, usage_count, last_used_at)
@@ -1745,8 +1795,10 @@ async function buildDraftWithUserStyle(message, user) {
     const fallbackDraft = buildDraftFromMessage(message);
 
     if (!styleProfile || posts.length === 0) {
+      const resolvedDraftContext = await resolveDraftForumContext(client, message, user, fallbackDraft);
       return {
-        draft: fallbackDraft,
+        draft: resolvedDraftContext.draft,
+        forumMatches: resolvedDraftContext.forumMatches,
         styleProfile: null,
         referencePosts: [],
         personalized: false,
@@ -1773,10 +1825,10 @@ async function buildDraftWithUserStyle(message, user) {
       fallback: false
     };
     let draft = {
-      title: explicitTitle || composeDraftTitle(topic, styleProfile),
+      title: sanitizeDraftTitle(explicitTitle || composeDraftTitle(topic, styleProfile)),
       section: explicitSection || styleProfile.preferredSections[0] || fallbackDraft.section,
       tags: buildDraftTags(extractTagsFromMessage(message), styleProfile, topic),
-      content: buildPersonalizedDraftContent({ topic, styleProfile, referencePosts })
+      content: sanitizePublishableContent(buildPersonalizedDraftContent({ topic, styleProfile, referencePosts }))
     };
 
     if (openAiDraftService.isEnabled()) {
@@ -1812,8 +1864,11 @@ async function buildDraftWithUserStyle(message, user) {
       }
     }
 
+    const resolvedDraftContext = await resolveDraftForumContext(client, message, user, draft);
+
     return {
-      draft,
+      draft: resolvedDraftContext.draft,
+      forumMatches: resolvedDraftContext.forumMatches,
       styleProfile,
       referencePosts,
       personalized: true,
@@ -1864,7 +1919,31 @@ function extractQuotedValue(message, key) {
 
 function pickSectionFromMessage(message) {
   const normalized = normalizeSection(message);
-  return SECTION_ENUM.find((section) => normalized.includes(section)) || '';
+  const directMatch = SECTION_ENUM.find((section) => normalized.includes(section));
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const text = String(message || '').toLowerCase();
+  const keywordRules = [
+    { section: 'ai-llm', keywords: ['llm', 'rag', 'prompt', 'prompting', 'embedding', 'embeddings', 'agent', 'openai', 'chatgpt'] },
+    { section: 'mle', keywords: ['mle', 'mlops', 'feature store', 'model serving', 'training pipeline', 'inference pipeline', 'machine learning engineering'] },
+    { section: 'deep-learning', keywords: ['deep learning', 'transformer', 'fine-tuning', 'finetuning', 'neural network', 'cnn', 'lstm'] },
+    { section: 'analytics', keywords: ['analytics', 'dashboard', 'funnel', 'retention', 'metrics', 'kpi', 'attribution'] },
+    { section: 'data-engineering', keywords: ['etl', 'elt', 'warehouse', 'lakehouse', 'spark', 'kafka', 'dbt', 'airflow', 'data pipeline'] },
+    { section: 'statistics', keywords: ['bayes', 'bayesian', 'hypothesis test', 'confidence interval', 'regression', 'probability'] },
+    { section: 'visualization', keywords: ['visualization', 'chart', 'plot', 'tableau', 'power bi'] },
+    { section: 'backend', keywords: ['backend', 'api', 'server', 'express', 'node', 'postgres', 'mysql', 'redis'] },
+    { section: 'frontend', keywords: ['frontend', 'react', 'next.js', 'nextjs', 'css', 'html', 'browser', 'tailwind'] },
+    { section: 'security', keywords: ['security', 'auth', 'oauth', 'jwt', 'password reset', 'access control', 'csrf'] },
+    { section: 'devops-cloud', keywords: ['docker', 'kubernetes', 'k8s', 'aws', 'gcp', 'azure', 'terraform', 'ci/cd'] },
+    { section: 'testing-qa', keywords: ['testing', 'qa', 'playwright', 'cypress', 'unit test', 'integration test'] },
+    { section: 'mobile', keywords: ['ios', 'android', 'react native', 'swift', 'kotlin', 'mobile'] },
+    { section: 'announcements', keywords: ['announcement', 'release', 'launched', 'shipping', 'update'] }
+  ];
+
+  const matchedRule = keywordRules.find((rule) => rule.keywords.some((keyword) => text.includes(keyword)));
+  return matchedRule?.section || '';
 }
 
 function extractTagsFromMessage(message) {
@@ -1879,28 +1958,236 @@ function buildDraftFromMessage(message) {
     .replace(/^(write|generate|draft|compose|help me post|create a post)\s*/i, '')
     .trim();
   const cleanTopic = explicitTopic || 'a practical engineering lesson';
-  const title = explicitTitle || `Practical notes on ${cleanTopic.charAt(0).toUpperCase()}${cleanTopic.slice(1)}`;
+  const title = sanitizeDraftTitle(
+    explicitTitle || `Practical notes on ${cleanTopic.charAt(0).toUpperCase()}${cleanTopic.slice(1)}`
+  );
   const section = explicitSection || 'sde-general';
   const tags = extractTagsFromMessage(message).slice(0, 4);
   const outlineBullets = [
-    `## Problem`,
-    `What specific issue or learning moment did you run into with ${cleanTopic}?`,
+    `I wanted a cleaner and more repeatable way to handle ${cleanTopic}, so I narrowed the problem down to the pieces that were actually slowing things down.`,
     '',
-    `## Approach`,
-    `Explain the setup, the tradeoffs you considered, and the implementation path you chose.`,
+    '## Context',
+    `The main friction was not the idea itself. It was the execution path: too many manual choices, uneven output quality, and no quick way to review the result.`,
     '',
-    `## What worked`,
-    `Share the concrete outcome, code pattern, or product decision that proved useful.`,
+    '## Approach',
+    `I reduced the workflow to a small set of explicit steps, kept the tradeoffs visible, and optimized for something that could be reused without adding extra ceremony.`,
     '',
-    `## What I would improve next`,
-    `Call out limitations, follow-up ideas, or what you would do differently.`
+    '## What worked',
+    `The biggest improvement came from making the process concrete. The output became easier to review, easier to repeat, and much less dependent on starting from scratch each time.`,
+    '',
+    '## Takeaway',
+    `The useful lesson was that ${cleanTopic} gets much easier to ship when the workflow is opinionated enough to be repeatable but still light enough to adjust when edge cases show up.`
   ];
   return {
     title,
     section,
     tags,
-    content: outlineBullets.join('\n'),
-    summary: `Drafted a post outline about ${cleanTopic}.`
+    content: sanitizePublishableContent(outlineBullets.join('\n')),
+    summary: `Drafted a publish-ready post about ${cleanTopic}.`
+  };
+}
+
+async function resolveDraftForumId(client, section) {
+  const normalizedSection = normalizeSection(section);
+  if (!normalizedSection) {
+    return '';
+  }
+
+  const forum = await getForumBySlug(client, getDefaultForumSlugForSection(normalizedSection));
+  return forum?.id || '';
+}
+
+function forumSupportsSectionScope(forum, section) {
+  const normalizedSection = normalizeSection(section);
+  if (!forum) {
+    return false;
+  }
+  if (!normalizedSection) {
+    return true;
+  }
+  return !Array.isArray(forum.sectionScope) || forum.sectionScope.length === 0 || forum.sectionScope.includes(normalizedSection);
+}
+
+function scoreForumForDraftMessage(forum, message) {
+  const text = normalizeTaxonomyTerm(message);
+  const name = normalizeTaxonomyTerm(forum?.name || '');
+  const slug = normalizeTaxonomyTerm(String(forum?.slug || '').replace(/-/g, ' '));
+  const scoreTerms = [...new Set([
+    ...tokenizeText(name),
+    ...tokenizeText(slug)
+  ])];
+
+  let score = 0;
+  if (name && text.includes(name)) {
+    score += 24;
+  }
+  if (slug && slug !== name && text.includes(slug)) {
+    score += 18;
+  }
+
+  scoreTerms.forEach((term) => {
+    if (term && text.includes(term)) {
+      score += 3;
+    }
+  });
+
+  if (/\bforum\b|\bcommunity\b|\bspace\b/i.test(text) && score > 0) {
+    score += 2;
+  }
+
+  return score;
+}
+
+function resolveSectionForForumDraft(message, forum, fallbackSection) {
+  const directSection = normalizeSection(pickSectionFromMessage(message) || fallbackSection);
+  if (forumSupportsSectionScope(forum, directSection)) {
+    return directSection;
+  }
+
+  const availableSections = Array.isArray(forum?.sectionScope) ? forum.sectionScope : [];
+  if (availableSections.length === 0) {
+    return directSection || fallbackSection || 'sde-general';
+  }
+
+  const messageText = String(message || '').toLowerCase();
+  const scopedMatch = availableSections.find((section) => messageText.includes(String(section).replace(/-/g, ' ')));
+  if (scopedMatch) {
+    return scopedMatch;
+  }
+
+  return availableSections[0];
+}
+
+async function listAgentForumOptions(client, user) {
+  const result = user?.sub
+    ? await client.query(
+        `SELECT f.id, f.slug, f.name, f.description, COALESCE(f.section_scope, '{}') AS section_scope,
+                EXISTS (
+                  SELECT 1
+                  FROM forum_follow ff
+                  WHERE ff.user_id = $1
+                    AND ff.forum_id = f.id
+                ) AS is_following,
+                f.is_core
+         FROM forum f
+         ORDER BY is_following DESC, f.is_core DESC, f.name ASC`,
+        [user.sub]
+      )
+    : await client.query(
+        `SELECT f.id, f.slug, f.name, f.description, COALESCE(f.section_scope, '{}') AS section_scope,
+                FALSE AS is_following,
+                f.is_core
+         FROM forum f
+         ORDER BY f.is_core DESC, f.name ASC`
+      );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    slug: row.slug || '',
+    name: row.name || '',
+    description: row.description || '',
+    sectionScope: row.section_scope || [],
+    isFollowing: Boolean(row.is_following),
+    isCore: Boolean(row.is_core)
+  }));
+}
+
+function sortMatchedForums(left, right) {
+  return Number(Boolean(right.isFollowing)) - Number(Boolean(left.isFollowing))
+    || Number(Boolean(right.isCore)) - Number(Boolean(left.isCore))
+    || (right.matchScore || 0) - (left.matchScore || 0)
+    || String(left.name || '').localeCompare(String(right.name || ''));
+}
+
+function selectDraftForums(forums, message, section) {
+  const rankedByMention = forums
+    .map((forum) => ({
+      ...forum,
+      matchScore: scoreForumForDraftMessage(forum, message)
+    }))
+    .filter((forum) => forum.matchScore >= 8)
+    .sort(sortMatchedForums);
+
+  if (rankedByMention.length === 1) {
+    return {
+      selectedForum: rankedByMention[0],
+      forumMatches: []
+    };
+  }
+
+  if (rankedByMention.length > 1) {
+    return {
+      selectedForum: null,
+      forumMatches: rankedByMention
+    };
+  }
+
+  const rankedBySection = forums
+    .filter((forum) => forumSupportsSectionScope(forum, section))
+    .sort(sortMatchedForums);
+
+  if (rankedBySection.length === 1) {
+    return {
+      selectedForum: rankedBySection[0],
+      forumMatches: []
+    };
+  }
+
+  if (rankedBySection.length > 1) {
+    return {
+      selectedForum: null,
+      forumMatches: rankedBySection
+    };
+  }
+
+  return {
+    selectedForum: null,
+    forumMatches: []
+  };
+}
+
+async function resolveDraftForumContext(client, message, user, draft) {
+  const inferredSection = normalizeSection(draft?.section || pickSectionFromMessage(message) || '');
+  const forums = await listAgentForumOptions(client, user);
+  const { selectedForum, forumMatches } = selectDraftForums(forums, message, inferredSection);
+
+  if (selectedForum) {
+    const resolvedSection = resolveSectionForForumDraft(message, selectedForum, inferredSection || draft?.section);
+    return {
+      draft: {
+        ...draft,
+        forumId: selectedForum.id,
+        section: resolvedSection || draft.section
+      },
+      forumMatches: []
+    };
+  }
+
+  if (forumMatches.length > 1) {
+    return {
+      draft: {
+        ...draft,
+        forumId: ''
+      },
+      forumMatches: forumMatches.map((forum) => ({
+        id: forum.id,
+        slug: forum.slug,
+        name: forum.name,
+        description: forum.description,
+        sectionScope: forum.sectionScope,
+        isFollowing: forum.isFollowing,
+        suggestedSection: resolveSectionForForumDraft(message, forum, inferredSection || draft?.section)
+      }))
+    };
+  }
+
+  const fallbackForumId = draft?.forumId || await resolveDraftForumId(client, inferredSection || draft?.section);
+  return {
+    draft: {
+      ...draft,
+      forumId: fallbackForumId
+    },
+    forumMatches: []
   };
 }
 
@@ -2523,10 +2810,16 @@ async function runRuleBasedAgentCommand(message, user) {
   }
 
   if (intent === 'draft' || intent === 'publish') {
-    const { draft, styleProfile, referencePosts, personalized, generation } = user
-      ? await buildDraftWithUserStyle(message, user)
-      : {
-          draft: buildDraftFromMessage(message),
+    let draftResult;
+    if (user) {
+      draftResult = await buildDraftWithUserStyle(message, user);
+    } else {
+      const client = await pool.connect();
+      try {
+        const resolvedDraftContext = await resolveDraftForumContext(client, message, null, buildDraftFromMessage(message));
+        draftResult = {
+          draft: resolvedDraftContext.draft,
+          forumMatches: resolvedDraftContext.forumMatches,
           styleProfile: null,
           referencePosts: [],
           personalized: false,
@@ -2537,18 +2830,26 @@ async function runRuleBasedAgentCommand(message, user) {
             fallback: false
           }
         };
+      } finally {
+        client.release();
+      }
+    }
+    const { draft, forumMatches = [], styleProfile, referencePosts, personalized, generation } = draftResult;
     return {
       intent,
-      reply: personalized
+      reply: forumMatches.length > 1
+        ? 'I found multiple forums that fit this request. Choose one below, then I will open the composer there. Followed forums are listed first.'
+        : personalized
         ? intent === 'publish'
           ? `I prepared a publish-ready draft using your last ${styleProfile.sampleSize} posts as a style reference${generation?.provider === 'openai' ? ` and ${generation.model}` : ''}.`
           : `I drafted this in your usual style based on your last ${styleProfile.sampleSize} posts${generation?.provider === 'openai' ? ` with ${generation.model}` : ''}.`
         : intent === 'publish'
           ? 'I prepared a publish-ready draft. Review it before posting.'
           : user
-            ? 'I drafted a post outline. Publish a few more posts and I will match your forum style more closely.'
-            : 'I drafted a post outline you can review, edit, or publish.',
+            ? 'I drafted a publish-ready post. Publish a few more posts and I will match your forum style more closely.'
+            : 'I drafted a publish-ready post you can review, edit, or publish.',
       draft,
+      forumMatches,
       styleProfile,
       referencePosts,
       generation,
@@ -2641,10 +2942,16 @@ async function executeAgentRoute(route, originalMessage, user) {
 
   if (safeRoute.tool === 'draft_post') {
     const draftRequest = safeRoute.query || originalMessage;
-    const { draft, styleProfile, referencePosts, personalized, generation } = user
-      ? await buildDraftWithUserStyle(draftRequest, user)
-      : {
-          draft: buildDraftFromMessage(draftRequest),
+    let draftResult;
+    if (user) {
+      draftResult = await buildDraftWithUserStyle(draftRequest, user);
+    } else {
+      const client = await pool.connect();
+      try {
+        const resolvedDraftContext = await resolveDraftForumContext(client, draftRequest, null, buildDraftFromMessage(draftRequest));
+        draftResult = {
+          draft: resolvedDraftContext.draft,
+          forumMatches: resolvedDraftContext.forumMatches,
           styleProfile: null,
           referencePosts: [],
           personalized: false,
@@ -2655,14 +2962,22 @@ async function executeAgentRoute(route, originalMessage, user) {
             fallback: false
           }
         };
+      } finally {
+        client.release();
+      }
+    }
+    const { draft, forumMatches = [], styleProfile, referencePosts, personalized, generation } = draftResult;
     return {
       intent: detectAgentIntent(originalMessage) === 'publish' ? 'publish' : 'draft',
-      reply: personalized
+      reply: forumMatches.length > 1
+        ? 'I found multiple forums that fit this request. Choose one below, then I will open the composer there. Followed forums are listed first.'
+        : personalized
         ? `I drafted this in your usual style based on your recent posts${generation?.provider === 'openai' ? ` with ${generation.model}` : ''}.`
         : user
-          ? 'I drafted a post outline. Publish a few more posts and I will match your forum style more closely.'
-          : 'I drafted a post outline you can review, edit, or publish.',
+          ? 'I drafted a publish-ready post. Publish a few more posts and I will match your forum style more closely.'
+          : 'I drafted a publish-ready post you can review, edit, or publish.',
       draft,
+      forumMatches,
       styleProfile,
       referencePosts,
       generation,
@@ -3311,6 +3626,8 @@ function mapPostRow(row) {
     content: row.content_markdown,
     createdAt: new Date(row.created_at).getTime(),
     updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+    viewCount: Number(row.view_count || 0),
+    commentCount: Number(row.comment_count || 0),
     authorId: row.author_id,
     authorName: row.author_name,
     authorEmail: row.author_email,
@@ -3515,7 +3832,7 @@ app.get('/api/health', (_, res) => {
       model: openAiModel,
       dailyUsageLimit: Number.isFinite(dailyAiUsageLimit) && dailyAiUsageLimit > 0
         ? Math.trunc(dailyAiUsageLimit)
-        : 5,
+        : 20,
       features: {
         agentRouting: openAiAgentRouter.isEnabled(),
         draftGeneration: openAiDraftService.isEnabled(),
@@ -4565,7 +4882,7 @@ app.patch('/api/forums/:forumId/sections', authRequired, async (req, res) => {
 
 app.post('/api/forums/requests', authRequired, async (req, res) => {
   const cleanName = normalizeForumName(req.body?.name);
-  const cleanDescription = normalizeForumDescription(req.body?.description);
+  const cleanDescription = normalizeForumDescription(req.body?.description || req.body?.overview);
   const cleanRationale = normalizeForumRationale(req.body?.rationale);
   const cleanScope = normalizeSectionScope(req.body?.sectionScope);
   const cleanSlug = generateForumSlug(req.body?.slug, cleanName, cleanScope);
@@ -4658,6 +4975,7 @@ app.post('/api/forums/requests/ai-rewrite', authRequired, async (req, res) => {
     const draftInput = req.body?.draft || {};
     const seedText = [
       draftInput.name,
+      draftInput.overview,
       draftInput.description,
       draftInput.rationale,
       Array.isArray(draftInput.sectionScope) ? draftInput.sectionScope.join(' ') : draftInput.sectionScope
@@ -4670,6 +4988,7 @@ app.post('/api/forums/requests/ai-rewrite', authRequired, async (req, res) => {
     const fallbackDraft = buildForumRequestDraftFromMessage(seedText);
     const rewriteSource = {
       name: normalizeForumName(draftInput.name) || fallbackDraft.name,
+      overview: String(draftInput.overview || fallbackDraft.overview || '').trim().slice(0, 220) || fallbackDraft.overview,
       description: normalizeForumDescription(draftInput.description) || fallbackDraft.description,
       rationale: normalizeForumRationale(draftInput.rationale) || fallbackDraft.rationale,
       sectionScope: normalizeSectionScope(draftInput.sectionScope).length > 0
@@ -4844,7 +5163,7 @@ app.post('/api/forums/requests/:requestId/reject', authRequired, siteAdminPermis
 
 app.post('/api/forums/requests/:requestId/appeal', authRequired, async (req, res) => {
   const cleanName = normalizeForumName(req.body?.name);
-  const cleanDescription = normalizeForumDescription(req.body?.description);
+  const cleanDescription = normalizeForumDescription(req.body?.description || req.body?.overview);
   const cleanRationale = normalizeForumRationale(req.body?.rationale);
   const cleanScope = normalizeSectionScope(req.body?.sectionScope);
   const cleanAppealNote = normalizeForumRationale(req.body?.appealNote);
@@ -5781,7 +6100,14 @@ app.post('/api/forums/:forumId/posts/:postId/restore', authRequired, async (req,
 app.get('/api/posts', async (req, res) => {
   try {
     const data = await listPublicPosts(pool, mapPostRow, req.query);
-    return res.json(data);
+    const viewCountMap = await getPostViewCounts((data.posts || []).map((post) => post.id));
+    return res.json({
+      ...data,
+      posts: (data.posts || []).map((post) => ({
+        ...post,
+        viewCount: viewCountMap.get(post.id) || 0
+      }))
+    });
   } catch (error) {
     console.error('Failed to load public posts.', error);
     return res.status(500).json({ message: 'Failed to load posts.' });
@@ -5794,7 +6120,18 @@ app.get('/api/posts/:postId', async (req, res) => {
     if (!post) {
       return res.status(404).json({ message: 'Post not found.' });
     }
-    return res.json({ post });
+
+    await recordActivity('post.viewed', {
+      postId: req.params.postId
+    });
+
+    const viewCountMap = await getPostViewCounts([post.id]);
+    return res.json({
+      post: {
+        ...post,
+        viewCount: viewCountMap.get(post.id) || 0
+      }
+    });
   } catch (error) {
     console.error('Failed to load public post detail.', error);
     return res.status(500).json({ message: 'Failed to load post detail.' });

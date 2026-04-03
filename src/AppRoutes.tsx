@@ -4,6 +4,7 @@ import AgentChatbox from './components/AgentChatbox';
 import Footer from './components/Footer';
 import Header from './components/Header';
 import RouteSeo from './components/RouteSeo';
+import ScrollToTop from './components/ScrollToTop';
 import { useAuth } from './context/AuthContext';
 import { usePosts } from './context/PostsContext';
 import About from './pages/About';
@@ -95,6 +96,7 @@ export default function AppRoutes() {
   return (
     <div className="app-wrapper d-flex flex-column min-vh-100">
       <RouteSeo />
+      <ScrollToTop />
       <Header currentUser={auth.currentUser} forums={posts.forums} posts={posts.posts} onLogout={auth.logout} />
       <main className="app-main">
         <Routes>

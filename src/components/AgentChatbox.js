@@ -11,37 +11,48 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
   const [input, setInput] = useState('');
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [showPrompts, setShowPrompts] = useState(false);
+  const basePrompts = [
+    'take me to the about page so i can understand what this community is for',
+    'show me the latest announcements and summarize what changed most recently',
+    'show me the newest forum posts so i can catch up on recent discussion',
+    'i want to learn mle, show me a few useful posts to start with',
+    'find posts about analytics dashboards, experiments, or product metrics',
+    'show top authors who post often and seem active in technical discussions',
+    'draft a forum request for an mlops community with a clear name, description, and section scope'
+  ];
   const starterPrompts = currentUser
-      ? [
-        'take me to the about page',
-        'i want to change my password',
-        'draft a post in my style about password reset',
-        'draft a forum request for an mlops community',
-        'i want to learn mle',
-        'help me improve my post about analytics',
-        'draft a post in my style about postgres indexing',
-        'find posts about analytics',
-        'show top authors'
+    ? [
+        ...basePrompts,
+        'i want to change my password and go to the right settings page',
+        'take me to my posts so i can review what i have already published',
+        'draft a post in my style about postgres indexing that feels ready to publish'
       ]
     : [
-        'take me to the about page',
-        'i want to learn mle',
-        'help me improve my post about analytics',
-        'find posts about mongodb',
-        'show top authors',
-        'draft a post about password reset',
-        'find posts about analytics'
+        ...basePrompts,
+        'find posts about mongodb performance, indexing, or query tuning',
+        'draft a post about password reset best practices for users and admins'
       ];
   const buildWelcomeMessage = useCallback(() => ({
     id: 'welcome',
     role: 'agent',
     reply: currentUser
-      ? 'Ask me to navigate the site, recommend posts to learn a topic, surface active authors, draft a post in your style, or draft a new forum request.'
-      : 'Ask me to navigate the site, recommend posts to learn a topic, surface active authors, draft a post, or draft a new forum request.',
+      ? 'Ask me to navigate the site, show the latest posts or announcements, find posts for a topic, surface active authors, draft a post in your style, or draft a new forum request.'
+      : 'Ask me to navigate the site, show the latest posts or announcements, find posts for a topic, surface active authors, draft a post, or draft a new forum request.',
     quickActions: ['search-posts', 'show-trending', 'draft-post']
   }), [currentUser]);
   const [messages, setMessages] = useState([buildWelcomeMessage()]);
   const [loading, setLoading] = useState(false);
+
+  const scrollThreadToBottom = useCallback(() => {
+    if (!threadRef.current) {
+      return;
+    }
+
+    const thread = threadRef.current;
+    window.requestAnimationFrame(() => {
+      thread.scrollTop = thread.scrollHeight;
+    });
+  }, []);
 
   useEffect(() => {
     setMessages((current) => {
@@ -56,8 +67,8 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
     if (!isOpen || !threadRef.current) {
       return;
     }
-    threadRef.current.scrollTop = threadRef.current.scrollHeight;
-  }, [isOpen, messages, loading]);
+    scrollThreadToBottom();
+  }, [isOpen, messages, loading, scrollThreadToBottom]);
 
   useEffect(() => () => {
     abortControllerRef.current?.abort();
@@ -67,6 +78,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
     setInput(String(prompt || ''));
     setEditingMessageId(null);
     inputRef.current?.focus();
+    scrollThreadToBottom();
   };
 
   const startEditingMessage = (message) => {
@@ -98,6 +110,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
     setInput('');
     setEditingMessageId(null);
     setShowPrompts(false);
+    scrollThreadToBottom();
   };
 
   const sendMessage = async (nextMessage) => {
@@ -189,6 +202,18 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
     }
   };
 
+  const openDraftInComposerForForum = (draft, forumOption) => {
+    if (!draft || !forumOption?.id) {
+      return;
+    }
+
+    openDraftInComposer({
+      ...draft,
+      forumId: forumOption.id,
+      section: forumOption.suggestedSection || draft.section
+    });
+  };
+
   const openDraftInComposer = (draft) => {
     if (!draft) {
       return;
@@ -199,6 +224,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
         composerDraft: {
           title: draft.title,
           content: draft.content,
+          forumId: draft.forumId,
           section: draft.section,
           tags: draft.tags || []
         }
@@ -229,9 +255,18 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
       {isOpen && (
         <section className="agent-chatbox-panel">
           <div className="agent-chatbox-header">
-            <div>
-              <p className="type-kicker mb-1">Agent</p>
+            <div className="agent-chatbox-header-main">
+              <div className="agent-chatbox-eyebrow-row">
+                <span className="agent-chatbox-eyebrow">AI Agent</span>
+                <span className="agent-chatbox-status-pill">
+                  <span className="agent-chatbox-status-dot" aria-hidden="true" />
+                  Ready
+                </span>
+              </div>
               <h3 className="mb-0">Forum Assistant</h3>
+              <p className="agent-chatbox-subtitle mb-0">
+                Open pages, check recent posts or announcements, search topics, and draft content from one place.
+              </p>
             </div>
             <div className="agent-chatbox-header-actions">
               <button type="button" className="forum-secondary-btn" onClick={clearConversation}>
@@ -256,7 +291,12 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
 
           <div className={`agent-chatbox-prompts ${showPrompts ? 'is-expanded' : ''}`}>
             {starterPrompts.map((prompt) => (
-              <button key={prompt} type="button" className="section-chip" onClick={() => fillInputFromPrompt(prompt)}>
+              <button
+                key={prompt}
+                type="button"
+                className="agent-chatbox-prompt-chip"
+                onClick={() => fillInputFromPrompt(prompt)}
+              >
                 {prompt}
               </button>
             ))}
@@ -267,6 +307,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
               <div key={message.id} className={`agent-chatbox-message is-${message.role}`}>
                 {message.role === 'user' ? (
                   <>
+                    <div className="agent-chatbox-message-label">You</div>
                     <div className="agent-chatbox-user-message-row">
                       <p className="mb-0">{message.text}</p>
                       <button
@@ -284,6 +325,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                   </>
                 ) : (
                   <>
+                    <div className="agent-chatbox-message-label">Assistant</div>
                     <p className="mb-2">{message.reply}</p>
 
                     {message.posts?.length > 0 && (
@@ -370,6 +412,23 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                       </div>
                     )}
 
+                    {message.forumMatches?.length > 0 && (
+                      <div className="agent-chatbox-card-grid">
+                        {message.forumMatches.map((forum) => (
+                          <button
+                            key={`forum-match-${forum.id}`}
+                            type="button"
+                            className="agent-chatbox-card text-start"
+                            onClick={() => currentUser ? openDraftInComposerForForum(message.draft, forum) : navigate('/login')}
+                          >
+                            <strong>{forum.name}</strong>
+                            <span>{forum.isFollowing ? 'Following' : 'Forum'}</span>
+                            <span>{getSectionLabel(forum.suggestedSection || forum.sectionScope?.[0] || '')}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     {message.draft && (
                       <div className="agent-chatbox-draft">
                         <strong>{message.draft.title}</strong>
@@ -389,12 +448,16 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                           </button>
                           {currentUser ? (
                             <>
-                              <button type="button" className="forum-secondary-btn" onClick={() => openDraftInComposer(message.draft)}>
-                                Edit in Composer
-                              </button>
-                              <button type="button" className="forum-primary-btn" onClick={() => publishDraft(message.draft)}>
-                                Publish Draft
-                              </button>
+                              {message.forumMatches?.length > 1 ? null : (
+                                <>
+                                  <button type="button" className="forum-secondary-btn" onClick={() => openDraftInComposer(message.draft)}>
+                                    Edit in Composer
+                                  </button>
+                                  <button type="button" className="forum-primary-btn" onClick={() => publishDraft(message.draft)}>
+                                    Publish Draft
+                                  </button>
+                                </>
+                              )}
                             </>
                           ) : (
                             <Link to="/login" className="forum-primary-btn text-decoration-none">
@@ -456,7 +519,19 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
               </div>
             ))}
 
-            {loading && <p className="muted mb-0">Agent is thinking...</p>}
+            {loading && (
+              <div className="agent-chatbox-message is-agent is-thinking">
+                <div className="agent-chatbox-message-label">Assistant</div>
+                <div className="agent-chatbox-thinking-row">
+                  <span className="agent-chatbox-thinking-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                  <p className="muted mb-0">Agent is thinking...</p>
+                </div>
+              </div>
+            )}
           </div>
 
           <form
@@ -479,8 +554,8 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                 }
               }}
               placeholder={currentUser
-                ? 'Try "take me to about", "draft a forum request for an MLOps community", or "help me improve my post".'
-                : 'Try "take me to about", or ask to learn a topic, search posts, or draft a forum request.'}
+                ? 'Try "show me the latest announcements", "take me to my posts", or "draft a post in my style about postgres indexing".'
+                : 'Try "show me the latest announcements", "find posts about analytics", or "draft a forum request for an MLOps community".'}
             />
             <div className="forum-actions">
               <span className="muted">
@@ -505,7 +580,11 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
       )}
 
       <button type="button" className="agent-chatbox-trigger" onClick={() => setIsOpen((current) => !current)}>
-        AI Agent
+        <span className="agent-chatbox-trigger-badge" aria-hidden="true">AI</span>
+        <span className="agent-chatbox-trigger-copy">
+          <span className="agent-chatbox-trigger-label">Agent</span>
+          <span className="agent-chatbox-trigger-title">Open Assistant</span>
+        </span>
       </button>
     </div>
   );

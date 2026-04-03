@@ -1,5 +1,5 @@
 const OpenAI = require('openai');
-const { SECTION_ENUM } = require('./openai-drafts');
+const { SECTION_ENUM, sanitizeDraftTitle, sanitizePublishableContent } = require('./openai-drafts');
 
 const REWRITE_SCHEMA = {
   type: 'object',
@@ -97,7 +97,9 @@ function createOpenAIPostRewriter({ apiKey, model }) {
                 text: [
                   'You are editing a forum post for a technical community.',
                   'Rewrite the post according to the user instruction while preserving factual meaning unless the instruction explicitly asks for structural changes.',
-                  'Return a fully edited post draft, not commentary.'
+                  'Return a fully edited post draft, not commentary.',
+                  'Title must be plain title text only with no prefixes, labels, quotes, or markdown.',
+                  'Content must be publish-ready and must not talk to the requester or describe the rewrite process.'
                 ].join('\n')
               }
             ]
@@ -134,10 +136,10 @@ function createOpenAIPostRewriter({ apiKey, model }) {
 
       const parsed = JSON.parse(extractJsonString(response));
       const rewritten = {
-        title: String(parsed.title || post.title).trim(),
+        title: sanitizeDraftTitle(parsed.title, post.title),
         section: SECTION_ENUM.includes(String(parsed.section || '')) ? String(parsed.section) : post.section,
         tags: normalizeTags(parsed.tags?.length ? parsed.tags : post.tags || []),
-        content: String(parsed.content || post.content).trim()
+        content: sanitizePublishableContent(parsed.content, post.content)
       };
 
       if (rewritten.title.length < 4) {

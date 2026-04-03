@@ -13,7 +13,8 @@ export type SiteAdminPermissionKey =
   | 'moderation'
   | 'analytics'
   | 'forum_requests'
-  | 'password_reset';
+  | 'password_reset'
+  | 'unlimited_ai';
 
 export type SiteAdminPermissionDetail = {
   key: SiteAdminPermissionKey;
@@ -187,6 +188,8 @@ export type Post = {
   content: string;
   createdAt: number;
   updatedAt: number | null;
+  viewCount?: number;
+  commentCount?: number;
   authorId: string;
   authorName: string;
   authorEmail?: string;
@@ -272,6 +275,16 @@ export type DraftGeneration = {
   model?: string | null;
   fallback?: boolean;
   rationale?: string;
+};
+
+export type AgentForumOption = {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  sectionScope: string[];
+  isFollowing?: boolean;
+  suggestedSection?: string;
 };
 
 export type AgentAction = {

@@ -6,6 +6,13 @@ import { buildForumDirectory, sortByPopularity, sortByRecentActivity } from '../
 export default function Explore({ forums, posts, currentUser }) {
   void currentUser;
   const forumDirectory = useMemo(() => buildForumDirectory(forums, posts), [forums, posts]);
+  const followedForumCount = useMemo(
+    () => forumDirectory.filter((forum) => forum.isFollowing).length,
+    [forumDirectory]
+  );
+  const sectionCount = useMemo(() => (
+    new Set(forumDirectory.flatMap((forum) => forum.sectionScope || []).filter(Boolean)).size
+  ), [forumDirectory]);
 
   const popularForumCards = useMemo(
     () => [...forumDirectory].sort(sortByPopularity).slice(0, 6),
@@ -25,14 +32,34 @@ export default function Explore({ forums, posts, currentUser }) {
 
   return (
     <div className="container page-shell">
-      <section className="panel mb-4 forum-view-intro">
+      <section className="panel mb-4 forum-view-intro explore-hero-shell">
         <div className="forum-view-intro-row">
-          <div>
-            <p className="type-kicker mb-1">Explore</p>
-            <h3 className="mb-1 type-title-md">Browse the forum landscape</h3>
-            <p className="forum-view-intro-copy mb-0">
-              This page is for discovering which forums exist. It highlights followed, popular, and recently updated forums without dropping you into post content first.
-            </p>
+          <div className="forum-view-intro-main">
+            <div className="forum-view-intro-copy-block">
+              <div className="forum-view-intro-kicker-row">
+                <p className="type-kicker mb-0">Explore</p>
+                <span className="forum-view-intro-status-pill">Directory</span>
+              </div>
+              <h3 className="mb-1 type-title-md">Browse the forum landscape</h3>
+              <p className="forum-view-intro-copy mb-0">
+                Discover forums, see what's active, and jump into the right community.
+              </p>
+
+              <div className="forum-view-intro-meta-row">
+                <span className="forum-view-intro-badge">
+                  <strong>{forumDirectory.length}</strong>
+                  <span>Total forums</span>
+                </span>
+                <span className="forum-view-intro-badge">
+                  <strong>{followedForumCount}</strong>
+                  <span>Following</span>
+                </span>
+                <span className="forum-view-intro-badge">
+                  <strong>{sectionCount}</strong>
+                  <span>Sections</span>
+                </span>
+              </div>
+            </div>
           </div>
           <div className="forum-view-intro-actions">
             <Link to="/forum" className="explore-intro-link text-decoration-none">
@@ -50,7 +77,7 @@ export default function Explore({ forums, posts, currentUser }) {
 
       <div className="forum-layout">
         <div className="forum-main forum-main-full">
-          <section className="panel mb-4">
+          <section className="panel mb-4 explore-panel-shell explore-panel-trending">
             <div className="forum-sections-head mb-3">
               <div>
                 <h3 className="mb-1 type-title-md">Trending</h3>
@@ -106,7 +133,7 @@ export default function Explore({ forums, posts, currentUser }) {
             )}
           </section>
 
-          <section className="panel">
+          <section className="panel explore-panel-shell explore-panel-directory">
             <div className="forum-sections-head mb-3">
               <div>
                 <h3 className="mb-1 type-title-md">All Forums</h3>

@@ -461,9 +461,12 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
               Manage forums you own or help run. You can assign focused permissions instead of giving everyone full control.
             </p>
           </div>
-          <div className="forum-actions">
+          <div className="forum-actions my-forums-header-actions">
             <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
               Apply for a Forum
+            </Link>
+            <Link to="/forums/request/history" className="forum-secondary-btn text-decoration-none">
+              Request History
             </Link>
             <Link to="/forum" className="forum-secondary-btn text-decoration-none">
               Back to Forum
@@ -486,6 +489,9 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
               </Link>
               <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
                 Apply for a Forum
+              </Link>
+              <Link to="/forums/request/history" className="forum-secondary-btn text-decoration-none">
+                Request History
               </Link>
             </div>
           </section>

@@ -6,22 +6,22 @@ const AI_REWRITE_PRESETS = [
   {
     id: 'polish',
     label: 'Polish',
-    instruction: 'Polish this forum request for clarity and flow while preserving the original idea.'
+    instruction: 'Polish this forum request for clarity and flow while preserving the original idea, and improve the forum name, overview, description, rationale, and scope together where needed.'
   },
   {
     id: 'narrow',
     label: 'More Focused',
-    instruction: 'Make this forum request more focused and specific, with a clearer target audience and tighter section scope.'
+    instruction: 'Make this forum request more focused and specific, with a clearer target audience, sharper forum naming, and tighter section scope.'
   },
   {
     id: 'expand',
     label: 'More Detailed',
-    instruction: 'Expand this forum request with clearer examples of what belongs in the forum and why members would use it.'
+    instruction: 'Expand this forum request with clearer examples of what belongs in the forum, why members would use it, and a more descriptive title and overview if helpful.'
   },
   {
     id: 'stronger',
     label: 'Stronger Pitch',
-    instruction: 'Strengthen the rationale so it makes a more convincing case for why this forum should exist.'
+    instruction: 'Strengthen the overall pitch so the forum name, overview, description, rationale, and section scope all feel convincing and submission-ready.'
   }
 ];
 
@@ -58,6 +58,7 @@ export default function ForumRequestPage({
   const [rewriteAbortController, setRewriteAbortController] = useState(null);
   const [form, setForm] = useState({
     name: '',
+    overview: '',
     description: '',
     rationale: '',
     sectionScope: []
@@ -89,6 +90,7 @@ export default function ForumRequestPage({
     const normalizedScope = normalizeScopeList(draft?.sectionScope);
     setForm({
       name: String(draft?.name || ''),
+      overview: String(draft?.overview || ''),
       description: String(draft?.description || ''),
       rationale: String(draft?.rationale || ''),
       sectionScope: normalizedScope
@@ -133,6 +135,7 @@ export default function ForumRequestPage({
 
     setForm({
       name: '',
+      overview: '',
       description: '',
       rationale: '',
       sectionScope: []
@@ -152,7 +155,7 @@ export default function ForumRequestPage({
       return;
     }
 
-    if (!String(form.name || form.description || form.rationale || sectionScopeText).trim()) {
+    if (!String(form.name || form.overview || form.description || form.rationale || sectionScopeText).trim()) {
       setError('Add a rough forum idea first so AI has something to rewrite.');
       return;
     }
@@ -167,6 +170,7 @@ export default function ForumRequestPage({
       instruction,
       draft: {
         name: form.name,
+        overview: form.overview,
         description: form.description,
         rationale: form.rationale,
         sectionScope: normalizeScopeList(form.sectionScope)
@@ -222,9 +226,6 @@ export default function ForumRequestPage({
             </p>
           </div>
           <div className="forum-actions">
-            <Link to="/forums/request/history" className="forum-primary-btn text-decoration-none">
-              Request History
-            </Link>
             <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
               Back to My Forums
             </Link>
@@ -249,6 +250,18 @@ export default function ForumRequestPage({
                 onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
                 placeholder="Career Growth, MLOps Guild, Frontend Patterns"
               />
+            </div>
+
+            <div className="mb-3">
+              <label className="form-label">Overview</label>
+              <textarea
+                className="form-control forum-input"
+                rows={2}
+                value={form.overview}
+                onChange={(event) => setForm((current) => ({ ...current, overview: event.target.value }))}
+                placeholder="One-sentence overview of the forum idea."
+              />
+              <div className="form-help">Keep this short. AI uses it as the quick summary for the request.</div>
             </div>
 
             <div className="mb-3">

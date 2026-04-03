@@ -30,7 +30,7 @@ services:
       - key: OPENAI_MODEL
         value: gpt-5-mini
       - key: DAILY_AI_USAGE_LIMIT
-        value: 5
+        value: 20
 
   - type: web
     name: learnfromus-web

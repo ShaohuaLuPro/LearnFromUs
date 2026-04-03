@@ -32,7 +32,7 @@ import {
   apiUpdatePost
 } from '../api';
 import { useAuth } from './AuthContext';
-import type { AnalyticsReport, Comment, Forum, ForumRequest, ForumWorkspace, Pagination, Post, PostListFilters } from '../types';
+import type { AnalyticsReport, Comment, Forum, ForumRequest, ForumRequestDraft, ForumWorkspace, Pagination, Post, PostListFilters } from '../types';
 
 type ActionResult<T = undefined> = {
   ok: boolean;
@@ -73,7 +73,7 @@ type PostsContextValue = {
     signal?: AbortSignal
   ) => Promise<ActionResult<Record<string, unknown>>>;
   aiRewriteForumRequest: (
-    input: { instruction: string; draft: { name: string; description: string; rationale: string; sectionScope: string[] } },
+    input: { instruction: string; draft: ForumRequestDraft },
     signal?: AbortSignal
   ) => Promise<ActionResult<Record<string, unknown>>>;
   deletePost: (postId: string) => Promise<ActionResult>;
@@ -89,10 +89,10 @@ type PostsContextValue = {
   adminPermanentDeletePost: (postId: string, reason?: string) => Promise<ActionResult>;
   ownerRemovePost: (forumId: string, postId: string, reason: string) => Promise<ActionResult>;
   ownerRestorePost: (forumId: string, postId: string) => Promise<ActionResult>;
-  requestForum: (input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string }) => Promise<ActionResult>;
+  requestForum: (input: { name: string; overview?: string; description: string; rationale: string; sectionScope: string[]; slug?: string }) => Promise<ActionResult>;
   appealForumRequest: (
     requestId: string,
-    input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string }
+    input: { name: string; overview?: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string }
   ) => Promise<ActionResult>;
   updateForumSections: (forumId: string, sectionScope: string[]) => Promise<ActionResult>;
   approveForumRequest: (requestId: string, reviewNote?: string) => Promise<ActionResult>;
@@ -262,7 +262,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
   }, [getToken]);
 
   const aiRewriteForumRequest = useCallback(async (
-    input: { instruction: string; draft: { name: string; description: string; rationale: string; sectionScope: string[] } },
+    input: { instruction: string; draft: ForumRequestDraft },
     signal?: AbortSignal
   ) => {
     const token = getToken();
@@ -448,7 +448,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [getToken, loadForums, refreshPosts]);
 
-  const requestForum = useCallback(async (input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string }) => {
+  const requestForum = useCallback(async (input: { name: string; overview?: string; description: string; rationale: string; sectionScope: string[]; slug?: string }) => {
     const token = getToken();
     if (!token) {
       return { ok: false, message: 'Please login first.' };
@@ -464,7 +464,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
 
   const appealForumRequest = useCallback(async (
     requestId: string,
-    input: { name: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string }
+    input: { name: string; overview?: string; description: string; rationale: string; sectionScope: string[]; slug?: string; appealNote: string }
   ) => {
     const token = getToken();
     if (!token) {

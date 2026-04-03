@@ -146,7 +146,7 @@ function routeConfig(pathname) {
   }
 
   return {
-    title: buildPageTitle('Technical Forum for Builders'),
+    title: buildPageTitle(),
     description: DEFAULT_DESCRIPTION,
     robots: 'index,follow',
     canonical: buildCanonical(pathname)

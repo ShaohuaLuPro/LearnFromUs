@@ -265,10 +265,11 @@
 }
 
 .agent-chatbox-panel {
-  width: min(500px, calc(100vw - 2rem));
+  width: min(560px, calc(100vw - 2rem));
+  height: min(80vh, calc(100vh - 1.8rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 760px);
   max-height: min(80vh, calc(100vh - 1.8rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 760px);
   display: grid;
-  grid-template-rows: auto auto auto auto auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 0.7rem;
   border: 1px solid rgba(166, 230, 255, 0.18);
   border-radius: 24px;
@@ -282,6 +283,10 @@
   padding: 0.88rem;
   backdrop-filter: blur(22px);
   overflow: hidden;
+}
+
+.agent-chatbox-panel > * {
+  min-width: 0;
 }
 
 .agent-chatbox-panel h3,
@@ -314,6 +319,7 @@
 .agent-chatbox-header-main {
   display: grid;
   gap: 0.28rem;
+  min-width: 0;
 }
 
 .agent-chatbox-eyebrow-row {
@@ -438,8 +444,9 @@
 }
 
 .agent-chatbox-thread {
-  min-height: 220px;
-  max-height: min(36vh, 340px);
+  min-height: 0;
+  height: 100%;
+  max-height: none;
   overflow-y: scroll;
   scrollbar-gutter: stable;
   scrollbar-width: auto;
@@ -692,6 +699,7 @@
 
 .agent-chatbox-form textarea.form-control {
   min-height: 110px;
+  max-height: min(28vh, 220px);
   border-radius: 18px;
   border: 1px solid rgba(139, 232, 255, 0.26);
   background:
@@ -791,6 +799,7 @@
 
   .agent-chatbox-panel {
     width: min(560px, calc(100vw - 1.2rem));
+    height: min(82vh, calc(100vh - 1.8rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 720px);
     max-height: min(82vh, calc(100vh - 1.8rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 720px);
   }
 }
@@ -840,7 +849,8 @@
 
   .agent-chatbox-panel {
     width: min(420px, calc(100vw - 1rem));
-    max-height: min(80vh, calc(100vh - 1.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 640px);
+    height: min(82vh, calc(100vh - 1.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 640px);
+    max-height: min(82vh, calc(100vh - 1.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 640px);
     gap: 0.55rem;
     border-radius: 22px;
     padding: 0.72rem;
@@ -943,13 +953,76 @@
   }
 
   .agent-chatbox-panel {
-    width: min(360px, calc(100vw - 0.75rem));
-    max-height: min(78vh, calc(100vh - 1.1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 580px);
+    width: calc(100vw - 0.75rem);
+    height: min(84vh, calc(100vh - 1.1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 620px);
+    max-height: min(84vh, calc(100vh - 1.1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 620px);
     padding: 0.6rem;
     font-size: 0.84rem;
   }
 
   .agent-chatbox-form textarea.form-control {
     min-height: 82px;
+  }
+}
+
+@media (max-height: 900px) {
+  .agent-chatbox-panel {
+    height: min(86vh, calc(100vh - 1.2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 720px);
+    max-height: min(86vh, calc(100vh - 1.2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 720px);
+  }
+
+  .agent-chatbox-prompts.is-expanded {
+    max-height: 152px;
+  }
+
+  .agent-chatbox-form textarea.form-control {
+    min-height: 92px;
+  }
+}
+
+@media (max-height: 760px) {
+  .agent-chatbox {
+    right: 0.55rem;
+    bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .agent-chatbox-panel {
+    width: min(100vw - 1.1rem, 560px);
+    height: min(90vh, calc(100vh - 0.8rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+    max-height: min(90vh, calc(100vh - 0.8rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+    gap: 0.5rem;
+    border-radius: 20px;
+    padding: 0.65rem;
+  }
+
+  .agent-chatbox-header {
+    gap: 0.6rem;
+    padding-bottom: 0.2rem;
+  }
+
+  .agent-chatbox-subtitle {
+    font-size: 0.8rem;
+    line-height: 1.45;
+  }
+
+  .agent-chatbox-prompts-shell,
+  .agent-chatbox-form {
+    padding: 0.72rem;
+  }
+
+  .agent-chatbox-prompts.is-expanded {
+    max-height: 112px;
+  }
+
+  .agent-chatbox-message,
+  .agent-chatbox-card,
+  .agent-chatbox-draft,
+  .agent-chatbox-profile {
+    padding: 0.68rem 0.74rem;
+  }
+
+  .agent-chatbox-form textarea.form-control {
+    min-height: 80px;
+    max-height: min(22vh, 160px);
   }
 }

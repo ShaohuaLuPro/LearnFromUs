@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 
 export default function Privacy() {
+  const pageTopRef = useRef(null);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    pageTopRef.current?.focus({ preventScroll: true });
+  }, []);
+
   return (
     <div className="container page-shell">
-      <nav className="about-breadcrumb mb-3" aria-label="Breadcrumb">
+      <nav className="about-breadcrumb mb-3" aria-label="Breadcrumb" ref={pageTopRef} tabIndex={-1}>
         <Link to="/about" className="about-breadcrumb-link text-decoration-none">
           <span className="about-breadcrumb-root">About</span>
         </Link>

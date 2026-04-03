@@ -6076,6 +6076,15 @@ h5 {
   padding-top: var(--about-detail-breadcrumb-offset);
 }
 
+.about-detail-col-centered {
+  margin: 0 auto;
+  transform: none !important;
+}
+
+.about-detail-portrait-col-hidden {
+  display: none;
+}
+
 .settings-alert.is-success {
   border-color: rgba(116, 255, 122, 0.2);
   background: rgba(116, 255, 122, 0.08);
@@ -6162,6 +6171,10 @@ h5 {
   padding-left: 0;
 }
 
+.about-detail-panel-centered .about-profile-name {
+  color: #7dfff1 !important;
+}
+
 .about-detail-panel .about-story-copy {
   font-size: clamp(1.1rem, 1.75vw, 1.45rem);
   font-weight: 560;
@@ -6196,6 +6209,12 @@ h5 {
 
 .about-detail-panel .about-story-copy.about-story-copy-plain {
   font-weight: 400;
+  margin-top: 1.15rem;
+  margin-left: -2.4rem;
+}
+
+.about-founder-summary-offset {
+  margin-left: -1.8rem;
 }
 
 .about-detail-panel .about-story-title.about-story-title-story-match {
@@ -6213,9 +6232,57 @@ h5 {
   text-align: left;
 }
 
+.about-detail-panel-centered {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.about-team-intro-block {
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: clamp(2.2rem, 5vw, 4.5rem);
+}
+
+.about-inline-portrait-shell {
+  position: relative;
+  float: right;
+  width: min(30vw, 220px);
+  margin: 0 0 1rem 1.4rem;
+  padding: 0.55rem;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(0, 240, 255, 0.1), transparent 48%),
+    linear-gradient(180deg, rgba(10, 22, 34, 0.9), rgba(8, 18, 29, 0.72));
+  box-shadow:
+    0 20px 42px rgba(4, 10, 18, 0.2),
+    0 0 0 1px rgba(0, 240, 255, 0.06);
+}
+
+.about-inline-portrait-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 18px;
+  box-shadow:
+    0 10px 26px rgba(7, 16, 25, 0.16),
+    0 0 28px rgba(0, 240, 255, 0.08);
+  filter: saturate(0.97) contrast(0.985);
+}
+
 .about-detail-panel .about-team-summary-centered {
   font-size: clamp(1.1rem, 1.75vw, 1.45rem) !important;
   line-height: 1.7;
+}
+
+@media (max-width: 767.98px) {
+  .about-inline-portrait-shell {
+    float: none;
+    width: min(72vw, 260px);
+    margin: 0 auto 1.2rem;
+  }
 }
 
 .auth-card h2,

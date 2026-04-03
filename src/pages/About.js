@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -93,6 +93,10 @@ const SECTION_CONTENT = {
       imageAlt: 'Ben He',
       links: [
         {
+          label: 'LinkedIn',
+          href: 'https://linkedin.com/in/ben-he-9071893b9'
+        },
+        {
           label: 'GitHub',
           href: 'https://github.com/bigbenokk'
         }
@@ -180,6 +184,10 @@ export default function About() {
   const location = useLocation();
   const navigate = useNavigate();
   const bentoScrollRef = useRef(null);
+  const leadershipHeaderRef = useRef(null);
+  const leadershipGridRef = useRef(null);
+  const [animatedFounderSummary, setAnimatedFounderSummary] = useState('');
+  const [animatedTeamSummary, setAnimatedTeamSummary] = useState('');
   const normalizedPath = useMemo(() => {
     const pathname = location.pathname.replace(/\/+$/, '');
     return pathname || '/';
@@ -268,11 +276,89 @@ export default function About() {
 
     return () => ctx.revert();
   }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection !== 'leadership' || !leadershipHeaderRef.current) {
+      return;
+    }
+
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    leadershipHeaderRef.current.focus({ preventScroll: true });
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection !== 'leadership' || !leadershipGridRef.current) {
+      return;
+    }
+
+    const ctx = gsap.context(() => {
+      const cards = gsap.utils.toArray('.leadership-card');
+
+      cards.forEach((card, index) => {
+        gsap.fromTo(
+          card,
+          {
+            x: index === 0 ? -72 : 72,
+            opacity: 0
+          },
+          {
+            x: 0,
+            opacity: 1,
+            duration: 1.5,
+            ease: 'power3.out',
+            delay: index * 0.14,
+            clearProps: 'transform,opacity'
+          }
+        );
+      });
+    }, leadershipGridRef);
+
+    return () => ctx.revert();
+  }, [activeSection]);
+
+  useEffect(() => {
+    const founderSummary = SECTION_CONTENT.founder.profile.summary;
+    const teamSummary = SECTION_CONTENT.teamMembers.profile.summary;
+
+    if (activeSection !== 'founder' && activeSection !== 'teamMembers') {
+      setAnimatedFounderSummary(founderSummary);
+      setAnimatedTeamSummary(teamSummary);
+      return;
+    }
+
+    let frameId;
+    const isFounderSection = activeSection === 'founder';
+    const summaryText = isFounderSection ? founderSummary : teamSummary;
+    const setSummary = isFounderSection ? setAnimatedFounderSummary : setAnimatedTeamSummary;
+    const durationMs = 2000;
+    const startTime = performance.now();
+
+    const tick = (now) => {
+      const progress = Math.min((now - startTime) / durationMs, 1);
+      const nextLength = Math.ceil(summaryText.length * progress);
+      setSummary(summaryText.slice(0, nextLength));
+
+      if (progress < 1) {
+        frameId = window.requestAnimationFrame(tick);
+      }
+    };
+
+    setSummary('');
+    frameId = window.requestAnimationFrame(tick);
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [activeSection]);
+
   const section = useMemo(() => SECTION_CONTENT[activeSection], [activeSection]);
   const setActiveSection = (nextSection) => {
     navigate(SECTION_ROUTES[nextSection] || SECTION_ROUTES.story);
   };
   const profile = section.profile;
+  const useInlineProfileLayout = activeSection === 'founder' || activeSection === 'teamMembers';
   const highlightedLabels = new Set([
     'Why This Exists',
     'Long-Term Direction',
@@ -455,7 +541,7 @@ export default function About() {
         ) : activeSection === 'leadership' ? (
           <div className="col-lg-12">
             <section className="leadership-panel h-100">
-              <header className="leadership-hero">
+              <header className="leadership-hero" ref={leadershipHeaderRef} tabIndex={-1}>
                 <nav className="about-breadcrumb" aria-label="Breadcrumb">
                   <Link
                     to={SECTION_ROUTES.story}
@@ -470,7 +556,7 @@ export default function About() {
                 {section.heroCopy ? <p className="leadership-hero-copy mb-0">{section.heroCopy}</p> : null}
               </header>
 
-              <div className="leadership-grid">
+              <div className="leadership-grid" ref={leadershipGridRef}>
                 {section.members.map((member) => (
                   <article key={member.key} className="leadership-card">
                     <div className="leadership-card-main">
@@ -504,7 +590,11 @@ export default function About() {
           </div>
         ) : (
           <>
-            <div className="col-lg-8 about-detail-col">
+            <div
+              className={`col-lg-8 about-detail-col ${
+                useInlineProfileLayout ? 'about-detail-col-centered' : ''
+              }`.trim()}
+            >
               <div className="about-detail-breadcrumb-row">
                 <nav className="about-breadcrumb" aria-label="Breadcrumb">
                   <Link
@@ -524,8 +614,25 @@ export default function About() {
                   <span className="about-breadcrumb-current">{profile.name}</span>
                 </nav>
               </div>
-              <section className="panel about-story-panel about-detail-panel h-100">
-                <div className="about-story-block">
+              <section
+                className={`about-story-panel about-detail-panel h-100 ${
+                  useInlineProfileLayout ? '' : 'panel'
+                } ${useInlineProfileLayout ? 'about-detail-panel-centered' : ''}`.trim()}
+              >
+                <div
+                  className={`about-story-block ${
+                    useInlineProfileLayout ? 'about-team-intro-block' : ''
+                  }`.trim()}
+                >
+                  {useInlineProfileLayout ? (
+                    <div className="about-inline-portrait-shell" aria-hidden="true">
+                      <img
+                        src={profile.image}
+                        alt={profile.imageAlt}
+                        className="about-inline-portrait-image"
+                      />
+                    </div>
+                  ) : null}
                   {profile.eyebrow ? (
                     <p
                       className={`about-story-kicker ${
@@ -546,9 +653,14 @@ export default function About() {
                       activeSection === 'founder' ? 'about-story-copy-highlight' : ''
                     } ${activeSection === 'founder' ? 'about-story-copy-story-match' : ''} ${
                       activeSection === 'teamMembers' ? 'about-story-copy-plain' : ''
+                    } ${activeSection === 'founder' ? 'about-founder-summary-offset' : ''
                     }`}
                   >
-                    {profile.summary}
+                    {activeSection === 'founder'
+                      ? animatedFounderSummary
+                      : activeSection === 'teamMembers'
+                        ? animatedTeamSummary
+                        : profile.summary}
                   </p>
                 </div>
 
@@ -637,7 +749,11 @@ export default function About() {
               </section>
             </div>
 
-            <div className="col-lg-4 about-detail-portrait-col">
+            <div
+              className={`col-lg-4 about-detail-portrait-col ${
+                useInlineProfileLayout ? 'about-detail-portrait-col-hidden' : ''
+              }`.trim()}
+            >
               <section className="about-portrait-panel h-100">
                 <img
                   src={profile.image}

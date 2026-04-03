@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ORIGIN_PANELS } from '../data/originPanels';
 
@@ -6,11 +6,25 @@ export default function OriginPurpose() {
   const [isVisionExpanded, setIsVisionExpanded] = useState(false);
   const [isEvolutionExpanded, setIsEvolutionExpanded] = useState(false);
   const [isFocusExpanded, setIsFocusExpanded] = useState(false);
+  const heroHeaderRef = useRef(null);
+
+  useEffect(() => {
+    if (!heroHeaderRef.current) {
+      return;
+    }
+
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    heroHeaderRef.current.focus({ preventScroll: true });
+  }, []);
 
   return (
     <div className="container page-shell about-page-shell" data-page="origin-purpose">
       <section className="about-origin-full h-100">
-        <header className="about-section-head about-origin-hero-head mb-4">
+        <header
+          className="about-section-head about-origin-hero-head mb-4"
+          ref={heroHeaderRef}
+          tabIndex={-1}
+        >
           <div className="d-flex flex-column">
             <nav className="about-breadcrumb" aria-label="Breadcrumb">
               <Link to="/about" className="about-breadcrumb-link text-decoration-none">

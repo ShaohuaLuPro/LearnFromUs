@@ -59,7 +59,7 @@ export default function MyForumInvitations({ onLoadForums }) {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Failed to load forum manager invites.');
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load space manager invites.');
         }
       } finally {
         if (!cancelled) {
@@ -87,9 +87,9 @@ export default function MyForumInvitations({ onLoadForums }) {
       const response = await apiAcceptForumManagerInvite(inviteId, token);
       setInvites((current) => current.filter((invite) => invite.id !== inviteId));
       await onLoadForums?.();
-      setMessage(response.message || 'Forum manager invite accepted.');
+      setMessage(response.message || 'Space manager invite accepted.');
     } catch (acceptError) {
-      setError(acceptError instanceof Error ? acceptError.message : 'Failed to accept forum manager invite.');
+      setError(acceptError instanceof Error ? acceptError.message : 'Failed to accept space manager invite.');
     } finally {
       setActionKey('');
     }
@@ -107,9 +107,9 @@ export default function MyForumInvitations({ onLoadForums }) {
 
       const response = await apiRejectForumManagerInvite(inviteId, token);
       setInvites((current) => current.filter((invite) => invite.id !== inviteId));
-      setMessage(response.message || 'Forum manager invite declined.');
+      setMessage(response.message || 'Space manager invite declined.');
     } catch (rejectError) {
-      setError(rejectError instanceof Error ? rejectError.message : 'Failed to decline forum manager invite.');
+      setError(rejectError instanceof Error ? rejectError.message : 'Failed to decline space manager invite.');
     } finally {
       setActionKey('');
     }
@@ -122,10 +122,10 @@ export default function MyForumInvitations({ onLoadForums }) {
           <div>
             <p className="type-kicker mb-1">Workspace</p>
             <h2 className="mb-1 type-title-md">Manager Invitations</h2>
-            <p className="muted mb-0">Review pending forum manager invites here, then accept or decline them.</p>
+            <p className="muted mb-0">Review pending space manager invites here, then accept or decline them.</p>
           </div>
           <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
-            Back to My Forums
+            Back to My Spaces
           </Link>
         </div>
 
@@ -136,7 +136,7 @@ export default function MyForumInvitations({ onLoadForums }) {
           <div className="forum-admin-panel-head">
             <div>
               <h5 className="mb-1">Pending Invitations</h5>
-              <p className="muted mb-0">Each accepted invite will add that forum to your `My Forums` list.</p>
+              <p className="muted mb-0">Each accepted invite will add that space to your `My Spaces` list.</p>
             </div>
             <span className="muted">{invites.length} pending</span>
           </div>
@@ -144,7 +144,7 @@ export default function MyForumInvitations({ onLoadForums }) {
           {loading ? (
             <p className="muted mb-0">Loading invitations...</p>
           ) : invites.length === 0 ? (
-            <p className="muted mb-0">No pending forum manager invites right now.</p>
+            <p className="muted mb-0">No pending space manager invites right now.</p>
           ) : (
             <div className="forum-admin-manager-list">
               {invites.map((invite) => (
@@ -175,7 +175,7 @@ export default function MyForumInvitations({ onLoadForums }) {
                       </button>
                     </div>
                   </div>
-                  <p className="muted mb-2">{invite.forumDescription || 'This forum invited you to help manage it.'}</p>
+                  <p className="muted mb-2">{invite.forumDescription || 'This space invited you to help manage it.'}</p>
                   <div className="section-chip-wrap">
                     {(invite.permissions || []).map((permission) => (
                       <span key={permission} className="section-chip is-active">

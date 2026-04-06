@@ -1,9 +1,9 @@
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MDEditor, { commands as mdCommands } from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
-import { apiFollowForum, apiUnfollowForum } from '../api';
+import { apiDeleteMediaAsset, apiFollowForum, apiUnfollowForum, apiUploadMediaFile, buildMediaToken, resolveMediaSource } from '../api';
 import Select from '../components/Select';
 import { authStorage } from '../lib/authStorage';
 import {
@@ -62,6 +62,16 @@ const FEED_TIME_RANGE_OPTIONS = [
   { value: '30d', label: 'Past 30 days' }
 ];
 
+function getSparseFeedThreshold(viewportWidth) {
+  if (viewportWidth >= 1280) {
+    return 4;
+  }
+  if (viewportWidth >= 768) {
+    return 3;
+  }
+  return 2;
+}
+
 function getOptionLabel(options, value, fallback = '') {
   return options.find((option) => option.value === value)?.label || fallback;
 }
@@ -88,21 +98,56 @@ function renderNativeSelectOptions(options) {
   });
 }
 
-function formatTime(timestamp) {
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+function getPostCoverImage(content) {
+  const markdownMatch = String(content || '').match(/!\[[^\]]*]\((\S+?)(?:\s+["'][^"']*["'])?\)/i);
+  if (markdownMatch?.[1]) {
+    return resolveMediaSource(markdownMatch[1].replace(/^<|>$/g, '').trim());
+  }
+
+  const htmlMatch = String(content || '').match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (htmlMatch?.[1]) {
+    return resolveMediaSource(htmlMatch[1].trim());
+  }
+
+  return '';
 }
 
-function getPreview(content) {
-  const text = String(content || '').trim();
-  if (text.length <= 180) {
-    return text;
+function getTextCardPreview(content) {
+  const plainText = String(content || '')
+    .replace(/!\[[^\]]*]\((.*?)\)/g, ' ')
+    .replace(/<img[^>]*>/gi, ' ')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/[#>*_[\]()-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (plainText.length <= 150) {
+    return plainText;
   }
-  return `${text.slice(0, 180).trimEnd()}...`;
+
+  return `${plainText.slice(0, 150).trimEnd()}...`;
+}
+
+function getAuthorInitial(name) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) {
+    return 'T';
+  }
+  return cleanName.slice(0, 1).toUpperCase();
+}
+
+function buildImageMarkdown(fileName, assetId) {
+  const altText = String(fileName || 'uploaded image')
+    .replace(/\.[^./\\]+$/, '')
+    .replace(/[-_]+/g, ' ')
+    .trim() || 'uploaded image';
+  return `\n![${altText}](${buildMediaToken(assetId)})\n`;
+}
+
+function getUnusedUploadedAssets(uploadedAssets, content) {
+  const draftContent = String(content || '');
+  return uploadedAssets.filter((asset) => !draftContent.includes(asset.token));
 }
 
 function getScopedDefaultSection(forum, forums) {
@@ -275,6 +320,11 @@ export default function Home({
   const [composerAiLoading, setComposerAiLoading] = useState(false);
   const [composerAiAbortController, setComposerAiAbortController] = useState(null);
   const [followPending, setFollowPending] = useState(false);
+  const [composerUploadMessage, setComposerUploadMessage] = useState('');
+  const [composerUploadLoading, setComposerUploadLoading] = useState(false);
+  const [composerUploadedAssets, setComposerUploadedAssets] = useState([]);
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1440 : window.innerWidth));
+  const composerFileInputRef = useRef(null);
 
   const forumDirectory = useMemo(() => buildForumDirectory(forums, posts), [forums, posts]);
 
@@ -302,6 +352,19 @@ export default function Home({
     () => getOptionLabel(FEED_TIME_RANGE_OPTIONS, timeRange, 'All time'),
     [timeRange]
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const preferredComposerForum = useMemo(() => {
     if (selectedForumOption) {
@@ -342,6 +405,7 @@ export default function Home({
       tags: Array.isArray(draft.tags) ? draft.tags.join(', ') : String(draft.tags || '')
     });
     setMessage('');
+    setComposerUploadMessage('');
     setIsComposerOpen(true);
   }, [forums, preferredComposerForum, selectedForumOption]);
 
@@ -406,6 +470,15 @@ export default function Home({
     });
   }, [filteredPosts, forumInsightMap, isAggregateView, sortMode]);
 
+  const displayedFeedCards = useMemo(() => (
+    displayedPosts.map((post) => ({
+      post,
+      coverImage: getPostCoverImage(post.content),
+      textPreview: getTextCardPreview(post.content)
+    }))
+  ), [displayedPosts]);
+  const useSparseFeedLayout = displayedFeedCards.length > 0 && displayedFeedCards.length <= getSparseFeedThreshold(viewportWidth);
+
   const sectionCounts = useMemo(() => {
     const counts = {};
     for (const post of timeFilteredPosts) {
@@ -435,14 +508,14 @@ export default function Home({
 
     if (followedOptions.length > 0 && otherOptions.length > 0) {
       return [
-        { label: 'Followed Forums', options: followedOptions },
-        { label: 'All Forums', options: otherOptions }
+        { label: 'Followed Spaces', options: followedOptions },
+        { label: 'All Spaces', options: otherOptions }
       ];
     }
 
     return [
       {
-        label: 'Forums',
+        label: 'Spaces',
         options: sortedComposerForums.map((forum) => ({ value: forum.id, label: forum.name }))
       }
     ];
@@ -458,7 +531,7 @@ export default function Home({
       });
 
     const options = [
-      { value: '__all__', label: 'All Forums' }
+      { value: '__all__', label: 'All Spaces' }
     ];
 
     if (!isAggregateView && selectedForum?.slug && !selectedForum.isFollowing) {
@@ -467,7 +540,7 @@ export default function Home({
 
     if (followedForums.length > 0) {
       options.push({
-        label: 'Subscribed Forums',
+        label: 'Subscribed Spaces',
         options: followedForums.map((forum) => ({
           value: forum.slug,
           label: forum.name
@@ -627,9 +700,9 @@ export default function Home({
         await apiFollowForum(selectedForum.id, token);
       }
       await onLoadForums();
-      setMessage(isFollowingSelectedForum ? 'Forum removed from your saved forums.' : 'Forum saved to your forums.');
+      setMessage(isFollowingSelectedForum ? 'Space removed from your saved list.' : 'Space saved to your list.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to update forum follow.');
+      setMessage(error instanceof Error ? error.message : 'Failed to update saved space.');
     } finally {
       setFollowPending(false);
     }
@@ -638,9 +711,10 @@ export default function Home({
   const submitPost = async (event) => {
     event.preventDefault();
     setMessage('');
+    const publishedContent = form.content;
 
     if (!form.forumId) {
-      setMessage('Choose a forum first.');
+      setMessage('Choose a space first.');
       return;
     }
 
@@ -655,6 +729,8 @@ export default function Home({
       return;
     }
 
+    await cleanupComposerAssets('unused', publishedContent);
+
     const resetForum = selectedForumOption || preferredComposerForum;
     setForm({
       title: '',
@@ -666,6 +742,8 @@ export default function Home({
     setComposerAiOpen(false);
     setComposerAiInstruction('');
     setComposerAiMessage('');
+    setComposerUploadMessage('');
+    setComposerUploadedAssets([]);
     setSearchQuery('');
     setSelectedSections([]);
     await Promise.all([
@@ -676,10 +754,6 @@ export default function Home({
     setMessage('Post published.');
   };
 
-  const toggleTagFilter = (tag) => {
-    setSearchQuery((current) => (current === tag ? '' : tag));
-  };
-
   const insertCodeTemplate = () => {
     const snippet = `\n\`\`\`${composerLanguage}\n// add code here\n\`\`\`\n`;
     setForm((prev) => ({
@@ -688,6 +762,80 @@ export default function Home({
     }));
   };
 
+  const openComposerImagePicker = useCallback(() => {
+    composerFileInputRef.current?.click();
+  }, []);
+
+  const handleComposerImageSelected = useCallback(async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+
+    const token = authStorage.getToken();
+    if (!token) {
+      setMessage('Login expired. Please sign in again before uploading.');
+      return;
+    }
+
+    setMessage('');
+    setComposerUploadMessage('');
+    setComposerUploadLoading(true);
+    try {
+      const asset = await apiUploadMediaFile(file, token);
+      setComposerUploadedAssets((current) => (
+        current.some((entry) => entry.id === asset.id)
+          ? current
+          : [...current, { id: asset.id, token: buildMediaToken(asset.id) }]
+      ));
+      const imageMarkdown = buildImageMarkdown(file.name, asset.id);
+      setForm((prev) => ({
+        ...prev,
+        content: `${String(prev.content || '').trimEnd()}${imageMarkdown}`
+      }));
+      setComposerUploadMessage('Image uploaded and inserted into the draft.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to upload image.');
+    } finally {
+      setComposerUploadLoading(false);
+    }
+  }, []);
+
+  const cleanupComposerAssets = useCallback(async (mode = 'all', content = '') => {
+    if (composerUploadedAssets.length === 0) {
+      return;
+    }
+
+    const token = authStorage.getToken();
+    if (!token) {
+      setComposerUploadedAssets(mode === 'unused' ? composerUploadedAssets.filter((asset) => String(content || '').includes(asset.token)) : []);
+      return;
+    }
+
+    const assetsToDelete = mode === 'unused'
+      ? getUnusedUploadedAssets(composerUploadedAssets, content)
+      : composerUploadedAssets;
+
+    if (assetsToDelete.length === 0) {
+      if (mode === 'all') {
+        setComposerUploadedAssets([]);
+      }
+      return;
+    }
+
+    await Promise.allSettled(
+      assetsToDelete.map((asset) => apiDeleteMediaAsset(asset.id, token))
+    );
+
+    if (mode === 'unused') {
+      setComposerUploadedAssets((current) => current.filter((asset) => String(content || '').includes(asset.token)));
+      return;
+    }
+
+    setComposerUploadedAssets([]);
+  }, [composerUploadedAssets]);
+
   const stopComposerAiRewrite = useCallback(() => {
     composerAiAbortController?.abort();
     setComposerAiAbortController(null);
@@ -695,12 +843,15 @@ export default function Home({
   }, [composerAiAbortController]);
 
   const closeComposer = useCallback(() => {
+    void cleanupComposerAssets('all');
     stopComposerAiRewrite();
     setComposerAiOpen(false);
     setComposerAiInstruction('');
     setComposerAiMessage('');
+    setComposerUploadMessage('');
+    setComposerUploadedAssets([]);
     setIsComposerOpen(false);
-  }, [stopComposerAiRewrite]);
+  }, [cleanupComposerAssets, stopComposerAiRewrite]);
 
   const runComposerAiRewrite = useCallback(async (instructionOverride) => {
     const instruction = String(instructionOverride || composerAiInstruction).trim();
@@ -774,11 +925,11 @@ export default function Home({
   const moderatePost = async (post) => {
     const forumId = post.forum?.id;
     if (!forumId) {
-      setMessage('This post is not attached to a forum yet.');
+      setMessage('This post is not attached to a space yet.');
       return;
     }
 
-    const reason = window.prompt('Why are you removing this post from the forum?', 'Needs review');
+    const reason = window.prompt('Why are you removing this post from the space?', 'Needs review');
     if (!reason || !reason.trim()) {
       return;
     }
@@ -842,22 +993,22 @@ export default function Home({
           <div className="forum-view-intro-main">
             <div className="forum-view-intro-copy-block">
               <div className="forum-view-intro-kicker-row">
-                <p className="type-kicker mb-0">{isAggregateView ? 'Forum Feed' : 'Forum'}</p>
-                <span className="forum-view-intro-status-pill">{isAggregateView ? 'Cross-forum' : 'Live board'}</span>
+                <p className="type-kicker mb-0">{isAggregateView ? 'Community Feed' : 'Space'}</p>
+                <span className="forum-view-intro-status-pill">{isAggregateView ? 'Cross-space' : 'Live board'}</span>
               </div>
               <h3 className="mb-1 type-title-md">
-                {isAggregateView ? 'All forums, one smart feed' : selectedForum?.name || 'Forum'}
+                {isAggregateView ? 'All spaces, one smart feed' : selectedForum?.name || 'Space'}
               </h3>
               <p className="forum-view-intro-copy mb-0">
                 {isAggregateView
-                  ? 'Posts here are prioritized by the forums you follow, recent updates, and overall forum activity.'
-                  : (selectedForum?.description || 'Browse posts and practical writeups from this forum.')}
+                  ? 'Posts here are prioritized by the spaces you follow, recent updates, and overall space activity.'
+                  : (selectedForum?.description || 'Browse posts and practical writeups from this space.')}
               </p>
               {isAggregateView && (
                 <div className="forum-view-intro-meta-row">
                   <span className="forum-view-intro-badge">
                     <strong>{forums.length}</strong>
-                    <span>Forums in feed</span>
+                    <span>Spaces in feed</span>
                   </span>
                   <span className="forum-view-intro-badge">
                     <strong>{followedForumCount}</strong>
@@ -907,9 +1058,9 @@ export default function Home({
             <Link to="/explore" className="explore-intro-link text-decoration-none">
               <span className="explore-intro-link-kicker">Discover</span>
               <strong>Explore</strong>
-              <span className="explore-intro-link-copy">Browse more forums and trending spaces.</span>
+              <span className="explore-intro-link-copy">Browse more spaces and trending communities.</span>
               <span className="explore-intro-link-footer">
-                <span>Forum directory</span>
+                <span>Space directory</span>
                 <span className="explore-intro-link-arrow" aria-hidden="true">↗</span>
               </span>
             </Link>
@@ -930,7 +1081,7 @@ export default function Home({
                     onClick={toggleForumFollow}
                     disabled={followPending}
                   >
-                    {followPending ? 'Updating...' : isFollowingSelectedForum ? 'Unfollow Forum' : 'Follow Forum'}
+                    {followPending ? 'Updating...' : isFollowingSelectedForum ? 'Unfollow Space' : 'Follow Space'}
                   </button>
                 ) : (
                   <Link to="/login" className="forum-secondary-btn forum-intro-btn text-decoration-none">
@@ -951,13 +1102,15 @@ export default function Home({
                 <h3 className="mb-1 type-title-md">Filters</h3>
                 <p className="type-body mb-0">
                   {isAggregateView
-                    ? 'Combine section, time window, and ranking filters across all forums.'
-                    : 'Combine section, time window, and ranking filters inside this forum.'}
+                    ? 'Tune the feed with search, time window, and ranking filters across all spaces.'
+                    : 'Combine section, time window, and ranking filters inside this space.'}
                 </p>
               </div>
-              <div className="forum-sections-head-actions">
-                <span className="muted">{sectionDisplayScope.length || 0} sections</span>
-              </div>
+              {!isAggregateView && (
+                <div className="forum-sections-head-actions">
+                  <span className="muted">{sectionDisplayScope.length || 0} sections</span>
+                </div>
+              )}
             </div>
 
             <div className="forum-filter-shell mb-3">
@@ -966,7 +1119,7 @@ export default function Home({
                   className="form-control forum-input tag-search-input"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={isAggregateView ? 'Search posts across all forums' : 'Search title, content, tags, author, section'}
+                  placeholder={isAggregateView ? 'Search posts across all spaces' : 'Search title, content, tags, author, section'}
                 />
                 {searchQuery && (
                   <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
@@ -978,7 +1131,7 @@ export default function Home({
               <div className="forum-filter-controls">
                 {currentUser && followedForumOptions.length > 1 && (
                   <label className="forum-filter-control">
-                    <span className="forum-filter-control-label">Forum scope</span>
+                    <span className="forum-filter-control-label">Space scope</span>
                     <div className="forum-native-select-wrap">
                       <select
                         className="forum-native-select"
@@ -1027,29 +1180,31 @@ export default function Home({
               )}
             </div>
 
-            <div className="section-grid">
-              <div className="section-card is-open">
-                <div className="section-chip-wrap">
-                  {visibleSections.map((item) => (
-                    <div
-                      key={item.value}
-                      className="section-chip-row"
-                    >
-                      <button
-                        type="button"
-                        className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`.trim()}
-                        onClick={() => toggleSection(item.value)}
+            {!isAggregateView && (
+              <div className="section-grid">
+                <div className="section-card is-open">
+                  <div className="section-chip-wrap">
+                    {visibleSections.map((item) => (
+                      <div
+                        key={item.value}
+                        className="section-chip-row"
                       >
-                        <span>{item.label}</span>
-                        <span className="section-count">{sectionCounts[item.value] || 0}</span>
-                      </button>
-                    </div>
-                  ))}
+                        <button
+                          type="button"
+                          className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`.trim()}
+                          onClick={() => toggleSection(item.value)}
+                        >
+                          <span>{item.label}</span>
+                          <span className="section-count">{sectionCounts[item.value] || 0}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {selectedSections.length > 0 && (
+            {!isAggregateView && selectedSections.length > 0 && (
               <div className="section-filter-row mt-3">
                 <button
                   type="button"
@@ -1075,11 +1230,11 @@ export default function Home({
           <section className="panel forum-feed-panel">
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
               <div>
-                <h3 className="mb-1 type-title-md">{isAggregateView ? 'Smart Feed' : 'Forum Posts'}</h3>
+                <h3 className="mb-1 type-title-md">{isAggregateView ? 'Smart Feed' : 'Space Posts'}</h3>
                 <p className="muted mb-0">
                   {isAggregateView
-                    ? 'Forum label lives on the top-left of every post so users always know where it came from.'
-                    : 'Posts inside this forum, ordered by your current filters.'}
+                    ? 'Every post keeps its space label so users always know where it came from.'
+                    : 'Posts inside this space, ordered by your current filters.'}
                 </p>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
@@ -1102,76 +1257,94 @@ export default function Home({
             {message && <div className="settings-alert is-success mb-3">{message}</div>}
             {loadingPosts && <p className="muted mb-3">Refreshing posts...</p>}
 
-            <div className="forum-feed">
-              {displayedPosts.map((post) => (
+            <div className={`forum-feed ${useSparseFeedLayout ? 'is-sparse' : ''}`.trim()}>
+              {displayedFeedCards.map(({ post, coverImage, textPreview }) => (
                 <article key={post.id} className="forum-post-card">
-                  <div className="forum-post-meta-row">
-                    <div className="forum-post-kicker">
-                      {post.forum?.name && post.forum?.slug ? (
-                        <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip">
-                          <span className="forum-origin-chip-label">Forum</span>
-                          <span>{post.forum.name}</span>
-                        </Link>
+                  <Link to={`/forum/post/${post.id}`} className="forum-post-cover-link">
+                    <div className={`forum-post-cover ${coverImage ? 'has-image' : 'is-title-only'}`.trim()}>
+                      {coverImage ? (
+                        <img
+                          src={coverImage}
+                          alt={post.title}
+                          className="forum-post-cover-image"
+                          loading="lazy"
+                        />
                       ) : (
-                        <span className="forum-origin-chip is-static">
-                          <span className="forum-origin-chip-label">Forum</span>
-                          <span>{post.forum?.name || 'General'}</span>
-                        </span>
+                        <div className="forum-post-cover-fallback">
+                          <div className="forum-post-cover-fallback-copy">
+                            <span className="forum-post-cover-fallback-title">{post.title}</span>
+                          </div>
+                        </div>
                       )}
-                      <span className="forum-tag">{getSectionLabel(post.section)}</span>
-                    </div>
-                    <span className="muted forum-time">{formatTime(getPostActivityAt(post))}</span>
-                  </div>
-
-                  <h5 className="mb-1">
-                    <Link to={`/forum/post/${post.id}`} className="post-title-link">
-                      {post.title}
-                    </Link>
-                  </h5>
-                  {!!post.tags?.length && (
-                    <div className="post-tag-row mb-2">
-                      {post.tags.map((tag) => (
-                        <button
-                          key={`${post.id}-${tag}`}
-                          type="button"
-                          className={`post-tag-pill ${searchQuery === tag ? 'is-active' : ''}`.trim()}
-                          onClick={() => toggleTagFilter(tag)}
-                        >
-                          #{tag}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <p className="mb-2 forum-post-preview">{getPreview(post.content)}</p>
-                  <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div className="forum-post-footer-meta">
-                      <small className="muted">
-                        Posted by{' '}
-                        <Link to={`/users/${post.authorId}`} className="post-author-link">
-                          {post.authorName}
-                        </Link>
-                      </small>
-                      <div className="forum-post-stats">
-                        <span className="forum-post-stat">{getPostViewCount(post)} views</span>
-                        <span className="forum-post-stat">{getPostCommentCount(post)} comments</span>
+                      <div className="forum-post-cover-badges">
+                        {post.forum?.name && post.forum?.slug ? (
+                          <span className="forum-origin-chip">
+                            <span className="forum-origin-chip-label">Space</span>
+                            <span>{post.forum.name}</span>
+                          </span>
+                        ) : (
+                          <span className="forum-origin-chip is-static">
+                            <span className="forum-origin-chip-label">Space</span>
+                            <span>{post.forum?.name || 'General'}</span>
+                          </span>
+                        )}
+                        {!isAggregateView && (
+                          <span className="forum-tag">{getSectionLabel(post.section)}</span>
+                        )}
                       </div>
                     </div>
-                    <div className="d-flex align-items-center gap-2 flex-wrap">
-                      {canManagePost(post) && (
-                        <button type="button" className="forum-danger-btn" onClick={() => moderatePost(post)}>
+                  </Link>
+
+                  <div className="forum-post-card-body">
+                    {coverImage && (
+                      <h5 className="mb-0 forum-post-card-title">
+                        <Link to={`/forum/post/${post.id}`} className="post-title-link">
+                          {post.title}
+                        </Link>
+                      </h5>
+                    )}
+
+                    {!coverImage && (
+                      <p className="mb-0 forum-post-card-summary">
+                        <Link to={`/forum/post/${post.id}`} className="forum-post-summary-link">
+                          {textPreview || post.title}
+                        </Link>
+                      </p>
+                    )}
+
+                    <div className="forum-post-card-meta">
+                      <Link to={`/users/${post.authorId}`} className="forum-post-author-link">
+                        {post.authorAvatarUrl ? (
+                          <img
+                            src={post.authorAvatarUrl}
+                            alt={post.authorName}
+                            className="forum-post-author-avatar-image"
+                          />
+                        ) : (
+                          <span className="forum-post-author-avatar" aria-hidden="true">{getAuthorInitial(post.authorName)}</span>
+                        )}
+                        <span className="forum-post-author-name">{post.authorName}</span>
+                      </Link>
+                      <span className="forum-post-card-views">{getPostViewCount(post)} views</span>
+                    </div>
+
+                    {canManagePost(post) && (
+                      <div className="forum-post-card-submeta">
+                        <button type="button" className="forum-danger-btn forum-post-card-remove" onClick={() => moderatePost(post)}>
                           Remove
                         </button>
-                      )}
-                      <Link to={`/forum/post/${post.id}`} className="post-read-link">
-                        Read more
-                      </Link>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </article>
               ))}
 
               {!loadingPosts && displayedPosts.length === 0 && (
-                <p className="muted mb-0">No posts match the current search, section, and time filters.</p>
+                <p className="muted mb-0">
+                  {isAggregateView
+                    ? 'No posts match the current search and feed filters.'
+                    : 'No posts match the current search, section, and time filters.'}
+                </p>
               )}
             </div>
           </section>
@@ -1191,7 +1364,7 @@ export default function Home({
 
             <form onSubmit={submitPost} className="forum-form">
               <div className="mb-3">
-                <label className="form-label">Forum</label>
+                <label className="form-label">Space</label>
                 {selectedForum ? (
                   <div className="form-control forum-input d-flex align-items-center">
                     {selectedForum.name}
@@ -1210,7 +1383,7 @@ export default function Home({
                           : getScopedDefaultSection(nextForum, forums)
                       }));
                     }}
-                    placeholder="Choose a forum"
+                    placeholder="Choose a space"
                   />
                 )}
               </div>
@@ -1247,6 +1420,13 @@ export default function Home({
 
               <div className="mb-2">
                 <label className="form-label">Content</label>
+                <input
+                  ref={composerFileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                  className="d-none"
+                  onChange={handleComposerImageSelected}
+                />
                 {showComposerCodeTools && (
                   <div className="composer-toolbar">
                     <Select
@@ -1257,6 +1437,26 @@ export default function Home({
                     />
                     <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
                       Insert Code Block
+                    </button>
+                    <button
+                      type="button"
+                      className="forum-secondary-btn"
+                      disabled={composerUploadLoading}
+                      onClick={openComposerImagePicker}
+                    >
+                      {composerUploadLoading ? 'Uploading Image...' : 'Upload Image'}
+                    </button>
+                  </div>
+                )}
+                {!showComposerCodeTools && (
+                  <div className="composer-toolbar">
+                    <button
+                      type="button"
+                      className="forum-secondary-btn"
+                      disabled={composerUploadLoading}
+                      onClick={openComposerImagePicker}
+                    >
+                      {composerUploadLoading ? 'Uploading Image...' : 'Upload Image'}
                     </button>
                   </div>
                 )}
@@ -1275,8 +1475,9 @@ export default function Home({
                 <div className="form-help">
                   {showComposerCodeTools
                     ? 'Choose a language, insert a code block, then paste your code inside it.'
-                    : 'This forum keeps the composer simple, so the code block shortcut is hidden.'}
+                    : 'This space keeps the composer simple, so the code block shortcut is hidden.'}
                 </div>
+                {composerUploadMessage && <div className="form-help">{composerUploadMessage}</div>}
               </div>
 
               <section className="settings-card mb-3">

@@ -28,7 +28,7 @@ type AuthContextValue = {
   logout: () => void;
   requestPasswordReset: (input: { email: string }) => Promise<ActionResult>;
   confirmPasswordReset: (input: { token: string; newPassword: string }) => Promise<ActionResult>;
-  updateProfile: (input: { name: string }) => Promise<ActionResult>;
+  updateProfile: (input: { name: string; avatarAssetId?: string; removeAvatar?: boolean }) => Promise<ActionResult>;
   updatePassword: (input: { currentPassword: string; newPassword: string }) => Promise<ActionResult>;
   deleteAccount: () => Promise<ActionResult>;
 };
@@ -119,13 +119,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(null);
   }, []);
 
-  const updateProfile = useCallback(async ({ name }: { name: string }) => {
+  const updateProfile = useCallback(async (
+    { name, avatarAssetId, removeAvatar }: { name: string; avatarAssetId?: string; removeAvatar?: boolean }
+  ) => {
     const token = authStorage.getToken();
     if (!token) {
       return { ok: false, message: 'Please login first.' };
     }
     try {
-      const data = await apiUpdateProfile({ name }, token);
+      const data = await apiUpdateProfile({ name, avatarAssetId, removeAvatar }, token);
       authStorage.setToken(data.token);
       setCurrentUser(data.user);
       return { ok: true, user: data.user };

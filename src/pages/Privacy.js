@@ -22,13 +22,13 @@ export default function Privacy() {
         <p className="type-kicker privacy-page-kicker mb-2">Privacy</p>
         <p className="type-body mb-3">Last updated: March 2026</p>
         <p className="type-body mb-4">
-          At LearnFromUs, your privacy matters. This policy explains what data we collect, how we use it, and how we
+          At tsumit, your privacy matters. This policy explains what data we collect, how we use it, and how we
           protect it.
         </p>
 
         <h2 className="type-title-sm mb-2">1. What We Collect</h2>
         <p className="type-body mb-3">
-          When you join LearnFromUs, we may collect the following:
+          When you join tsumit, we may collect the following:
         </p>
         <p className="type-body mb-3">
           Name — to personalize your experience
@@ -47,7 +47,7 @@ export default function Privacy() {
         <p className="type-body mb-3">
           Send platform updates, announcements, and relevant notifications
           <br />
-          Improve the overall experience and functionality of LearnFromUs
+          Improve the overall experience and functionality of tsumit
           <br />
           Analyze platform usage through third-party analytics tools (e.g. Google Analytics or similar)
         </p>

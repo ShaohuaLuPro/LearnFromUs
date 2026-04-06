@@ -206,9 +206,9 @@ export default function PostAppealRecordPage(props) {
               <h2 className="mb-1 type-title-md">Appeal Record</h2>
               <p className="type-body mb-0">Review the full moderation trail, saved notes, and the current decision on this post.</p>
             </div>
-            <div className="forum-actions">
+              <div className="forum-actions">
               {!isAdminView && !isPermanentlyDeleted && (
-                <Link to={`/my-posts?postId=${post.id}`} className="forum-secondary-btn text-decoration-none">Edit Post</Link>
+                <Link to={`/my-posts/${post.id}/edit`} className="forum-secondary-btn text-decoration-none">Edit Post</Link>
               )}
               <Link to={backPath} className="forum-secondary-btn text-decoration-none">Back</Link>
             </div>
@@ -226,12 +226,12 @@ export default function PostAppealRecordPage(props) {
             <div className="forum-post-kicker mb-3">
               {post.forum?.name && post.forum?.slug ? (
                 <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip">
-                  <span className="forum-origin-chip-label">Forum</span>
+                  <span className="forum-origin-chip-label">Space</span>
                   <span>{post.forum.name}</span>
                 </Link>
               ) : (
                 <span className="forum-origin-chip is-static">
-                  <span className="forum-origin-chip-label">Forum</span>
+                  <span className="forum-origin-chip-label">Space</span>
                   <span>{post.forum?.name || 'General'}</span>
                 </span>
               )}

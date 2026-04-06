@@ -35,7 +35,7 @@ const CORE_FORUM_SEEDS = [
   {
     slug: 'dev-team-updates',
     name: 'Development Team',
-    description: 'Announcements, product updates, and changes from the LearnFromUs team.',
+    description: 'Announcements, product updates, and changes from the tsumit team.',
     sectionScope: ['announcements', 'system-update']
   }
 ];

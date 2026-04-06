@@ -15,7 +15,7 @@ export default function ScrollToTop() {
     return () => {
       window.history.scrollRestoration = previousMode;
     };
-  }, [location.pathname]);
+  }, [location.hash, location.pathname]);
 
   return null;
 }

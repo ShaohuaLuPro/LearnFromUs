@@ -1,6 +1,6 @@
-const SITE_NAME = 'LearnFromUs';
+const SITE_NAME = 'tsumit';
 const DEFAULT_TITLE = `${SITE_NAME} | Learn by Sharing What Works`;
-const DEFAULT_DESCRIPTION = 'LearnFromUs is a community where people share real projects, practical lessons, and what actually works through execution.';
+const DEFAULT_DESCRIPTION = 'tsumit is a community where people share real projects, practical lessons, and what actually works through execution.';
 
 function normalizeBaseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');

@@ -21,10 +21,12 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { to: '/', label: 'Home' },
-  { to: '/forum', label: 'Forum' },
+  { to: '/forum', label: 'Feed' },
   { to: '/explore', label: 'Explore' },
   { to: '/about', label: 'About' }
 ];
+
+const SITE_LOGO_SRC = '/images/tsumit-logo-cropped.png';
 
 type HeaderProps = {
   currentUser: CurrentUser;
@@ -439,8 +441,8 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
             className="forum-search-input"
             value={forumQuery}
             onChange={(event) => setForumQuery(event.target.value)}
-            placeholder="Search forums or posts"
-            aria-label="Search forums or posts"
+            placeholder="Search spaces or posts"
+            aria-label="Search spaces or posts"
           />
         </form>
         {forumSearchOpen && (
@@ -452,7 +454,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
                 </div>
                 {matchingForums.length > 0 && (
                   <div className="forum-search-section">
-                    <div className="forum-search-section-label">Popular forums</div>
+                    <div className="forum-search-section-label">Popular spaces</div>
                     {matchingForums.map((forum) => (
                       <button
                         key={forum.id}
@@ -472,7 +474,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
               <>
                 {matchingForums.length > 0 && (
                   <div className="forum-search-section">
-                    <div className="forum-search-section-label">Forums</div>
+                    <div className="forum-search-section-label">Spaces</div>
                     {matchingForums.map((forum) => (
                       <button
                         key={forum.id}
@@ -510,7 +512,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
                   </div>
                 ) : null}
                 {!searchLoading && !hasResults && (
-                  <div className="forum-search-empty">No similar forums or posts</div>
+                  <div className="forum-search-empty">No similar spaces or posts</div>
                 )}
               </>
             )}
@@ -566,7 +568,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
                   closeCollapsedNav();
                 }}
               >
-                Forum Requests
+                Space Requests
               </NavLink>
             )}
             {(currentUser.isAdmin || currentUser.adminPermissions?.includes('analytics')) && (
@@ -653,7 +655,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
                 closeCollapsedNav();
               }}
             >
-              My Forums
+              My Spaces
             </NavLink>
             <NavLink
               to="/following"
@@ -716,9 +718,8 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
       }}
     >
       <Container className="site-navbar-inner">
-        <Navbar.Brand as={NavLink} to="/" className="site-brand">
-          <span className="brand-dot" />
-          LearnFromUs
+        <Navbar.Brand as={NavLink} to="/" className="site-brand" aria-label="tsumit home">
+          <img src={SITE_LOGO_SRC} alt="tsumit" className="site-brand-logo" />
         </Navbar.Brand>
         <Navbar.Toggle aria-controls="site-mobile-nav-drawer" className="site-navbar-toggle" />
         <Navbar.Collapse className="site-navbar-desktop">
@@ -738,7 +739,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
       >
         <Offcanvas.Header closeButton className="site-mobile-drawer-header">
           <Offcanvas.Title className="site-mobile-drawer-title">
-            LearnFromUs
+            <img src={SITE_LOGO_SRC} alt="tsumit" className="site-mobile-brand-logo" />
           </Offcanvas.Title>
         </Offcanvas.Header>
         <Offcanvas.Body className="site-mobile-drawer-body">

@@ -29,6 +29,7 @@ import Moderation from './pages/Moderation';
 import MyForums from './pages/MyForums';
 import MyForumInvitations from './pages/MyForumInvitations';
 import MyForumManagers from './pages/MyForumManagers';
+import MyPostEditPage from './pages/MyPostEditPage';
 import MyPosts from './pages/MyPosts';
 import PostAppealRecordPage from './pages/PostAppealRecordPage';
 import PostDetail from './pages/PostDetail';
@@ -43,7 +44,7 @@ function LoadingShell() {
       <div className="container">
         <section className="app-loading-card">
           <div className="app-loading-badge">Starting up</div>
-          <h1 className="app-loading-title">Waking up the forum backend.</h1>
+          <h1 className="app-loading-title">Waking up the tsumit backend.</h1>
           <p className="app-loading-copy">
             The API is running on a free instance, so the first request can take a moment while the
             server resumes.
@@ -76,10 +77,12 @@ export default function AppRoutes() {
     return <LoadingShell />;
   }
 
-  const updateProfile = async ({ name }: { name: string }) => {
-    const result = await auth.updateProfile({ name });
+  const updateProfile = async (
+    { name, avatarAssetId, removeAvatar }: { name: string; avatarAssetId?: string; removeAvatar?: boolean }
+  ) => {
+    const result = await auth.updateProfile({ name, avatarAssetId, removeAvatar });
     if (result.ok && result.user) {
-      posts.syncAuthorName(result.user.id, result.user.name);
+      posts.syncAuthorName(result.user.id, result.user.name, result.user.avatarUrl || '');
     }
     return result;
   };
@@ -267,6 +270,17 @@ export default function AppRoutes() {
             path="/my-posts"
             element={auth.currentUser ? (
               <MyPosts
+                currentUser={auth.currentUser}
+                onGetMyPosts={posts.getMyPosts}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
+            path="/my-posts/:postId/edit"
+            element={auth.currentUser ? (
+              <MyPostEditPage
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 onUpdatePost={posts.updatePost}

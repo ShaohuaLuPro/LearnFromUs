@@ -103,7 +103,7 @@ export default function AdminAccess({ currentUser }) {
             </p>
           </div>
           <Link to="/forum" className="forum-secondary-btn text-decoration-none">
-            Back to Forum
+            Back to Feed
           </Link>
         </div>
 

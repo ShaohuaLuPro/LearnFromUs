@@ -95,7 +95,7 @@ async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
     const result = await client.query(
       `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
-              u.username AS author_name, u.email AS author_email,
+              u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
               f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
               COALESCE(f.section_scope, '{}') AS forum_section_scope,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
@@ -107,7 +107,7 @@ async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
        LEFT JOIN tag t ON t.id = pt.tag_id
        LEFT JOIN comment c ON c.post_id = p.id
        WHERE ${whereSql}
-       GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, f.section_scope
+       GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, f.section_scope
        ORDER BY p.created_at DESC${limitOffsetSql}`,
       queryParams
     );
@@ -141,7 +141,7 @@ async function getPublicPostById(pool, mapPostRow, postId) {
     const result = await client.query(
       `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
-              u.username AS author_name, u.email AS author_email,
+              u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
               f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
               COALESCE(f.section_scope, '{}') AS forum_section_scope,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
@@ -155,7 +155,7 @@ async function getPublicPostById(pool, mapPostRow, postId) {
        WHERE p.id = $1
          AND p.is_published = TRUE
          AND p.deleted_by_admin_at IS NULL
-       GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, f.section_scope`,
+       GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, f.section_scope`,
       [postId]
     );
 

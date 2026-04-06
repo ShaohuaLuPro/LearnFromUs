@@ -22,7 +22,7 @@ export default function Terms() {
         <p className="type-kicker terms-page-kicker mb-2">Terms</p>
         <p className="type-body mb-3">Last updated: March 2026</p>
         <p className="type-body mb-4">
-          Welcome to LearnFromUs. This is a space built on shared knowledge, honest execution, and mutual respect.
+          Welcome to tsumit. This is a space built on shared knowledge, honest execution, and mutual respect.
           By joining our community, you agree to the following terms.
         </p>
 
@@ -69,7 +69,7 @@ export default function Terms() {
         </p>
 
         <p className="type-body mb-0">
-          LearnFromUs reserves the right to update these terms at any time. Continued use of the platform constitutes
+          tsumit reserves the right to update these terms at any time. Continued use of the platform constitutes
           acceptance of any changes.
         </p>
       </section>

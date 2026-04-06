@@ -14,11 +14,11 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
   const basePrompts = [
     'take me to the about page so i can understand what this community is for',
     'show me the latest announcements and summarize what changed most recently',
-    'show me the newest forum posts so i can catch up on recent discussion',
+    'show me the newest posts so i can catch up on recent discussion',
     'i want to learn mle, show me a few useful posts to start with',
     'find posts about analytics dashboards, experiments, or product metrics',
     'show top authors who post often and seem active in technical discussions',
-    'draft a forum request for an mlops community with a clear name, description, and section scope'
+    'draft a space request for an mlops community with a clear name, description, and section scope'
   ];
   const starterPrompts = currentUser
     ? [
@@ -36,8 +36,8 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
     id: 'welcome',
     role: 'agent',
     reply: currentUser
-      ? 'Ask me to navigate the site, show the latest posts or announcements, find posts for a topic, surface active authors, draft a post in your style, or draft a new forum request.'
-      : 'Ask me to navigate the site, show the latest posts or announcements, find posts for a topic, surface active authors, draft a post, or draft a new forum request.',
+      ? 'Ask me to navigate the site, show the latest posts or announcements, find posts for a topic, surface active authors, draft a post in your style, or draft a new space request.'
+      : 'Ask me to navigate the site, show the latest posts or announcements, find posts for a topic, surface active authors, draft a post, or draft a new space request.',
     quickActions: ['search-posts', 'show-trending', 'draft-post']
   }), [currentUser]);
   const [messages, setMessages] = useState([buildWelcomeMessage()]);
@@ -193,7 +193,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
         id: `${Date.now()}-publish`,
         role: 'agent',
         reply: result.ok
-          ? 'Draft published. I refreshed the forum state, and you can open it from My Posts or Forum.'
+          ? 'Draft published. I refreshed the latest feed state, and you can open it from My Posts or the feed.'
           : result.message
       }
     ]);
@@ -263,7 +263,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                   Ready
                 </span>
               </div>
-              <h3 className="mb-0">Forum Assistant</h3>
+                <h3 className="mb-0">tsumit Assistant</h3>
               <p className="agent-chatbox-subtitle mb-0">
                 Open pages, check recent posts or announcements, search topics, and draft content from one place.
               </p>
@@ -422,7 +422,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                             onClick={() => currentUser ? openDraftInComposerForForum(message.draft, forum) : navigate('/login')}
                           >
                             <strong>{forum.name}</strong>
-                            <span>{forum.isFollowing ? 'Following' : 'Forum'}</span>
+                            <span>{forum.isFollowing ? 'Following' : 'Space'}</span>
                             <span>{getSectionLabel(forum.suggestedSection || forum.sectionScope?.[0] || '')}</span>
                           </button>
                         ))}
@@ -498,7 +498,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
                           <p className="mb-0">{message.forumRequestDraft.description}</p>
                         </div>
                         <div className="agent-chatbox-field-block">
-                          <span className="agent-chatbox-field-label">Why This Forum Should Exist</span>
+                          <span className="agent-chatbox-field-label">Why This Space Should Exist</span>
                           <p className="mb-0">{message.forumRequestDraft.rationale}</p>
                         </div>
                         <div className="forum-actions">
@@ -555,7 +555,7 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
               }}
               placeholder={currentUser
                 ? 'Try "show me the latest announcements", "take me to my posts", or "draft a post in my style about postgres indexing".'
-                : 'Try "show me the latest announcements", "find posts about analytics", or "draft a forum request for an MLOps community".'}
+                : 'Try "show me the latest announcements", "find posts about analytics", or "draft a space request for an MLOps community".'}
             />
             <div className="forum-actions">
               <span className="muted">

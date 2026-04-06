@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
 const bcrypt = require('bcryptjs');
@@ -9,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const { Pool } = require('pg');
 const { createActivityStore } = require('./lib/activity-store');
+const { createMediaStorage } = require('./lib/media-storage');
 const { createOpenAIAgentRouter } = require('./lib/openai-agent-router');
 const { createOpenAIDraftService, SECTION_ENUM, sanitizeDraftTitle, sanitizePublishableContent } = require('./lib/openai-drafts');
 const { createOpenAIForumRequestDraftService } = require('./lib/openai-forum-request-drafts');
@@ -78,6 +80,7 @@ const openAiAgentRouter = createOpenAIAgentRouter({ apiKey: openAiApiKey, model:
 const openAiDraftService = createOpenAIDraftService({ apiKey: openAiApiKey, model: openAiModel });
 const openAiForumRequestDraftService = createOpenAIForumRequestDraftService({ apiKey: openAiApiKey, model: openAiModel });
 const openAiPostRewriter = createOpenAIPostRewriter({ apiKey: openAiApiKey, model: openAiModel });
+const mediaStorage = createMediaStorage();
 const mailTransport = smtpHost && smtpFrom
   ? nodemailer.createTransport({
       host: smtpHost,
@@ -273,6 +276,21 @@ function buildAuthenticatedUser(user, grantedPermissions = []) {
     sub: user.id,
     email: user.email,
     name: user.username,
+    avatarUrl: user.avatar_url || '',
+    isAdmin: isAdminUser(user),
+    adminPermissions,
+    hasAdminAccess: adminPermissions.length > 0,
+    canManageAdminAccess: isAdminUser(user) || adminPermissions.includes('manage_admin_access')
+  };
+}
+
+function buildClientUser(user, grantedPermissions = []) {
+  const adminPermissions = getEffectiveSiteAdminPermissions(user, grantedPermissions);
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.username,
+    avatarUrl: user.avatar_url || '',
     isAdmin: isAdminUser(user),
     adminPermissions,
     hasAdminAccess: adminPermissions.length > 0,
@@ -312,7 +330,7 @@ async function listSiteAdminAccess(client) {
   }
 
   const rootResult = await client.query(
-    `SELECT id AS user_id, username, email
+    `SELECT id AS user_id, username, email, avatar_url
      FROM app_user
      WHERE LOWER(email) = ANY($1::text[])
      ORDER BY username ASC`,
@@ -325,6 +343,7 @@ async function listSiteAdminAccess(client) {
       id: row.user_id,
       name: row.username || '',
       email: row.email || '',
+      avatarUrl: row.avatar_url || '',
       permissions: SITE_ADMIN_PERMISSION_ENUM,
       grantedById: null,
       grantedByName: '',
@@ -340,7 +359,7 @@ async function attachAuthenticatedUser(decodedToken) {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, email, username
+      `SELECT id, email, username, avatar_url
        FROM app_user
        WHERE id = $1`,
       [decodedToken.sub]
@@ -437,6 +456,42 @@ function buildPasswordResetUrl(token) {
   return `${passwordResetBaseUrl}${joiner}resetToken=${encodeURIComponent(token)}`;
 }
 
+function normalizeMediaVisibility(value) {
+  return String(value || '').trim().toLowerCase() === 'private' ? 'private' : 'public';
+}
+
+function normalizePositiveInteger(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return Math.floor(parsed);
+}
+
+function serializeMediaAsset(row) {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    fileName: row.original_file_name,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes == null ? null : Number(row.size_bytes),
+    status: row.status,
+    visibility: row.visibility,
+    objectKey: row.object_key,
+    url: mediaStorage.buildAssetUrl({
+      objectKey: row.object_key,
+      bucket: row.bucket,
+      region: row.region
+    }),
+    width: row.width == null ? null : Number(row.width),
+    height: row.height == null ? null : Number(row.height),
+    durationSeconds: row.duration_seconds == null ? null : Number(row.duration_seconds),
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+    uploadedAt: row.uploaded_at ? new Date(row.uploaded_at).getTime() : null
+  };
+}
+
 async function sendPasswordResetEmail({ to, name, resetUrl }) {
   if (!mailTransport) {
     return false;
@@ -445,7 +500,7 @@ async function sendPasswordResetEmail({ to, name, resetUrl }) {
   await mailTransport.sendMail({
     from: smtpFrom,
     to,
-    subject: 'Reset your LearnFromUs password',
+    subject: 'Reset your tsumit password',
     text: `Hi ${name || 'there'},\n\nUse this link to reset your password:\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`,
     html: `<p>Hi ${name || 'there'},</p><p>Use this link to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you did not request this, you can ignore this email.</p>`
   });
@@ -3631,6 +3686,7 @@ function mapPostRow(row) {
     authorId: row.author_id,
     authorName: row.author_name,
     authorEmail: row.author_email,
+    authorAvatarUrl: row.author_avatar_url || '',
     forum: row.forum_id || row.forum_slug ? {
       id: row.forum_id || null,
       slug: row.forum_slug || '',
@@ -3759,7 +3815,7 @@ async function getPostsByAuthor(client, userId) {
   const result = await client.query(
     `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
             p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
-            u.username AS author_name, u.email AS author_email,
+            u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
             f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
             owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope,
             COALESCE(f.show_code_block_tools, TRUE) AS forum_show_code_block_tools, f.is_core AS forum_is_core,
@@ -3771,7 +3827,7 @@ async function getPostsByAuthor(client, userId) {
      LEFT JOIN post_tag pt ON pt.post_id = p.id
      LEFT JOIN tag t ON t.id = pt.tag_id
      WHERE p.is_published = TRUE AND p.deleted_by_admin_at IS NULL AND p.author_id = $1
-     GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, owner.username,
+     GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, owner.username,
               f.section_scope, f.show_code_block_tools, f.is_core
      ORDER BY p.created_at DESC`,
     [userId]
@@ -3809,6 +3865,7 @@ function mapNetworkUserRow(row) {
     id: row.id,
     name: row.username,
     bio: row.bio || '',
+    avatarUrl: row.avatar_url || '',
     followerCount: row.follower_count || 0,
     followingCount: row.following_count || 0,
     isFollowing: Boolean(row.is_following),
@@ -3868,7 +3925,7 @@ app.post('/api/auth/register', authRateLimit, async (req, res) => {
     const result = await client.query(
       `INSERT INTO app_user (email, username, password_hash)
        VALUES ($1, $2, $3)
-       RETURNING id, email, username`,
+       RETURNING id, email, username, avatar_url`,
       [normalizedEmail, username, hashed]
     );
     const user = result.rows[0];
@@ -3881,15 +3938,7 @@ app.post('/api/auth/register', authRateLimit, async (req, res) => {
     });
     return res.status(201).json({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.username,
-        isAdmin: isAdminUser(user),
-        adminPermissions: getEffectiveSiteAdminPermissions(user, grantedPermissions),
-        hasAdminAccess: getEffectiveSiteAdminPermissions(user, grantedPermissions).length > 0,
-        canManageAdminAccess: isAdminUser(user) || getEffectiveSiteAdminPermissions(user, grantedPermissions).includes('manage_admin_access')
-      }
+      user: buildClientUser(user, grantedPermissions)
     });
   } catch (error) {
     if (String(error.code) === '23505') {
@@ -3915,7 +3964,7 @@ app.post('/api/auth/login', authRateLimit, async (req, res) => {
   try {
     const normalizedEmail = cleanEmail;
     const result = await client.query(
-      `SELECT id, email, username, password_hash FROM app_user WHERE email = $1`,
+      `SELECT id, email, username, password_hash, avatar_url FROM app_user WHERE email = $1`,
       [normalizedEmail]
     );
     if (!result.rows[0]) {
@@ -3939,15 +3988,7 @@ app.post('/api/auth/login', authRateLimit, async (req, res) => {
     });
     return res.json({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.username,
-        isAdmin: isAdminUser(user),
-        adminPermissions: getEffectiveSiteAdminPermissions(user, grantedPermissions),
-        hasAdminAccess: getEffectiveSiteAdminPermissions(user, grantedPermissions).length > 0,
-        canManageAdminAccess: isAdminUser(user) || getEffectiveSiteAdminPermissions(user, grantedPermissions).includes('manage_admin_access')
-      }
+      user: buildClientUser(user, grantedPermissions)
     });
   } finally {
     client.release();
@@ -4059,7 +4100,7 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, email, username FROM app_user WHERE id = $1`,
+      `SELECT id, email, username, avatar_url FROM app_user WHERE id = $1`,
       [req.user.sub]
     );
     if (!result.rows[0]) {
@@ -4067,17 +4108,287 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
     }
     const user = result.rows[0];
     const grantedPermissions = await getSiteAdminPermissions(client, user.id);
-    const effectivePermissions = getEffectiveSiteAdminPermissions(user, grantedPermissions);
     return res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.username,
-        isAdmin: isAdminUser(user),
-        adminPermissions: effectivePermissions,
-        hasAdminAccess: effectivePermissions.length > 0,
-        canManageAdminAccess: isAdminUser(user) || effectivePermissions.includes('manage_admin_access')
+      user: buildClientUser(user, grantedPermissions)
+    });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/media/upload-url', authRequired, async (req, res) => {
+  if (!mediaStorage.isConfigured()) {
+    return res.status(503).json({ message: 'S3 media storage is not configured yet.' });
+  }
+
+  const { fileName, contentType, sizeBytes, visibility } = req.body || {};
+  const cleanFileName = String(fileName || '').trim();
+  const cleanContentType = String(contentType || '').trim().toLowerCase();
+  const normalizedSizeBytes = normalizePositiveInteger(sizeBytes);
+  const normalizedVisibility = normalizeMediaVisibility(visibility);
+
+  if (!cleanFileName) {
+    return res.status(400).json({ message: 'File name is required.' });
+  }
+  if (!cleanContentType) {
+    return res.status(400).json({ message: 'Content type is required.' });
+  }
+  if (!mediaStorage.isAllowedMimeType(cleanContentType)) {
+    return res.status(400).json({ message: 'This file type is not allowed.' });
+  }
+  if (!normalizedSizeBytes) {
+    return res.status(400).json({ message: 'File size is required.' });
+  }
+  if (normalizedSizeBytes > mediaStorage.config.maxUploadBytes) {
+    return res.status(400).json({
+      message: `Files must be ${Math.floor(mediaStorage.config.maxUploadBytes / (1024 * 1024))}MB or smaller.`
+    });
+  }
+
+  const assetId = crypto.randomUUID();
+
+  try {
+    const upload = await mediaStorage.createUploadUrl({
+      assetId,
+      userId: req.user.sub,
+      fileName: cleanFileName,
+      contentType: cleanContentType,
+      visibility: normalizedVisibility
+    });
+
+    const client = await pool.connect();
+    try {
+      const inserted = await client.query(
+        `INSERT INTO media_asset (
+           id,
+           owner_id,
+           bucket,
+           region,
+           object_key,
+           original_file_name,
+           mime_type,
+           size_bytes,
+           visibility,
+           status
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+         RETURNING *`,
+        [
+          assetId,
+          req.user.sub,
+          mediaStorage.config.bucket,
+          mediaStorage.config.region,
+          upload.objectKey,
+          cleanFileName,
+          cleanContentType,
+          normalizedSizeBytes,
+          normalizedVisibility
+        ]
+      );
+
+      return res.status(201).json({
+        asset: serializeMediaAsset(inserted.rows[0]),
+        upload: {
+          url: upload.uploadUrl,
+          method: 'PUT',
+          headers: upload.uploadHeaders,
+          expiresAt: upload.expiresAt
+        }
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Failed to create media upload URL.', error);
+    return res.status(500).json({ message: 'Failed to prepare the upload.' });
+  }
+});
+
+app.post('/api/media/:assetId/complete', authRequired, async (req, res) => {
+  if (!mediaStorage.isConfigured()) {
+    return res.status(503).json({ message: 'S3 media storage is not configured yet.' });
+  }
+
+  const width = normalizePositiveInteger(req.body?.width);
+  const height = normalizePositiveInteger(req.body?.height);
+  const durationSeconds = normalizePositiveInteger(req.body?.durationSeconds);
+  const etag = String(req.body?.etag || '').trim().replace(/^"+|"+$/g, '') || null;
+
+  const client = await pool.connect();
+  try {
+    const existing = await client.query(
+      `SELECT *
+       FROM media_asset
+       WHERE id = $1
+         AND owner_id = $2`,
+      [req.params.assetId, req.user.sub]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Media asset not found.' });
+    }
+
+    const asset = existing.rows[0];
+
+    const updated = await client.query(
+      `UPDATE media_asset
+       SET status = 'uploaded',
+           size_bytes = COALESCE(size_bytes, $2),
+           etag = COALESCE($3, etag),
+           width = COALESCE($4, width),
+           height = COALESCE($5, height),
+           duration_seconds = COALESCE($6, duration_seconds),
+           uploaded_at = COALESCE(uploaded_at, NOW()),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [
+        asset.id,
+        asset.size_bytes,
+        etag,
+        width,
+        height,
+        durationSeconds
+      ]
+    );
+
+    return res.json({
+      asset: serializeMediaAsset(updated.rows[0])
+    });
+  } catch (error) {
+    console.error('Failed to finalize media upload.', error);
+    return res.status(500).json({ message: 'Failed to finalize the upload.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/media/:assetId', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const existing = await client.query(
+      `SELECT *
+       FROM media_asset
+       WHERE id = $1
+         AND owner_id = $2`,
+      [req.params.assetId, req.user.sub]
+    );
+
+    if (!existing.rows[0]) {
+      return res.status(404).json({ message: 'Media asset not found.' });
+    }
+
+    const asset = existing.rows[0];
+    if (asset.status === 'deleted') {
+      return res.json({ ok: true });
+    }
+
+    const assetUrl = mediaStorage.buildAssetUrl({
+      objectKey: asset.object_key,
+      bucket: asset.bucket,
+      region: asset.region
+    });
+
+    const mediaToken = `media:${asset.id}`;
+    const postUsage = await client.query(
+      `SELECT 1
+       FROM post
+       WHERE content_markdown LIKE '%' || $1 || '%'
+          OR content_markdown LIKE '%' || $2 || '%'
+       LIMIT 1`,
+      [assetUrl, mediaToken]
+    );
+    if (postUsage.rows[0]) {
+      return res.status(409).json({ message: 'This image is already used in a published post.' });
+    }
+
+    const avatarUsage = await client.query(
+      `SELECT 1
+       FROM app_user
+       WHERE avatar_url = $1
+       LIMIT 1`,
+      [assetUrl]
+    );
+    if (avatarUsage.rows[0]) {
+      return res.status(409).json({ message: 'This image is currently used as an avatar.' });
+    }
+
+    if (mediaStorage.isConfigured()) {
+      try {
+        await mediaStorage.deleteObject({
+          objectKey: asset.object_key,
+          bucket: asset.bucket
+        });
+      } catch (error) {
+        console.error('Failed to remove media object from storage.', error);
       }
+    }
+
+    await client.query(
+      `UPDATE media_asset
+       SET status = 'deleted',
+           updated_at = NOW()
+       WHERE id = $1`,
+      [asset.id]
+    );
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Failed to delete media asset.', error);
+    return res.status(500).json({ message: 'Failed to delete the image.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/media/:assetId', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT id, bucket, region, object_key, visibility, status
+       FROM media_asset
+       WHERE id = $1
+       LIMIT 1`,
+      [req.params.assetId]
+    );
+
+    const asset = result.rows[0];
+    if (!asset || asset.status !== 'uploaded' || asset.visibility !== 'public') {
+      return res.status(404).send('Not found');
+    }
+
+    const assetUrl = mediaStorage.buildAssetUrl({
+      objectKey: asset.object_key,
+      bucket: asset.bucket,
+      region: asset.region
+    });
+
+    return res.redirect(assetUrl);
+  } catch (error) {
+    console.error('Failed to resolve public media asset.', error);
+    return res.status(500).send('Failed to load media.');
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/account/media', authRequired, async (req, res) => {
+  const requestedLimit = normalizePositiveInteger(req.query.limit);
+  const limit = Math.min(requestedLimit || 50, 100);
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT *
+       FROM media_asset
+       WHERE owner_id = $1
+         AND status <> 'deleted'
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [req.user.sub, limit]
+    );
+
+    return res.json({
+      assets: result.rows.map(serializeMediaAsset)
     });
   } finally {
     client.release();
@@ -5267,7 +5578,7 @@ app.get('/api/account/posts', authRequired, async (req, res) => {
     const result = await client.query(
       `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
-              u.username AS author_name, u.email AS author_email,
+              u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
               f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
               owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope, f.is_core AS forum_is_core,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
@@ -5278,7 +5589,7 @@ app.get('/api/account/posts', authRequired, async (req, res) => {
        LEFT JOIN post_tag pt ON pt.post_id = p.id
        LEFT JOIN tag t ON t.id = pt.tag_id
        WHERE p.author_id = $1
-       GROUP BY p.id, u.username, u.email, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
+       GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
        ORDER BY p.created_at DESC`,
       [req.user.sub]
     );
@@ -5291,20 +5602,56 @@ app.get('/api/account/posts', authRequired, async (req, res) => {
 });
 
 app.patch('/api/account/profile', authRequired, async (req, res) => {
-  const { name } = req.body || {};
+  const { name, avatarAssetId, removeAvatar } = req.body || {};
   const cleanName = String(name || '').trim();
+  const cleanAvatarAssetId = String(avatarAssetId || '').trim();
   if (!cleanName) {
     return res.status(400).json({ message: 'Display name is required.' });
   }
 
   const client = await pool.connect();
   try {
+    let nextAvatarUrl = '';
+
+    if (cleanAvatarAssetId) {
+      const mediaResult = await client.query(
+        `SELECT id, owner_id, status, visibility, mime_type, object_key, bucket, region
+         FROM media_asset
+         WHERE id = $1`,
+        [cleanAvatarAssetId]
+      );
+      const media = mediaResult.rows[0];
+      if (!media || media.owner_id !== req.user.sub) {
+        return res.status(400).json({ message: 'Choose an image from your own uploads.' });
+      }
+      if (media.status !== 'uploaded') {
+        return res.status(400).json({ message: 'Finish uploading the image before using it as your avatar.' });
+      }
+      if (media.visibility !== 'public') {
+        return res.status(400).json({ message: 'Avatar images must be public.' });
+      }
+      if (!String(media.mime_type || '').startsWith('image/')) {
+        return res.status(400).json({ message: 'Avatar must be an image.' });
+      }
+      nextAvatarUrl = mediaStorage.buildAssetUrl({
+        objectKey: media.object_key,
+        bucket: media.bucket,
+        region: media.region
+      });
+    }
+
     const result = await client.query(
       `UPDATE app_user
-       SET username = $1, updated_at = NOW()
-       WHERE id = $2
-       RETURNING id, email, username`,
-      [cleanName, req.user.sub]
+       SET username = $1,
+           avatar_url = CASE
+             WHEN $3::boolean THEN NULL
+             WHEN $2::text <> '' THEN $2
+             ELSE avatar_url
+           END,
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING id, email, username, avatar_url`,
+      [cleanName, nextAvatarUrl, Boolean(removeAvatar), req.user.sub]
     );
     if (!result.rows[0]) {
       return res.status(404).json({ message: 'User not found.' });
@@ -5312,22 +5659,14 @@ app.patch('/api/account/profile', authRequired, async (req, res) => {
     const user = result.rows[0];
     const token = signUser(user);
     const grantedPermissions = await getSiteAdminPermissions(client, user.id);
-    const effectivePermissions = getEffectiveSiteAdminPermissions(user, grantedPermissions);
     await recordActivity('account.profile_updated', {
       userId: user.id,
-      username: user.username
+      username: user.username,
+      avatarUpdated: Boolean(cleanAvatarAssetId) || Boolean(removeAvatar)
     });
     return res.json({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.username,
-        isAdmin: isAdminUser(user),
-        adminPermissions: effectivePermissions,
-        hasAdminAccess: effectivePermissions.length > 0,
-        canManageAdminAccess: isAdminUser(user) || effectivePermissions.includes('manage_admin_access')
-      }
+      user: buildClientUser(user, grantedPermissions)
     });
   } catch (error) {
     if (String(error.code) === '23505') {
@@ -5436,7 +5775,7 @@ app.get('/api/account/activity', authRequired, async (req, res) => {
 app.get('/api/account/following', authRequired, async (req, res) => {
   const [followingResult, followersResult, postsResult] = await Promise.all([
     pool.query(
-      `SELECT u.id, u.username, u.bio,
+      `SELECT u.id, u.username, u.bio, u.avatar_url,
               COALESCE(followers.count, 0) AS follower_count,
               COALESCE(following.count, 0) AS following_count,
               TRUE AS is_following,
@@ -5463,7 +5802,7 @@ app.get('/api/account/following', authRequired, async (req, res) => {
       [req.user.sub]
     ),
     pool.query(
-      `SELECT u.id, u.username, u.bio,
+      `SELECT u.id, u.username, u.bio, u.avatar_url,
               COALESCE(followers.count, 0) AS follower_count,
               COALESCE(following.count, 0) AS following_count,
               EXISTS (
@@ -5492,7 +5831,7 @@ app.get('/api/account/following', authRequired, async (req, res) => {
     pool.query(
       `SELECT p.id, p.author_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
-              u.username AS author_name, u.email AS author_email,
+              u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
        FROM user_follow uf
        JOIN post p ON p.author_id = uf.following_id
@@ -5500,7 +5839,7 @@ app.get('/api/account/following', authRequired, async (req, res) => {
        LEFT JOIN post_tag pt ON pt.post_id = p.id
        LEFT JOIN tag t ON t.id = pt.tag_id
        WHERE uf.follower_id = $1 AND p.is_published = TRUE AND p.deleted_by_admin_at IS NULL
-       GROUP BY p.id, u.username, u.email
+       GROUP BY p.id, u.username, u.email, u.avatar_url
        ORDER BY p.created_at DESC
        LIMIT 24`,
       [req.user.sub]
@@ -5531,7 +5870,7 @@ app.get('/api/users/:userId', async (req, res) => {
     : null;
 
   const userResult = await pool.query(
-    `SELECT id, username, bio, created_at FROM app_user WHERE id = $1`,
+    `SELECT id, username, bio, avatar_url, created_at FROM app_user WHERE id = $1`,
     [req.params.userId]
   );
   if (!userResult.rows[0]) {
@@ -5551,6 +5890,7 @@ app.get('/api/users/:userId', async (req, res) => {
         )
       : Promise.resolve({ rows: [] })
   ]);
+  const viewCountMap = await getPostViewCounts(posts.map((post) => post.id));
 
   const user = userResult.rows[0];
   return res.json({
@@ -5558,13 +5898,17 @@ app.get('/api/users/:userId', async (req, res) => {
       id: user.id,
       name: user.username,
       bio: user.bio || '',
+      avatarUrl: user.avatar_url || '',
       createdAt: new Date(user.created_at).getTime(),
       followerCount: followerCount.rows[0]?.count || 0,
       followingCount: followingCount.rows[0]?.count || 0,
       isFollowing: Boolean(followState.rows[0]),
       isSelf: viewerId === user.id
     },
-    posts
+    posts: posts.map((post) => ({
+      ...post,
+      viewCount: viewCountMap.get(post.id) || 0
+    }))
   });
 });
 
@@ -6121,10 +6465,6 @@ app.get('/api/posts/:postId', async (req, res) => {
       return res.status(404).json({ message: 'Post not found.' });
     }
 
-    await recordActivity('post.viewed', {
-      postId: req.params.postId
-    });
-
     const viewCountMap = await getPostViewCounts([post.id]);
     return res.json({
       post: {
@@ -6135,6 +6475,28 @@ app.get('/api/posts/:postId', async (req, res) => {
   } catch (error) {
     console.error('Failed to load public post detail.', error);
     return res.status(500).json({ message: 'Failed to load post detail.' });
+  }
+});
+
+app.post('/api/posts/:postId/view', async (req, res) => {
+  try {
+    const post = await getPublicPostById(pool, mapPostRow, req.params.postId);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    await recordActivity('post.viewed', {
+      postId: req.params.postId
+    });
+
+    const viewCountMap = await getPostViewCounts([post.id]);
+    return res.json({
+      ok: true,
+      viewCount: viewCountMap.get(post.id) || 0
+    });
+  } catch (error) {
+    console.error('Failed to record post view.', error);
+    return res.status(500).json({ message: 'Failed to record post view.' });
   }
 });
 

@@ -15,7 +15,7 @@ export default function Legal() {
         <Link to="/about" className="about-breadcrumb-link text-decoration-none">
           <span className="about-breadcrumb-root">About</span>
         </Link>
-        <span className="about-breadcrumb-separator" aria-hidden="true">›</span>
+        <span className="about-breadcrumb-separator" aria-hidden="true">/</span>
         <span className="about-breadcrumb-current">Legal</span>
       </nav>
       <section className="panel terms-page">
@@ -24,29 +24,29 @@ export default function Legal() {
 
         <h2 className="type-title-sm mb-2">Disclaimer</h2>
         <p className="type-body mb-3">
-          The content published on LearnFromUs — including posts, discussions, shared resources, and any other
-          materials — is provided for informational and educational purposes only. LearnFromUs does not guarantee the
-          accuracy, completeness, or reliability of any content shared by community members.
+          The content published on tsumit, including posts, discussions, shared resources, and other materials,
+          is provided for informational and educational purposes only. tsumit does not guarantee the accuracy,
+          completeness, or reliability of content shared by community members.
         </p>
         <p className="type-body mb-3">
-          Participation in this community does not constitute professional advice of any kind, including but not
-          limited to legal, financial, medical, or business advice. Always consult a qualified professional before
-          making decisions based on information found on this platform.
+          Participation in this community does not constitute professional advice of any kind, including legal,
+          financial, medical, or business advice. Always consult a qualified professional before making decisions
+          based on information found on this platform.
         </p>
         <p className="type-body mb-3">
-          LearnFromUs is not liable for any loss or damage arising from your use of, or reliance on, any content
-          found on this platform.
+          tsumit is not liable for any loss or damage arising from your use of, or reliance on, any content found
+          on this platform.
         </p>
 
         <h2 className="type-title-sm mb-2">Terms of Service</h2>
         <p className="type-body mb-3">
-          By accessing or using LearnFromUs, you agree to be bound by these Terms of Service. If you do not agree,
+          By accessing or using tsumit, you agree to be bound by these Terms of Service. If you do not agree,
           please do not use the platform.
         </p>
 
         <h2 className="type-title-sm mb-2">Eligibility</h2>
         <p className="type-body mb-3">
-          You must be at least 13 years of age to use LearnFromUs. By creating an account, you confirm that you meet
+          You must be at least 13 years of age to use tsumit. By creating an account, you confirm that you meet
           this requirement.
         </p>
 
@@ -58,9 +58,9 @@ export default function Legal() {
 
         <h2 className="type-title-sm mb-2">User Content</h2>
         <p className="type-body mb-3">
-          You retain ownership of the content you post on LearnFromUs. By posting, you grant LearnFromUs a
-          non-exclusive, royalty-free license to display and distribute your content within the platform. You are
-          solely responsible for ensuring your content does not violate any applicable laws or third-party rights.
+          You retain ownership of the content you post on tsumit. By posting, you grant tsumit a non-exclusive,
+          royalty-free license to display and distribute your content within the platform. You are solely responsible
+          for ensuring your content does not violate any applicable laws or third-party rights.
         </p>
 
         <h2 className="type-title-sm mb-2">Prohibited Conduct</h2>
@@ -77,13 +77,13 @@ export default function Legal() {
 
         <h2 className="type-title-sm mb-2">Termination</h2>
         <p className="type-body mb-3">
-          LearnFromUs reserves the right to suspend or terminate any account that violates these Terms, at our sole
+          tsumit reserves the right to suspend or terminate any account that violates these Terms, at our sole
           discretion and without prior notice.
         </p>
 
         <h2 className="type-title-sm mb-2">Limitation of Liability</h2>
         <p className="type-body mb-3">
-          To the fullest extent permitted by applicable law, LearnFromUs shall not be liable for any indirect,
+          To the fullest extent permitted by applicable law, tsumit shall not be liable for any indirect,
           incidental, or consequential damages arising from your use of the platform.
         </p>
 
@@ -94,11 +94,11 @@ export default function Legal() {
         </p>
 
         <h2 className="type-title-sm mb-2">Copyright Notice</h2>
-        <p className="type-body mb-3">© 2026 LearnFromUs. All rights reserved.</p>
+        <p className="type-body mb-3">© 2026 tsumit. All rights reserved.</p>
         <p className="type-body mb-3">
-          All original content, design, and materials on LearnFromUs are the intellectual property of LearnFromUs
-          unless otherwise stated. You may not reproduce, distribute, or use any platform content without prior
-          written permission.
+          All original content, design, and materials on tsumit are the intellectual property of tsumit unless
+          otherwise stated. You may not reproduce, distribute, or use any platform content without prior written
+          permission.
         </p>
         <p className="type-body mb-0">
           Content posted by community members remains the property of the respective authors. If you believe any

@@ -1,6 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
+const SITE_LOGO_SRC = '/images/tsumit-logo-cropped.png';
+
 type FooterLink = {
   href: string;
   label: string;
@@ -17,7 +19,7 @@ const footerSections: FooterSection[] = [
     links: [
       { href: '/', label: 'Homepage' },
       { href: '/explore', label: 'Explore' },
-      { href: '/forum', label: 'Forum Feed' },
+      { href: '/forum', label: 'Community Feed' },
       { href: '/about', label: 'About' },
       { href: '/about/leadership', label: 'Leadership' }
     ]
@@ -26,11 +28,11 @@ const footerSections: FooterSection[] = [
     title: 'Build and Share',
     links: [
       { href: '/my-posts', label: 'My Posts' },
-      { href: '/my-forums', label: 'My Forums' },
-      { href: '/my-forums/invitations', label: 'Forum Invitations' },
+      { href: '/my-forums', label: 'My Spaces' },
+      { href: '/my-forums/invitations', label: 'Manager Invitations' },
       { href: '/forums/request', label: 'Request a feature' },
       { href: '/forums/request/history', label: 'Request history' },
-      { href: '/forum', label: 'Create in Forum' }
+      { href: '/forum', label: 'Start Writing' }
     ]
   },
   {
@@ -87,6 +89,9 @@ export default function Footer() {
       </div>
       <div className="container footer-bottom">
         <div className="footer-meta">
+          <Link to="/" className="footer-brand" aria-label="tsumit home">
+            <img src={SITE_LOGO_SRC} alt="tsumit" className="footer-brand-logo" />
+          </Link>
           <div className="footer-legal">
             <Link to="/terms" className="footer-legal-link">
               Terms
@@ -98,7 +103,7 @@ export default function Footer() {
               Legal
             </Link>
           </div>
-          <small className="footer-copyright">&copy; {new Date().getFullYear()} LearnFromUs. All rights reserved.</small>
+          <small className="footer-copyright">&copy; {new Date().getFullYear()} tsumit. All rights reserved.</small>
         </div>
       </div>
     </footer>

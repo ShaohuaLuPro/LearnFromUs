@@ -102,7 +102,7 @@ type PostsContextValue = {
   queryAdminAnalytics: (filters?: Record<string, string | number>) => Promise<ActionResult<AnalyticsReport>>;
   getAdminParquetDatasets: () => Promise<ActionResult>;
   downloadAdminParquetDataset: (dataset: string) => Promise<ActionResult>;
-  syncAuthorName: (authorId: string, authorName: string) => void;
+  syncAuthorName: (authorId: string, authorName: string, authorAvatarUrl?: string) => void;
   removeAuthorPosts: (authorId: string) => void;
 };
 
@@ -617,9 +617,9 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [getToken]);
 
-  const syncAuthorName = useCallback((authorId: string, authorName: string) => {
+  const syncAuthorName = useCallback((authorId: string, authorName: string, authorAvatarUrl = '') => {
     setPosts((current) => current.map((post) => (
-      post.authorId === authorId ? { ...post, authorName } : post
+      post.authorId === authorId ? { ...post, authorName, authorAvatarUrl } : post
     )));
   }, []);
 

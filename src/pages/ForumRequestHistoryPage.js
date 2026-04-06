@@ -26,10 +26,10 @@ export default function ForumRequestHistoryPage({ forumWorkspace }) {
       <section className="panel">
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
           <div>
-            <p className="type-kicker mb-2">Forum</p>
+            <p className="type-kicker mb-2">Space</p>
             <h2 className="mb-1 type-title-md">Your Requests</h2>
             <p className="type-body mb-0">
-              Review every forum application you have submitted and track its status.
+              Review every space request you have submitted and track its status.
             </p>
           </div>
           <div className="forum-actions">
@@ -37,7 +37,7 @@ export default function ForumRequestHistoryPage({ forumWorkspace }) {
               New Request
             </Link>
             <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
-              Back to My Forums
+              Back to My Spaces
             </Link>
           </div>
         </div>
@@ -81,7 +81,7 @@ export default function ForumRequestHistoryPage({ forumWorkspace }) {
                   )}
                   {request.status === 'approved' && request.forumSlug && (
                     <Link to={`/forum/${request.forumSlug}`} className="forum-secondary-btn text-decoration-none">
-                      Open Forum
+                      Open Space
                     </Link>
                   )}
                 </div>
@@ -94,7 +94,7 @@ export default function ForumRequestHistoryPage({ forumWorkspace }) {
         ) : (
           <section className="settings-card">
             <h4 className="mb-2">No requests yet</h4>
-            <p className="muted mb-3">Once you submit a forum request, the history will show up here.</p>
+            <p className="muted mb-3">Once you submit a space request, the history will show up here.</p>
             <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
               Create Request
             </Link>

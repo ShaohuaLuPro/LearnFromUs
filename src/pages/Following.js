@@ -50,9 +50,9 @@ function ForumRow({ forum }) {
           <Link to={`/forum/${forum.slug}`} className="network-user-link">
             <h5 className="mb-1">{forum.name}</h5>
           </Link>
-          <span className="network-relationship-pill">{forum.isCore ? 'Core Forum' : 'Community Forum'}</span>
+          <span className="network-relationship-pill">{forum.isCore ? 'Core Space' : 'Community Space'}</span>
         </div>
-        <p className="muted mb-2">{forum.description || 'A forum you follow for quick access.'}</p>
+        <p className="muted mb-2">{forum.description || 'A space you follow for quick access.'}</p>
         <div className="following-user-stats">
           <span>{forum.followerCount ?? 0} followers</span>
           <span>{forum.livePostCount ?? forum.postCount ?? 0} posts</span>
@@ -61,7 +61,7 @@ function ForumRow({ forum }) {
       </div>
       <div className="network-card-actions">
         <Link to={`/forum/${forum.slug}`} className="forum-primary-btn text-decoration-none">
-          Open Forum
+          Open Space
         </Link>
       </div>
     </article>
@@ -226,12 +226,12 @@ export default function Following({ forums = [] }) {
                 className={`network-sidebar-link ${activeTab === 'forums' ? 'is-active' : ''}`}
                 onClick={() => setTab('forums')}
               >
-                <span>Forums</span>
+                <span>Spaces</span>
                 <strong>{followedForums.length}</strong>
               </button>
             </div>
             <Link to="/forum" className="forum-secondary-btn text-decoration-none network-back-link">
-              Back to Forum
+              Back to Feed
             </Link>
           </aside>
 
@@ -239,13 +239,13 @@ export default function Following({ forums = [] }) {
             <div className="network-content-head">
               <div>
                 <h3 className="mb-1 type-title-md">
-                  {activeTab === 'followers' ? 'Followers' : activeTab === 'forums' ? 'Followed Forums' : 'Following'}
+                  {activeTab === 'followers' ? 'Followers' : activeTab === 'forums' ? 'Followed Spaces' : 'Following'}
                 </h3>
                 <p className="type-body mb-0">
                   {activeTab === 'followers'
                     ? 'See who is following you.'
                     : activeTab === 'forums'
-                      ? 'Open any forum you follow without going back through search.'
+                      ? 'Open any space you follow without going back through search.'
                       : 'Unfollow now, and refollow before refresh if you change your mind.'}
                 </p>
               </div>
@@ -275,14 +275,14 @@ export default function Following({ forums = [] }) {
                   {activeTab === 'followers'
                     ? 'No followers yet'
                     : activeTab === 'forums'
-                      ? 'No followed forums yet'
+                      ? 'No followed spaces yet'
                       : 'You are not following anyone'}
                 </h4>
                 <p className="muted mb-0">
                   {activeTab === 'followers'
                     ? 'When other users follow you, they will appear here.'
                     : activeTab === 'forums'
-                      ? 'Once you follow forums, they will appear here for quick access.'
+                      ? 'Once you follow spaces, they will appear here for quick access.'
                       : 'Once you follow someone, they will appear here for quick management.'}
                 </p>
               </section>

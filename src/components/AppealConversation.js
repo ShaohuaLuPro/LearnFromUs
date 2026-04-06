@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 function formatTime(timestamp) {
   if (!timestamp) {
@@ -38,7 +38,7 @@ export default function AppealConversation({
   collapsible = false,
   collapsedLines = 3
 }) {
-  const entries = Array.isArray(messages) ? messages : [];
+  const entries = useMemo(() => (Array.isArray(messages) ? messages : []), [messages]);
   const currentLength = String(composerValue || '').length;
   const [expandedMessages, setExpandedMessages] = useState({});
   const [overflowingMessages, setOverflowingMessages] = useState({});

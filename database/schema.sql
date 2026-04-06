@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS app_user (
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   bio TEXT,
+  avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -141,6 +142,27 @@ CREATE TABLE IF NOT EXISTS ai_daily_usage (
   CHECK (usage_count >= 0)
 );
 
+CREATE TABLE IF NOT EXISTS media_asset (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  storage_provider TEXT NOT NULL DEFAULT 's3' CHECK (storage_provider IN ('s3')),
+  bucket TEXT NOT NULL,
+  region TEXT NOT NULL,
+  object_key TEXT NOT NULL UNIQUE,
+  original_file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes BIGINT CHECK (size_bytes IS NULL OR size_bytes >= 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'uploaded', 'failed', 'deleted')),
+  visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private')),
+  width INTEGER CHECK (width IS NULL OR width > 0),
+  height INTEGER CHECK (height IS NULL OR height > 0),
+  duration_seconds INTEGER CHECK (duration_seconds IS NULL OR duration_seconds > 0),
+  etag TEXT,
+  uploaded_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_post_author_created ON post(author_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_appeal_message_post_created ON post_appeal_message(post_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_post_created ON post(created_at DESC);
@@ -155,3 +177,5 @@ CREATE INDEX IF NOT EXISTS idx_forum_request_status_created ON forum_request(sta
 CREATE INDEX IF NOT EXISTS idx_user_follow_following ON user_follow(following_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_writing_profile_updated_at ON user_writing_profile(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_daily_usage_usage_date ON ai_daily_usage(usage_date DESC, usage_count DESC);
+CREATE INDEX IF NOT EXISTS idx_media_asset_owner_created ON media_asset(owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_media_asset_status_created ON media_asset(status, created_at DESC);

@@ -166,7 +166,7 @@ export default function Analytics({
             <h2 className="mb-1 type-title-md">DuckDB Analytics</h2>
             <p className="type-body mb-0">Real-time filtered analytics across PostgreSQL and MongoDB snapshots, plus Parquet exports.</p>
           </div>
-          <Link to="/forum" className="forum-secondary-btn text-decoration-none">Back to Forum</Link>
+          <Link to="/forum" className="forum-secondary-btn text-decoration-none">Back to Feed</Link>
         </div>
 
         <section className="settings-card mb-4">

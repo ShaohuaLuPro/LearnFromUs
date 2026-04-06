@@ -6,22 +6,22 @@ const AI_REWRITE_PRESETS = [
   {
     id: 'polish',
     label: 'Polish',
-    instruction: 'Polish this forum request for clarity and flow while preserving the original idea, and improve the forum name, overview, description, rationale, and scope together where needed.'
+    instruction: 'Polish this space request for clarity and flow while preserving the original idea, and improve the space name, overview, description, rationale, and scope together where needed.'
   },
   {
     id: 'narrow',
     label: 'More Focused',
-    instruction: 'Make this forum request more focused and specific, with a clearer target audience, sharper forum naming, and tighter section scope.'
+    instruction: 'Make this space request more focused and specific, with a clearer target audience, sharper naming, and tighter section scope.'
   },
   {
     id: 'expand',
     label: 'More Detailed',
-    instruction: 'Expand this forum request with clearer examples of what belongs in the forum, why members would use it, and a more descriptive title and overview if helpful.'
+    instruction: 'Expand this space request with clearer examples of what belongs in the space, why members would use it, and a more descriptive title and overview if helpful.'
   },
   {
     id: 'stronger',
     label: 'Stronger Pitch',
-    instruction: 'Strengthen the overall pitch so the forum name, overview, description, rationale, and section scope all feel convincing and submission-ready.'
+    instruction: 'Strengthen the overall pitch so the space name, overview, description, rationale, and section scope all feel convincing and submission-ready.'
   }
 ];
 
@@ -120,7 +120,7 @@ export default function ForumRequestPage({
     setError('');
 
     if (normalizeScopeList(form.sectionScope).length === 0) {
-      setError('Add at least one section scope for this forum.');
+      setError('Add at least one section scope for this space.');
       return;
     }
 
@@ -129,7 +129,7 @@ export default function ForumRequestPage({
       sectionScope: normalizeScopeList(form.sectionScope)
     });
     if (!result.ok) {
-      setError(result.message || 'Failed to request forum.');
+      setError(result.message || 'Failed to request space.');
       return;
     }
 
@@ -145,7 +145,7 @@ export default function ForumRequestPage({
     setAiRewriteOpen(false);
     setAiRewriteMessage('');
     setAiInstruction('');
-    setMessage(result.message || 'Forum request submitted.');
+    setMessage(result.message || 'Space request submitted.');
   };
 
   const runAiRewrite = async (instructionOverride) => {
@@ -156,7 +156,7 @@ export default function ForumRequestPage({
     }
 
     if (!String(form.name || form.overview || form.description || form.rationale || sectionScopeText).trim()) {
-      setError('Add a rough forum idea first so AI has something to rewrite.');
+      setError('Add a rough space idea first so AI has something to rewrite.');
       return;
     }
 
@@ -184,7 +184,7 @@ export default function ForumRequestPage({
         setAiRewriteMessage('AI rewrite stopped.');
         return;
       }
-      setError(result.message || 'Failed to rewrite forum request with AI.');
+      setError(result.message || 'Failed to rewrite space request with AI.');
       return;
     }
 
@@ -219,15 +219,15 @@ export default function ForumRequestPage({
       <section className="panel">
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
           <div>
-            <p className="type-kicker mb-2">Forum</p>
-            <h2 className="mb-1 type-title-md">Request A New Forum</h2>
+            <p className="type-kicker mb-2">Space</p>
+            <h2 className="mb-1 type-title-md">Request A New Space</h2>
             <p className="type-body mb-0">
               Propose a new community space, define its topic scope, and track review status.
             </p>
           </div>
           <div className="forum-actions">
             <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
-              Back to My Forums
+              Back to My Spaces
             </Link>
           </div>
         </div>
@@ -243,7 +243,7 @@ export default function ForumRequestPage({
 
           <form onSubmit={submit} className="forum-form">
             <div className="mb-3">
-              <label className="form-label">Forum Name</label>
+              <label className="form-label">Space Name</label>
               <input
                 className="form-control forum-input"
                 value={form.name}
@@ -259,7 +259,7 @@ export default function ForumRequestPage({
                 rows={2}
                 value={form.overview}
                 onChange={(event) => setForm((current) => ({ ...current, overview: event.target.value }))}
-                placeholder="One-sentence overview of the forum idea."
+                placeholder="One-sentence overview of the space idea."
               />
               <div className="form-help">Keep this short. AI uses it as the quick summary for the request.</div>
             </div>
@@ -335,13 +335,13 @@ export default function ForumRequestPage({
             )}
 
             <div className="mb-2">
-              <label className="form-label">Why Should This Forum Exist?</label>
+              <label className="form-label">Why Should This Space Exist?</label>
               <textarea
                 className="form-control forum-input"
                 rows={4}
                 value={form.rationale}
                 onChange={(event) => setForm((current) => ({ ...current, rationale: event.target.value }))}
-                placeholder="Describe the audience, the need, and how this forum would help."
+                placeholder="Describe the audience, the need, and how this space would help."
               />
             </div>
 
@@ -362,7 +362,7 @@ export default function ForumRequestPage({
                 <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                   <div>
                     <h4 className="mb-1">AI Rewrite</h4>
-                    <p className="muted mb-0">Use OpenAI to polish, narrow, expand, or strengthen this forum request draft.</p>
+                    <p className="muted mb-0">Use OpenAI to polish, narrow, expand, or strengthen this space request draft.</p>
                   </div>
                   <span className="muted">Works on the current editor content</span>
                 </div>

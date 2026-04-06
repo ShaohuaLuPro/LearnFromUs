@@ -19,18 +19,8 @@ export default function Moderation({
   onGetModerationPosts
 }) {
   const [posts, setPosts] = useState([]);
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [selectedForumFilter, setSelectedForumFilter] = useState('__all__');
-
-  const loadPosts = async () => {
-    const result = await onGetModerationPosts();
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    setPosts(result.posts || []);
-  };
 
   useEffect(() => {
     async function bootstrap() {
@@ -58,7 +48,7 @@ export default function Moderation({
   }, [currentUser, forums]);
 
   const forumFilterOptions = useMemo(() => ([
-    { value: '__all__', label: 'All managed forums' },
+    { value: '__all__', label: 'All managed spaces' },
     ...manageableForums.map((forum) => ({
       value: forum.id,
       label: forum.name
@@ -86,18 +76,18 @@ export default function Moderation({
                 options={forumFilterOptions}
                 value={selectedForumFilter}
                 onChange={setSelectedForumFilter}
-                placeholder="Choose forum"
+                placeholder="Choose space"
                 triggerClassName="forum-feed-switcher-trigger"
                 menuClassName="forum-feed-switcher-menu"
               />
             </div>
-            <Link to="/forum" className="forum-secondary-btn text-decoration-none">Back to Forum</Link>
+            <Link to="/forum" className="forum-secondary-btn text-decoration-none">Back to Feed</Link>
           </div>
         </div>
 
-        {(message || error) && (
-          <div className={`settings-alert ${error ? 'is-error' : 'is-success'} mb-3`}>
-            {error || message}
+        {error && (
+          <div className="settings-alert is-error mb-3">
+            {error}
           </div>
         )}
 
@@ -118,12 +108,12 @@ export default function Moderation({
                       <div className="forum-post-kicker mb-2">
                         {post.forum?.name && post.forum?.slug ? (
                           <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip">
-                            <span className="forum-origin-chip-label">Forum</span>
+                            <span className="forum-origin-chip-label">Space</span>
                             <span>{post.forum.name}</span>
                           </Link>
                         ) : (
                           <span className="forum-origin-chip is-static">
-                            <span className="forum-origin-chip-label">Forum</span>
+                            <span className="forum-origin-chip-label">Space</span>
                             <span>{post.forum?.name || 'General'}</span>
                           </span>
                         )}
@@ -175,7 +165,7 @@ export default function Moderation({
               <p className="muted mb-0">
                 {selectedForumFilter === '__all__'
                   ? 'The moderation queue is currently empty.'
-                  : 'There are no moderated posts for this forum right now.'}
+                  : 'There are no moderated posts for this space right now.'}
               </p>
             </section>
           )}

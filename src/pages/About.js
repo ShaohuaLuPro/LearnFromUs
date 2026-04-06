@@ -7,19 +7,19 @@ const SECTION_CONTENT = {
   story: {
     heroTitle: 'Story',
     heroCopy:
-      'LearnFromUs exists to make technical learning practical, transparent, and useful for builders.',
+      'tsumit exists to make technical learning practical, transparent, and useful for builders.',
     blocks: [
       {
         kicker: 'Why This Exists',
-        title: 'LearnFromUs makes technical learning more public and more useful.',
+        title: 'tsumit makes technical learning more public and more useful.',
         copy:
-          'Stop passive learning. In software and data, most tutorials are bookmarked and forgotten. LearnFromUs is the opposite. We pull back the curtain on real implementation- shipping, debugging, and architecture - providing the practical hacks that actual builders need to execute.'
+          'Stop passive learning. In software and data, most tutorials are bookmarked and forgotten. tsumit is the opposite. We pull back the curtain on real implementation- shipping, debugging, and architecture - providing the practical hacks that actual builders need to execute.'
       },
       {
         kicker: 'Long-Term Direction',
         title: 'To build a platform where proof of skill is woven into the product.',
         copy:
-          'Over time, LearnFromUs should become a place where strong work naturally stands out: clear posts, strong examples, useful feedback, and visible patterns of execution. The point is not to mimic a traditional social feed. The point is to build a technical community where what you can explain, ship, and improve is visible by default.'
+          'Over time, tsumit should become a place where strong work naturally stands out: clear posts, strong examples, useful feedback, and visible patterns of execution. The point is not to mimic a traditional social feed. The point is to build a technical community where what you can explain, ship, and improve is visible by default.'
       }
     ]
   },
@@ -53,7 +53,7 @@ const SECTION_CONTENT = {
   founder: {
     heroTitle: 'Founder',
     heroCopy:
-      'I am Shaohua Lu, founder of LearnFromUs. I build practical products at the intersection of software engineering, AI, and community learning.',
+      'I am Shaohua Lu, founder of tsumit. I build practical products at the intersection of software engineering, AI, and community learning.',
     profile: {
       eyebrow: '',
       name: 'Shaohua Lu',
@@ -87,7 +87,7 @@ const SECTION_CONTENT = {
   teamMembers: {
     heroTitle: 'Team Members',
     heroCopy:
-      'Meet Ben He, a software developer contributing to LearnFromUs with cross-functional experience and collaborative execution.',
+      'Meet Ben He, a software developer contributing to tsumit with cross-functional experience and collaborative execution.',
     profile: {
       eyebrow: '',
       name: 'Ben He',
@@ -114,7 +114,7 @@ const SECTION_CONTENT = {
   sallyHuang: {
     heroTitle: 'Team Members',
     heroCopy:
-      'Meet Sally Huang, a digital designer shaping visual direction and product experience at LearnFromUs.',
+      'Meet Sally Huang, a digital designer shaping visual direction and product experience at tsumit.',
     profile: {
       eyebrow: '',
       name: 'Sally Huang',
@@ -209,7 +209,7 @@ const BENTO_SCROLL_CARDS = [
   {
     key: 'cardD',
     image: `${process.env.PUBLIC_URL}/images/about-4.jpg`,
-    alt: 'Forum discussion UI',
+    alt: 'Space discussion UI',
     x: '42vw',
     y: '32vh',
     rotate: 8,
@@ -489,7 +489,7 @@ export default function About() {
                         Ideas don&apos;t change the present — action does.
                       </p>
                       <p className="about-bento-scroll-subtitle mb-2">
-                        We built LearnFromUs to turn shared knowledge into real execution.
+                        We built tsumit to turn shared knowledge into real execution.
                       </p>
                       <p className="about-bento-scroll-subtitle mb-2">
                         From one person&apos;s vision to a growing community — this is a place where you don&apos;t
@@ -520,7 +520,7 @@ export default function About() {
               <section className="about-leadership-cta">
                 <div className="about-leadership-cta-glass">
                   <p className="about-bento-scroll-subtitle mb-2">
-                    LearnFromUs grew from a single vision into a space where you can learn, execute, and grow
+                    tsumit grew from a single vision into a space where you can learn, execute, and grow
                     alongside others.
                   </p>
                   <p className="about-bento-scroll-subtitle mb-0">
@@ -772,7 +772,7 @@ export default function About() {
                       Shaped by years of working across industries and borders, I've learned that the most
                       meaningful progress happens at the intersection of people, process, and technology. I
                       bring that perspective into every team I join - bridging communication gaps, driving
-                      engineering execution, and translating complexity into clarity. At LearnFromUs, I channel
+                      engineering execution, and translating complexity into clarity. At tsumit, I channel
                       this into building products that are not just functional, but thoughtfully crafted and
                       built to last.
                     </p>

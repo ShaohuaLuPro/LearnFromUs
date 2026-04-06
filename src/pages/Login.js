@@ -139,8 +139,8 @@ export default function Login({
             {mode === 'reset' && 'Choose a New Password'}
           </h2>
           <p className="muted mb-4">
-            {mode === 'login' && 'Join the forum to share coding hacks, showcase projects, and discuss ideas with other builders.'}
-            {mode === 'register' && 'Create an account to publish posts, follow builders, and join the forum.'}
+            {mode === 'login' && 'Join the community to share coding hacks, showcase projects, and discuss ideas with other builders.'}
+            {mode === 'register' && 'Create an account to publish posts, follow builders, and join the community.'}
             {mode === 'forgot' && 'Enter your email and we will generate a secure password reset link.'}
             {mode === 'reset' && 'Set a new password for your account. This link expires automatically.'}
           </p>

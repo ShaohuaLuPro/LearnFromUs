@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { resolveMediaSource } from '../api';
 import { getExternalLinkProps } from '../lib/links';
 
 export default function MarkdownBlock({ content, className = 'post-detail-content' }) {
@@ -37,6 +38,17 @@ export default function MarkdownBlock({ content, className = 'post-detail-conten
                   {String(children).replace(/\n$/, '')}
                 </SyntaxHighlighter>
               </section>
+            );
+          },
+          img({ src, alt, ...props }) {
+            return (
+              <img
+                src={resolveMediaSource(src)}
+                alt={alt || ''}
+                className="markdown-content-image"
+                loading="lazy"
+                {...props}
+              />
             );
           },
           p({ children }) {

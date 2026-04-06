@@ -88,7 +88,7 @@ export default function MyForumManagers({ currentUser, forums = [], onLoadForums
         setError('');
       } catch (nextError) {
         if (!cancelled) {
-          setError(nextError instanceof Error ? nextError.message : 'Failed to load forum manager.');
+          setError(nextError instanceof Error ? nextError.message : 'Failed to load space manager.');
         }
       } finally {
         if (!cancelled) {
@@ -148,7 +148,7 @@ export default function MyForumManagers({ currentUser, forums = [], onLoadForums
       }, token);
       await refreshAccess();
       await onLoadForums?.();
-      setMessage(response.message || 'Forum manager updated.');
+      setMessage(response.message || 'Space manager updated.');
     });
   };
 
@@ -156,7 +156,7 @@ export default function MyForumManagers({ currentUser, forums = [], onLoadForums
     if (!forumId || !managerId || !selectedManager) {
       return;
     }
-    if (!window.confirm(`Remove ${selectedManager.name || 'this manager'} from the forum admin team?`)) {
+    if (!window.confirm(`Remove ${selectedManager.name || 'this manager'} from the space admin team?`)) {
       return;
     }
 
@@ -182,13 +182,13 @@ export default function MyForumManagers({ currentUser, forums = [], onLoadForums
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div>
             <p className="type-kicker mb-1">Workspace</p>
-            <h2 className="mb-1 type-title-md">Manage Forum Manager</h2>
+            <h2 className="mb-1 type-title-md">Manage Space Manager</h2>
             <p className="muted mb-0">
-              Review and update the detailed permissions for this forum manager.
+              Review and update the detailed permissions for this space manager.
             </p>
           </div>
           <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
-            Back to My Forums
+            Back to My Spaces
           </Link>
         </div>
 
@@ -199,7 +199,7 @@ export default function MyForumManagers({ currentUser, forums = [], onLoadForums
         )}
 
         {loading ? (
-          <p className="muted mb-0">Loading forum manager...</p>
+          <p className="muted mb-0">Loading space manager...</p>
         ) : selectedManager && access ? (
           <section className="forum-admin-panel">
             <div className="forum-admin-panel-head">
@@ -251,7 +251,7 @@ export default function MyForumManagers({ currentUser, forums = [], onLoadForums
                 </div>
               </>
             ) : (
-              <p className="muted mb-0">You do not have permission to edit this forum manager.</p>
+              <p className="muted mb-0">You do not have permission to edit this space manager.</p>
             )}
           </section>
         ) : null}

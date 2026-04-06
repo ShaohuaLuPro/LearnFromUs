@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { apiRecordPostView } from '../api';
 import MarkdownBlock from '../components/MarkdownBlock';
 import { applySeo, buildCanonical, buildPageTitle, DEFAULT_DESCRIPTION } from '../lib/seo';
 
@@ -28,6 +29,7 @@ export default function PostDetail({
   onGetComments,
   onCreateComment
 }) {
+  const VIEW_DEDUPE_WINDOW_MS = 4000;
   const { postId } = useParams();
   const [post, setPost] = useState(null);
   const [comments, setComments] = useState([]);
@@ -45,8 +47,8 @@ export default function PostDetail({
   useEffect(() => {
     if (!post) {
       applySeo({
-        title: buildPageTitle('Forum Post'),
-        description: 'Read technical posts and community discussion on LearnFromUs.',
+        title: buildPageTitle('Post'),
+        description: 'Read technical posts and community discussion on tsumit.',
         robots: 'index,follow',
         canonical: buildCanonical(`/forum/post/${postId}`)
       });
@@ -107,6 +109,21 @@ export default function PostDetail({
     };
   }, [onGetComments, onGetPostDetail, postId]);
 
+  useEffect(() => {
+    if (!postId || typeof window === 'undefined') {
+      return;
+    }
+
+    const storageKey = `tsumit-post-view:${postId}`;
+    const lastViewedAt = Number(window.sessionStorage.getItem(storageKey) || 0);
+    if (Date.now() - lastViewedAt < VIEW_DEDUPE_WINDOW_MS) {
+      return;
+    }
+
+    window.sessionStorage.setItem(storageKey, String(Date.now()));
+    void apiRecordPostView(postId).catch(() => {});
+  }, [postId]);
+
   const removePost = async () => {
     setError('');
     setMessage('');
@@ -162,7 +179,7 @@ export default function PostDetail({
           <h2 className="mb-2">Post not found</h2>
           <p className="muted mb-3">{error || 'This post may have been removed or is no longer available.'}</p>
           <Link to="/forum" className="forum-primary-btn text-decoration-none">
-            Back to Forum
+            Back to Feed
           </Link>
         </section>
       </div>
@@ -172,19 +189,28 @@ export default function PostDetail({
   const canModeratePost = Boolean(
     currentUser && post?.forum?.ownerId && (canSiteModerate || post.forum.ownerId === currentUser.id)
   );
-  const backToForumPath = post?.forum?.slug ? `/forum/${post.forum.slug}` : '/forum';
-
   return (
     <div className="container page-shell">
       <section className="panel post-detail-shell">
         <div className="post-detail-topbar">
-          <Link to={backToForumPath} className="forum-secondary-btn text-decoration-none">
-            Back to Forum
+          <Link to="/forum" className="forum-secondary-btn text-decoration-none">
+            Back to Feed
           </Link>
           <span className="muted">{formatTime(post.createdAt)}</span>
         </div>
 
         <div className="post-detail-meta">
+          {post.forum?.slug ? (
+            <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip text-decoration-none">
+              <span className="forum-origin-chip-label">Space</span>
+              <span>{post.forum.name}</span>
+            </Link>
+          ) : post.forum?.name ? (
+            <span className="forum-origin-chip is-static">
+              <span className="forum-origin-chip-label">Space</span>
+              <span>{post.forum.name}</span>
+            </span>
+          ) : null}
           <span className="forum-tag">{getSectionLabel(post.section)}</span>
           <span className="muted">
             Posted by{' '}
@@ -284,7 +310,7 @@ export default function PostDetail({
 
         {canModeratePost && (
           <section className="settings-card settings-danger-card mt-4">
-            <h4 className="mb-2">{canSiteModerate ? 'Admin Moderation' : 'Forum Owner Moderation'}</h4>
+            <h4 className="mb-2">{canSiteModerate ? 'Admin Moderation' : 'Space Owner Moderation'}</h4>
             <p className="muted mb-3">
               Remove this post from public view. The author will have 15 days to request restoration.
             </p>

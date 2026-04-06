@@ -167,7 +167,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
         }));
       } catch (error) {
         if (!cancelled) {
-          setAccessMessage(error instanceof Error ? error.message : 'Failed to load forum permissions.');
+          setAccessMessage(error instanceof Error ? error.message : 'Failed to load space permissions.');
         }
       } finally {
         if (!cancelled) {
@@ -204,7 +204,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
         }
       } catch (error) {
         if (!cancelled) {
-          setActionError(error instanceof Error ? error.message : 'Failed to load forum manager invites.');
+          setActionError(error instanceof Error ? error.message : 'Failed to load space manager invites.');
         }
       } finally {
         if (!cancelled) {
@@ -289,7 +289,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       await onLoadForums?.();
       setInviteIdentifier('');
       setInvitePermissions([]);
-      setActionMessage(response.message || 'Forum manager invite sent.');
+      setActionMessage(response.message || 'Space manager invite sent.');
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Action failed.');
     } finally {
@@ -302,7 +302,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
     if (!selectedForumId) {
       return;
     }
-    if (!window.confirm('Transfer ownership? The new owner will become the primary forum owner immediately.')) {
+    if (!window.confirm('Transfer ownership? The new owner will become the primary space owner immediately.')) {
       return;
     }
 
@@ -319,7 +319,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       await onLoadForums?.();
       await refreshSelectedForum();
       setTransferIdentifier('');
-      setActionMessage(response.message || 'Forum ownership transferred.');
+      setActionMessage(response.message || 'Space ownership transferred.');
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Action failed.');
     } finally {
@@ -337,7 +337,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       (overviewDraft || '').trim() === String(activeForum?.description || '').trim()
       && showCodeBlockToolsDraft === Boolean(activeForum?.showCodeBlockTools ?? true)
     ) {
-      setActionMessage('Forum details are already up to date.');
+      setActionMessage('Space details are already up to date.');
       setActionError('');
       return;
     }
@@ -357,9 +357,9 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       }, token);
       await onLoadForums?.();
       await refreshSelectedForum();
-      setActionMessage(response.message || 'Forum details updated.');
+      setActionMessage(response.message || 'Space details updated.');
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Failed to update forum details.');
+      setActionError(error instanceof Error ? error.message : 'Failed to update space details.');
     } finally {
       setActionKey('');
     }
@@ -373,7 +373,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       return;
     }
     if (sectionScopeDraft.includes(normalizedSection)) {
-      setActionError('That section already exists in this forum.');
+      setActionError('That section already exists in this space.');
       setActionMessage('');
       return;
     }
@@ -385,7 +385,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
 
   const removeSectionDraftValue = (sectionValue) => {
     if (sectionScopeDraft.length <= 1) {
-      setActionError('A forum must keep at least one section.');
+      setActionError('A space must keep at least one section.');
       setActionMessage('');
       return;
     }
@@ -417,7 +417,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       : sectionScopeDraft;
 
     if (nextScope.length === 0) {
-      setActionError('A forum must keep at least one section.');
+      setActionError('A space must keep at least one section.');
       setActionMessage('');
       return;
     }
@@ -442,9 +442,9 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
       await refreshSelectedForum();
       setSectionScopeDraft(nextScope);
       setSectionDraft('');
-      setActionMessage(response.message || 'Forum sections updated.');
+      setActionMessage(response.message || 'Space sections updated.');
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Failed to update forum sections.');
+      setActionError(error instanceof Error ? error.message : 'Failed to update space sections.');
     } finally {
       setActionKey('');
     }
@@ -456,20 +456,20 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div>
             <p className="type-kicker mb-1">Workspace</p>
-            <h2 className="mb-1 type-title-md">My Forums</h2>
+            <h2 className="mb-1 type-title-md">My Spaces</h2>
             <p className="muted mb-0">
-              Manage forums you own or help run. You can assign focused permissions instead of giving everyone full control.
+              Manage the spaces you own or help run. You can assign focused permissions instead of giving everyone full control.
             </p>
           </div>
           <div className="forum-actions my-forums-header-actions">
             <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
-              Apply for a Forum
+              Request a Space
             </Link>
             <Link to="/forums/request/history" className="forum-secondary-btn text-decoration-none">
               Request History
             </Link>
             <Link to="/forum" className="forum-secondary-btn text-decoration-none">
-              Back to Forum
+              Back to Feed
             </Link>
           </div>
         </div>
@@ -479,16 +479,16 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
 
         {manageableForums.length === 0 ? (
           <section className="settings-card">
-            <h4 className="mb-2">No manageable forums yet</h4>
+            <h4 className="mb-2">No manageable spaces yet</h4>
             <p className="muted mb-3">
-              Once you own a forum or accept a forum manager invite, it will show up here.
+              Once you own a space or accept a manager invite, it will show up here.
             </p>
             <div className="d-flex flex-wrap gap-2">
               <Link to="/my-forums/invitations" className="forum-secondary-btn text-decoration-none">
                 {inviteInboxLoading ? 'Manager Invitations' : `Manager Invitations${incomingInvites.length > 0 ? ` (${incomingInvites.length})` : ''}`}
               </Link>
               <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
-                Apply for a Forum
+                Request a Space
               </Link>
               <Link to="/forums/request/history" className="forum-secondary-btn text-decoration-none">
                 Request History
@@ -510,7 +510,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                 </div>
                 <strong>Manager Invitations</strong>
                 <p className="muted mb-0">
-                  {inviteInboxLoading ? 'Loading pending invitations...' : 'Open a dedicated page to review pending forum manager invites.'}
+                  {inviteInboxLoading ? 'Loading pending invitations...' : 'Open a dedicated page to review pending space manager invites.'}
                 </p>
                 <span className="forum-follow-meta">
                   {incomingInvites.length > 0 ? `${incomingInvites.length} pending review` : 'No pending invites'}
@@ -520,8 +520,8 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
               <section className="forum-admin-panel forum-admin-selector-card">
                 <div className="forum-admin-panel-head">
                   <div>
-                    <h5 className="mb-1">Owned or Managed Forums</h5>
-                    <p className="muted mb-0">Search first, then choose a forum from the dropdown.</p>
+                    <h5 className="mb-1">Owned or Managed Spaces</h5>
+                    <p className="muted mb-0">Search first, then choose a space from the dropdown.</p>
                   </div>
                 </div>
 
@@ -532,17 +532,17 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                       className="form-control forum-input"
                       value={forumSearchQuery}
                       onChange={(event) => setForumSearchQuery(event.target.value)}
-                      placeholder="Search by forum name, role, or section"
+                      placeholder="Search by space name, role, or section"
                     />
                   </label>
 
                   <label className="w-100">
-                    <span className="form-label">Forum</span>
+                    <span className="form-label">Space</span>
                     <Select
                       options={forumSelectOptions}
                       value={selectedForumId}
                       onChange={setSelectedForumId}
-                      placeholder={forumSelectOptions.length ? 'Choose a forum' : 'No matching forums'}
+                      placeholder={forumSelectOptions.length ? 'Choose a space' : 'No matching spaces'}
                       disabled={forumSelectOptions.length === 0}
                     />
                   </label>
@@ -570,7 +570,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                       <span className="muted">{selectedForum.followerCount ?? 0} followers</span>
                     </div>
                     <strong>{selectedForum.name}</strong>
-                    <p className="muted mb-0">{selectedForum.description || 'Manage this forum from here.'}</p>
+                    <p className="muted mb-0">{selectedForum.description || 'Manage this space from here.'}</p>
                     <span className="forum-follow-meta">
                       {(selectedForum.sectionScope || []).slice(0, 4).map((section) => getSectionLabel(section)).join(' / ') || 'No sections'}
                     </span>
@@ -605,7 +605,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                       <span className="muted">{forum.followerCount ?? 0} followers</span>
                     </div>
                     <strong>{forum.name}</strong>
-                    <p className="muted mb-0">{forum.description || 'Manage this forum from here.'}</p>
+                    <p className="muted mb-0">{forum.description || 'Manage this space from here.'}</p>
                     <span className="forum-follow-meta">
                       {(forum.sectionScope || []).slice(0, 4).map((section) => getSectionLabel(section)).join(' · ') || 'No sections'}
                     </span>
@@ -621,17 +621,17 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                   <div className="forum-admin-shell-head">
                     <div>
                       <div className="forum-follow-card-topline">
-                        <span className="forum-tag">{activeForum?.isOwner ? 'Owner Access' : 'Forum Manager'}</span>
+                        <span className="forum-tag">{activeForum?.isOwner ? 'Owner Access' : 'Space Manager'}</span>
                         <span className="muted">{activeForum?.livePostCount ?? activeForum?.postCount ?? 0} posts</span>
                       </div>
                       <h4 className="mb-1">{activeForum?.name}</h4>
                       <p className="muted mb-2">
-                        {activeForum?.description || 'Manage your team access and forum responsibilities here.'}
+                        {activeForum?.description || 'Manage your team access and space responsibilities here.'}
                       </p>
                     </div>
                     <div className="forum-actions">
                       <Link to={`/forum/${activeForum?.slug}`} className="forum-primary-btn text-decoration-none">
-                        Open Forum
+                        Open Space
                       </Link>
                       {canViewFollowers && (
                         <Link to={`/forum/${activeForum?.slug}/followers`} className="forum-secondary-btn text-decoration-none">
@@ -644,16 +644,16 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                   {accessMessage && <div className="settings-alert is-error mb-3">{accessMessage}</div>}
 
                   {accessLoading && !selectedAccess ? (
-                    <p className="muted mb-0">Loading forum access...</p>
+                    <p className="muted mb-0">Loading space access...</p>
                   ) : selectedAccess ? (
                     <div className="forum-admin-sections">
                       <section className="forum-admin-panel">
                         <div className="forum-admin-panel-head">
                           <div>
-                            <h5 className="mb-1">Forum Details</h5>
+                            <h5 className="mb-1">Space Details</h5>
                             <p className="muted mb-0">
                               {canManageForumDetails
-                                ? 'Edit the forum overview and keep the accepted section scope up to date here.'
+                                ? 'Edit the space overview and keep the accepted section scope up to date here.'
                                 : 'You can review the current overview and section scope here.'}
                             </p>
                           </div>
@@ -666,7 +666,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                               className="form-control forum-input forum-admin-textarea"
                               value={overviewDraft}
                               onChange={(event) => setOverviewDraft(event.target.value)}
-                              placeholder="Write a short overview for this forum."
+                              placeholder="Write a short overview for this space."
                               rows={4}
                               disabled={!canManageForumDetails || actionKey === 'save-overview'}
                             />
@@ -680,7 +680,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                             />
                             <span>
                               <strong>Show code block shortcut in composer</strong>
-                              <small>Turn this off for forums that do not need the language picker and quick code insert tool.</small>
+                              <small>Turn this off for spaces that do not need the language picker and quick code insert tool.</small>
                             </span>
                           </label>
                           {canManageForumDetails && (
@@ -699,8 +699,8 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                             <h5 className="mb-1">Edit Sections</h5>
                             <p className="muted mb-0">
                               {canManageForumDetails
-                                ? 'Add new sections or remove ones the forum no longer needs.'
-                                : 'Current sections accepted by this forum.'}
+                                ? 'Add new sections or remove ones the space no longer needs.'
+                                : 'Current sections accepted by this space.'}
                             </p>
                           </div>
                         </div>
@@ -780,7 +780,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                         <div className="forum-admin-panel-head">
                           <div>
                             <h5 className="mb-1">Current Owner</h5>
-                            <p className="muted mb-0">The owner has full forum access automatically.</p>
+                            <p className="muted mb-0">The owner has full space access automatically.</p>
                           </div>
                         </div>
                         <div className="forum-admin-owner-card">
@@ -813,7 +813,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                       <section className="forum-admin-panel">
                         <div className="forum-admin-panel-head">
                           <div>
-                            <h5 className="mb-1">Forum Managers</h5>
+                            <h5 className="mb-1">Space Managers</h5>
                             <p className="muted mb-0">
                               {canManageAdmins
                                 ? 'Add managers here, then open a manager profile to update detailed permissions.'
@@ -825,7 +825,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                         {canManageAdmins && (
                           <form className="forum-admin-create-form" onSubmit={handleInviteManager}>
                             <label className="w-100">
-                              <span className="form-label">Invite a forum manager</span>
+                              <span className="form-label">Invite a space manager</span>
                               <input
                                 className="form-control forum-input"
                                 value={inviteIdentifier}
@@ -863,7 +863,7 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
                         )}
 
                         {(selectedAccess.managers || []).length === 0 ? (
-                          <p className="muted mb-0">No delegated forum managers yet.</p>
+                          <p className="muted mb-0">No delegated space managers yet.</p>
                         ) : (
                           <div className="forum-admin-manager-list">
                             {selectedAccess.managers.map((manager) => (

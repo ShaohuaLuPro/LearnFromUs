@@ -55,11 +55,11 @@ const INDUSTRY_CARDS = [
 const PRINCIPLE_SLIDES = [
   {
     key: 'forum',
-    eyebrow: 'Forum',
+    eyebrow: 'Spaces',
     title: 'Curated by topics',
     summary: 'Explore ideas, systems, and real-world practices without the usual noise.',
     body: [
-      'Every forum is organized with intention so people can move straight into the signal.',
+      'Every space is organized with intention so people can move straight into the signal.',
       'Sections are built to surface grounded experience, not endless chatter.'
     ],
     accent: 'Structure',
@@ -69,7 +69,7 @@ const PRINCIPLE_SLIDES = [
     key: 'search',
     eyebrow: 'Search',
     title: 'Find posts by real relevance',
-    summary: 'Useful knowledge should stay discoverable as the forum grows.',
+    summary: 'Useful knowledge should stay discoverable as the platform grows.',
     body: [
       'Search looks across titles, content, tags, authors, and topics with meaning in mind.',
       'The goal is simple: bring forward what helps, not just what happens to be loud.'
@@ -212,7 +212,7 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
     <div className="container page-shell landing-cinematic-flow" ref={cinematicRef}>
       <section className="landing-hero landing-cinematic-panel">
         <div className="landing-copy landing-panel-stage">
-          <p className="landing-eyebrow type-kicker">A Forum For Doers</p>
+          <p className="landing-eyebrow type-kicker">A Platform For Doers</p>
 
           <div className="landing-hero-grid">
             <div className="landing-hero-stage">
@@ -256,7 +256,7 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
         </div>
       </section>
 
-      <section className="landing-story-band landing-story-band-platform landing-cinematic-panel" aria-label="Forum stats">
+      <section className="landing-story-band landing-story-band-platform landing-cinematic-panel" aria-label="Platform stats">
         <div className="landing-story-band-shell landing-panel-stage">
           <div className="landing-story-band-head">
             <p className="landing-story-band-kicker">Platform</p>
@@ -264,16 +264,16 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
           </div>
           <div className="landing-story-band-body">
             <p className="landing-story-band-copy">
-              A growing set of forums and sections organized around useful knowledge and real execution.
+              A growing set of spaces and sections organized around useful knowledge and real execution.
             </p>
             <div className="landing-feature-panel">
               <div className="landing-stat-card">
                 <span className="landing-stat-value">{forumCountDisplay}</span>
-                <span className="landing-stat-label">Active forums</span>
+                <span className="landing-stat-label">Active spaces</span>
               </div>
               <div className="landing-stat-card">
                 <span className="landing-stat-value">{sectionCountDisplay}</span>
-                <span className="landing-stat-label">Forum sections</span>
+                <span className="landing-stat-label">Space sections</span>
               </div>
               <div className="landing-stat-card">
                 <span className="landing-stat-value">1</span>
@@ -292,18 +292,18 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
           </div>
           <div className="landing-story-band-body">
             <p className="landing-story-band-copy">
-              Move straight into the forum or learn the thinking behind the platform first.
+              Move straight into the feed or learn the thinking behind the platform first.
             </p>
           <div className="landing-actions">
             <Link to="/forum" className="landing-hero-link text-decoration-none">
-              <span className="landing-hero-link-label">Forum</span>
-              <span className="landing-hero-link-title">Go to Forum Feed</span>
+              <span className="landing-hero-link-label">Feed</span>
+              <span className="landing-hero-link-title">Go to Community Feed</span>
               <span className="landing-hero-link-copy">Browse live discussions and topic spaces.</span>
             </Link>
             <Link to="/about" className="landing-hero-link text-decoration-none">
               <span className="landing-hero-link-label">About</span>
               <span className="landing-hero-link-title">Read Our Story</span>
-              <span className="landing-hero-link-copy">See why LearnFromUs exists and where it is headed.</span>
+              <span className="landing-hero-link-copy">See why tsumit exists and where it is headed.</span>
             </Link>
           </div>
             {!currentUser && (
@@ -315,7 +315,7 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
         </div>
       </section>
 
-      <section className="landing-principles-showcase landing-cinematic-panel" aria-label="Forum principles">
+      <section className="landing-principles-showcase landing-cinematic-panel" aria-label="Platform principles">
         <div className={`landing-principle-card principle-${activeSlide.key} landing-panel-stage`}>
           <div className="landing-principle-backdrop" aria-hidden="true">
             <span className="landing-principle-orb landing-principle-orb-one" />
@@ -354,7 +354,7 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
           </div>
         </div>
 
-        <div className="landing-principle-dots" role="tablist" aria-label="Forum principles slides">
+        <div className="landing-principle-dots" role="tablist" aria-label="Platform principles slides">
           {PRINCIPLE_SLIDES.map((slide, index) => (
             <button
               key={slide.key}
@@ -372,7 +372,7 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
       <section className="row g-4 mt-1 landing-feature-stack is-legacy">
         <div className="col-12">
           <div className="feature-card landing-feature-card">
-            <p className="landing-card-kicker type-kicker">Forum</p>
+            <p className="landing-card-kicker type-kicker">Spaces</p>
             <h4 className="type-title-md">Curated by topics</h4>
             <p className="type-body mb-2">
               Explore ideas, systems, and real-world practices across a wide range of topics — thoughtfully organized
@@ -393,7 +393,7 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
               keywords.
             </p>
             <p className="type-body mb-0">
-              As the forum grows, the right knowledge remains easy to find, surfacing what&apos;s truly useful instead
+              As the platform grows, the right knowledge remains easy to find, surfacing what&apos;s truly useful instead
               of what&apos;s merely popular.
             </p>
           </div>

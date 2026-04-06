@@ -40,15 +40,15 @@ export default function Explore({ forums, posts, currentUser }) {
                 <p className="type-kicker mb-0">Explore</p>
                 <span className="forum-view-intro-status-pill">Directory</span>
               </div>
-              <h3 className="mb-1 type-title-md">Browse the forum landscape</h3>
+              <h3 className="mb-1 type-title-md">Browse the community landscape</h3>
               <p className="forum-view-intro-copy mb-0">
-                Discover forums, see what's active, and jump into the right community.
+                Discover spaces, see what's active, and jump into the right community.
               </p>
 
               <div className="forum-view-intro-meta-row">
                 <span className="forum-view-intro-badge">
                   <strong>{forumDirectory.length}</strong>
-                  <span>Total forums</span>
+                  <span>Total spaces</span>
                 </span>
                 <span className="forum-view-intro-badge">
                   <strong>{followedForumCount}</strong>
@@ -64,8 +64,8 @@ export default function Explore({ forums, posts, currentUser }) {
           <div className="forum-view-intro-actions">
             <Link to="/forum" className="explore-intro-link text-decoration-none">
               <span className="explore-intro-link-kicker">Back to Feed</span>
-              <strong>Forum Feed</strong>
-              <span className="explore-intro-link-copy">Return to the live cross-forum stream.</span>
+              <strong>Community Feed</strong>
+              <span className="explore-intro-link-copy">Return to the live cross-space stream.</span>
               <span className="explore-intro-link-footer">
                 <span>Live posts</span>
                 <span className="explore-intro-link-arrow" aria-hidden="true">↗</span>
@@ -82,7 +82,7 @@ export default function Explore({ forums, posts, currentUser }) {
               <div>
                 <h3 className="mb-1 type-title-md">Trending</h3>
                 <p className="type-body mb-0">
-                  The busiest forums right now, arranged in a fast horizontal lane.
+                  The busiest spaces right now, arranged in a fast horizontal lane.
                 </p>
               </div>
               <span className="muted">{popularForumCards.length} featured</span>
@@ -105,11 +105,11 @@ export default function Explore({ forums, posts, currentUser }) {
                       >
                         <div className="explore-trending-card-head">
                           <span className="explore-trending-rank">{String(displayIndex).padStart(2, '0')}</span>
-                          <span className="forum-tag">{forum.isFollowing ? 'Following' : forum.isCore ? 'Core Forum' : 'Community Forum'}</span>
+                          <span className="forum-tag">{forum.isFollowing ? 'Following' : forum.isCore ? 'Core Space' : 'Community Space'}</span>
                         </div>
                         <strong>{forum.name}</strong>
                         <p className="explore-trending-copy mb-0">
-                          {forum.description || 'Open this forum to see the latest posts and active discussions.'}
+                          {forum.description || 'Open this space to see the latest posts and active discussions.'}
                         </p>
                         <ForumSectionPills
                           sections={forum.sectionScope || []}
@@ -127,8 +127,8 @@ export default function Explore({ forums, posts, currentUser }) {
               </div>
             ) : (
               <section className="settings-card">
-                <h4 className="mb-2">No trending forums yet</h4>
-                <p className="muted mb-0">This lane will fill in as forum activity grows.</p>
+                <h4 className="mb-2">No trending spaces yet</h4>
+                <p className="muted mb-0">This lane will fill in as activity grows.</p>
               </section>
             )}
           </section>
@@ -136,9 +136,9 @@ export default function Explore({ forums, posts, currentUser }) {
           <section className="panel explore-panel-shell explore-panel-directory">
             <div className="forum-sections-head mb-3">
               <div>
-                <h3 className="mb-1 type-title-md">All Forums</h3>
+                <h3 className="mb-1 type-title-md">All Spaces</h3>
                 <p className="type-body mb-0">
-                  A directory view of every available forum, with sections and recent activity at a glance.
+                  A directory view of every available space, with sections and recent activity at a glance.
                 </p>
               </div>
             </div>
@@ -149,12 +149,12 @@ export default function Explore({ forums, posts, currentUser }) {
                   <div className="explore-forum-card-top">
                     <div className="forum-post-kicker">
                       <span className="forum-mini-link is-static">{forum.name}</span>
-                      <span className="forum-tag">{forum.isFollowing ? 'Following' : forum.isCore ? 'Core Forum' : 'Community Forum'}</span>
+                      <span className="forum-tag">{forum.isFollowing ? 'Following' : forum.isCore ? 'Core Space' : 'Community Space'}</span>
                     </div>
                   </div>
 
                   <p className="explore-forum-copy mb-0">
-                    {forum.description || 'Open this forum to see the post feed.'}
+                    {forum.description || 'Open this space to see the post feed.'}
                   </p>
 
                   <div className="explore-forum-sections">
@@ -168,7 +168,7 @@ export default function Explore({ forums, posts, currentUser }) {
                   <div className="explore-forum-footer">
                     <span>{forum.livePostCount ?? forum.postCount ?? 0} posts</span>
                     <span>{forum.followerCount ?? 0} followers</span>
-                    <span>Open forum</span>
+                    <span>Open space</span>
                   </div>
                 </Link>
               ))}

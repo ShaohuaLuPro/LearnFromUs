@@ -2,6 +2,7 @@ export type User = {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string;
   isAdmin?: boolean;
   adminPermissions?: SiteAdminPermissionKey[];
   hasAdminAccess?: boolean;
@@ -152,6 +153,7 @@ export type NetworkUser = {
   id: string;
   name: string;
   bio?: string;
+  avatarUrl?: string;
   followerCount?: number;
   followingCount?: number;
   isFollowing?: boolean;
@@ -193,6 +195,7 @@ export type Post = {
   authorId: string;
   authorName: string;
   authorEmail?: string;
+  authorAvatarUrl?: string;
   forum?: Forum | null;
   section: string;
   tags: string[];
@@ -233,6 +236,27 @@ export type PostListResponse = {
     forum?: string;
     section: string[];
   };
+};
+
+export type MediaAssetStatus = 'pending' | 'uploaded' | 'failed' | 'deleted';
+export type MediaVisibility = 'public' | 'private';
+
+export type MediaAsset = {
+  id: string;
+  ownerId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number | null;
+  status: MediaAssetStatus;
+  visibility: MediaVisibility;
+  objectKey: string;
+  url: string;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  createdAt: number | null;
+  updatedAt: number | null;
+  uploadedAt: number | null;
 };
 
 export type AnalyticsReport = {

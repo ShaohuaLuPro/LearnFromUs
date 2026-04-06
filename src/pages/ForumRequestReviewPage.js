@@ -15,10 +15,10 @@ export default function ForumRequestReviewPage({
     setError('');
     const result = await onApproveForumRequest(requestId);
     if (!result.ok) {
-      setError(result.message || 'Failed to approve forum request.');
+      setError(result.message || 'Failed to approve space request.');
       return;
     }
-    setMessage(result.message || 'Forum request approved.');
+    setMessage(result.message || 'Space request approved.');
   };
 
   const rejectRequest = async (requestId) => {
@@ -26,10 +26,10 @@ export default function ForumRequestReviewPage({
     setError('');
     const result = await onRejectForumRequest(requestId);
     if (!result.ok) {
-      setError(result.message || 'Failed to reject forum request.');
+      setError(result.message || 'Failed to reject space request.');
       return;
     }
-    setMessage(result.message || 'Forum request rejected.');
+    setMessage(result.message || 'Space request rejected.');
   };
 
   return (
@@ -38,9 +38,9 @@ export default function ForumRequestReviewPage({
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
           <div>
             <p className="type-kicker mb-2">Admin</p>
-            <h2 className="mb-1 type-title-md">Forum Request Reviews</h2>
+            <h2 className="mb-1 type-title-md">Space Request Reviews</h2>
             <p className="type-body mb-0">
-              Review pending forum creation requests and decide whether to approve or reject them.
+              Review pending space creation requests and decide whether to approve or reject them.
             </p>
           </div>
         </div>
@@ -78,7 +78,7 @@ export default function ForumRequestReviewPage({
         ) : (
           <section className="settings-card">
             <h4 className="mb-2">No pending requests</h4>
-            <p className="muted mb-0">There are no forum creation requests waiting for review right now.</p>
+            <p className="muted mb-0">There are no space creation requests waiting for review right now.</p>
           </section>
         )}
       </section>

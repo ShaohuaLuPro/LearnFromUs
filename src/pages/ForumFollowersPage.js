@@ -63,7 +63,7 @@ export default function ForumFollowersPage({ currentUser, forums = [] }) {
       } catch (error) {
         if (!cancelled) {
           setFollowers([]);
-          setMessage(error instanceof Error ? error.message : 'Failed to load forum followers.');
+          setMessage(error instanceof Error ? error.message : 'Failed to load space followers.');
         }
       } finally {
         if (!cancelled) {
@@ -88,12 +88,12 @@ export default function ForumFollowersPage({ currentUser, forums = [] }) {
         <section className="panel">
           <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <div>
-              <p className="type-kicker mb-1">Forum</p>
+              <p className="type-kicker mb-1">Space</p>
               <h2 className="mb-1 type-title-md">{selectedForum.name} Followers</h2>
-              <p className="muted mb-0">Only the forum owner, site admins, or managers with follower-view access can open this page.</p>
+              <p className="muted mb-0">Only the space owner, site admins, or managers with follower-view access can open this page.</p>
             </div>
             <Link to={`/forum/${selectedForum.slug}`} className="forum-secondary-btn text-decoration-none">
-              Back to Forum
+              Back to Space
             </Link>
           </div>
         </section>
@@ -106,13 +106,13 @@ export default function ForumFollowersPage({ currentUser, forums = [] }) {
       <section className="panel">
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div>
-            <p className="type-kicker mb-1">Forum</p>
-            <h2 className="mb-1 type-title-md">{selectedForum?.name || 'Forum'} Followers</h2>
-            <p className="muted mb-0">Only the forum owner, site admins, or managers with follower-view access can see who follows this forum.</p>
+            <p className="type-kicker mb-1">Space</p>
+            <h2 className="mb-1 type-title-md">{selectedForum?.name || 'Space'} Followers</h2>
+            <p className="muted mb-0">Only the space owner, site admins, or managers with follower-view access can see who follows this space.</p>
           </div>
           {selectedForum && (
             <Link to={`/forum/${selectedForum.slug}`} className="forum-secondary-btn text-decoration-none">
-              Back to Forum
+              Back to Space
             </Link>
           )}
         </div>
@@ -129,7 +129,7 @@ export default function ForumFollowersPage({ currentUser, forums = [] }) {
         ) : message ? (
           <div className="settings-alert is-error mb-0">{message}</div>
         ) : followers.length === 0 ? (
-          <p className="muted mb-0">No one is following this forum yet.</p>
+          <p className="muted mb-0">No one is following this space yet.</p>
         ) : (
           <div className="forum-follow-list">
             {followers.map((follower) => (

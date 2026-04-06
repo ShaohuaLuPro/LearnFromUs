@@ -83,7 +83,7 @@ export default function ForumRequestAppealPage({
     setError('');
 
     if (!request) {
-      setError('This forum request could not be found.');
+      setError('This space request could not be found.');
       return;
     }
 
@@ -116,7 +116,7 @@ export default function ForumRequestAppealPage({
     navigate('/forums/request/history', {
       replace: true,
       state: {
-        message: result.message || 'Appeal submitted. Your forum request is back in the review queue.'
+        message: result.message || 'Appeal submitted. Your space request is back in the review queue.'
       }
     });
   };
@@ -140,7 +140,7 @@ export default function ForumRequestAppealPage({
         <section className="panel">
           <section className="settings-card">
             <h4 className="mb-2">Request not found</h4>
-            <p className="muted mb-3">This forum request is not available in your request history.</p>
+            <p className="muted mb-3">This space request is not available in your request history.</p>
             <Link to="/forums/request/history" className="forum-primary-btn text-decoration-none">
               Back to Request History
             </Link>
@@ -156,7 +156,7 @@ export default function ForumRequestAppealPage({
         <section className="panel">
           <section className="settings-card">
             <h4 className="mb-2">Appeal unavailable</h4>
-            <p className="muted mb-3">Only rejected forum requests can be appealed from this page.</p>
+            <p className="muted mb-3">Only rejected space requests can be appealed from this page.</p>
             <Link to="/forums/request/history" className="forum-primary-btn text-decoration-none">
               Back to Request History
             </Link>
@@ -171,8 +171,8 @@ export default function ForumRequestAppealPage({
       <section className="panel">
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
           <div>
-            <p className="type-kicker mb-2">Forum</p>
-            <h2 className="mb-1 type-title-md">Appeal Forum Rejection</h2>
+            <p className="type-kicker mb-2">Space</p>
+            <h2 className="mb-1 type-title-md">Appeal Space Rejection</h2>
             <p className="type-body mb-0">
               Revise the request, explain what changed, and send it back for another review.
             </p>
@@ -182,7 +182,7 @@ export default function ForumRequestAppealPage({
               Request History
             </Link>
             <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
-              Back to My Forums
+              Back to My Spaces
             </Link>
           </div>
         </div>
@@ -217,7 +217,7 @@ export default function ForumRequestAppealPage({
 
           <form onSubmit={submit} className="forum-form">
             <div className="mb-3">
-              <label className="form-label">Forum Name</label>
+              <label className="form-label">Space Name</label>
               <input
                 className="form-control forum-input"
                 value={form.name}
@@ -233,7 +233,7 @@ export default function ForumRequestAppealPage({
                 rows={3}
                 value={form.description}
                 onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                placeholder="Clarify what kind of discussion should live in this forum."
+                placeholder="Clarify what kind of discussion should live in this space."
               />
             </div>
 
@@ -273,13 +273,13 @@ export default function ForumRequestAppealPage({
             )}
 
             <div className="mb-3">
-              <label className="form-label">Why Should This Forum Exist?</label>
+              <label className="form-label">Why Should This Space Exist?</label>
               <textarea
                 className="form-control forum-input"
                 rows={4}
                 value={form.rationale}
                 onChange={(event) => setForm((current) => ({ ...current, rationale: event.target.value }))}
-                placeholder="Describe the audience, the need, and how this forum would help."
+                placeholder="Describe the audience, the need, and how this space would help."
               />
             </div>
 

@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-
-const SITE_LOGO_SRC = '/images/tsumit-logo-cropped.png';
+import { SITE_LOGO_SRC } from './siteChromeConfig';
 
 type FooterLink = {
   href: string;

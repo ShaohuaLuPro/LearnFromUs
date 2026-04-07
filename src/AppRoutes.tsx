@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AgentChatbox from './components/AgentChatbox';
 import Footer from './components/Footer';
 import Header from './components/Header';
@@ -65,6 +65,7 @@ function LoadingShell() {
 }
 
 export default function AppRoutes() {
+  const location = useLocation();
   const auth = useAuth();
   const posts = usePosts();
   const canManageAdminAccess = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.canManageAdminAccess);
@@ -72,6 +73,7 @@ export default function AppRoutes() {
   const canViewAnalytics = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('analytics'));
   const canReviewForumRequests = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('forum_requests'));
   const canResetPasswords = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('password_reset'));
+  const showGlobalFooter = location.pathname !== '/';
 
   if (auth.authLoading || (!posts.initialized && posts.loadingPosts)) {
     return <LoadingShell />;
@@ -431,7 +433,7 @@ export default function AppRoutes() {
           />
         </Routes>
       </main>
-      <Footer />
+      {showGlobalFooter ? <Footer /> : null}
       <AgentChatbox
         currentUser={auth.currentUser}
         onAgentChat={posts.agentChat}

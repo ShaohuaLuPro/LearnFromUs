@@ -1460,7 +1460,7 @@ export default function Home({
                     </button>
                   </div>
                 )}
-                <div data-color-mode="dark" className="markdown-editor-shell">
+                <div data-color-mode="light" className="markdown-editor-shell">
                   <MDEditor
                     value={form.content}
                     onChange={(value) => setForm((prev) => ({ ...prev, content: value || '' }))}

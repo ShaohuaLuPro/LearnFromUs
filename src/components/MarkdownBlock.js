@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { resolveMediaSource } from '../api';
 import { getExternalLinkProps } from '../lib/links';
 
@@ -28,7 +28,7 @@ export default function MarkdownBlock({ content, className = 'post-detail-conten
               <section className="post-code-block">
                 {match?.[1] && <div className="post-code-label">{match[1]}</div>}
                 <SyntaxHighlighter
-                  style={oneDark}
+                  style={oneLight}
                   language={match?.[1] || 'text'}
                   PreTag="div"
                   className="post-code-pre"

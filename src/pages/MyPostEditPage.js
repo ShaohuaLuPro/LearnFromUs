@@ -497,7 +497,7 @@ export default function MyPostEditPage({
                   {showPreview ? 'Hide Preview' : 'Show Preview'}
                 </button>
               </div>
-              <div data-color-mode="dark" className="markdown-editor-shell">
+              <div data-color-mode="light" className="markdown-editor-shell">
                 <MDEditor
                   value={editForm.content}
                   onChange={(value) => setEditForm((prev) => ({ ...prev, content: value || '' }))}

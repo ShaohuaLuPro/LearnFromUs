@@ -1,27 +1,79 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   apiFollowUser,
   apiGetUserProfile,
-  resolveMediaSource,
-  apiUnfollowUser
+  apiUnfollowUser,
+  resolveMediaSource
 } from '../api';
+import Avatar from '../components/Avatar';
+import FeedCard from '../components/feed/FeedCard';
 import { authStorage } from '../lib/authStorage';
+import { getSectionLabel } from '../lib/sections';
 
-function getSectionLabel(value) {
-  return String(value || '')
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+const PROFILE_TAB_KEYS = [
+  { key: 'posts', label: 'Posts' },
+  { key: 'spaces', label: 'Spaces' },
+  { key: 'about', label: 'About' },
+  { key: 'activity', label: 'Activity' }
+];
+
+function normalizeText(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
-function formatTime(timestamp) {
-  return new Date(timestamp).toLocaleString(undefined, {
+function formatCount(value) {
+  const count = Number(value || 0);
+  if (count >= 1000000) {
+    return `${(count / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+  }
+  return String(count);
+}
+
+function formatJoinedDate(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!value) {
+    return '';
+  }
+  return new Date(value).toLocaleDateString(undefined, {
+    month: 'short',
+    year: 'numeric'
+  });
+}
+
+function formatActivityTime(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!value) {
+    return 'Recently';
+  }
+  return new Date(value).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    year: 'numeric'
   });
+}
+
+function deriveProfileHandle(profile) {
+  const explicit = String(profile?.username || '').trim();
+  if (explicit) {
+    return explicit.startsWith('@') ? explicit : `@${explicit}`;
+  }
+
+  const fromName = String(profile?.name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 18);
+
+  if (fromName) {
+    return `@${fromName}`;
+  }
+
+  const fromId = String(profile?.id || '').trim().slice(0, 8);
+  return fromId ? `@${fromId}` : '@user';
 }
 
 function getPostCoverImage(content) {
@@ -38,7 +90,7 @@ function getPostCoverImage(content) {
   return '';
 }
 
-function getTextCardPreview(content) {
+function getTextPreview(content, maxLength = 150) {
   const text = String(content || '')
     .replace(/!\[[^\]]*]\((.*?)\)/g, ' ')
     .replace(/<img[^>]*>/gi, ' ')
@@ -48,24 +100,36 @@ function getTextCardPreview(content) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (text.length <= 150) {
+  if (text.length <= maxLength) {
     return text;
   }
-
-  return `${text.slice(0, 150).trimEnd()}...`;
+  return `${text.slice(0, maxLength).trimEnd()}...`;
 }
 
-function getUserAvatarInitial(name) {
-  const cleanName = String(name || '').trim();
-  return cleanName ? cleanName.slice(0, 1).toUpperCase() : 'T';
+function sortByTimestamp(items, getTimestamp) {
+  return [...items].sort((left, right) => Number(getTimestamp(right) || 0) - Number(getTimestamp(left) || 0));
 }
 
-export default function UserProfile({ currentUser }) {
+function mergeRole(currentRole, nextRole) {
+  const rank = { Owner: 4, 'Space Admin': 3, Member: 2, Contributor: 1 };
+  return (rank[nextRole] || 0) > (rank[currentRole] || 0) ? nextRole : currentRole;
+}
+
+function resolveActiveTab(searchParams) {
+  const tab = normalizeText(searchParams.get('tab'));
+  return PROFILE_TAB_KEYS.some((item) => item.key === tab) ? tab : 'posts';
+}
+
+export default function UserProfile({ currentUser, forums = [] }) {
   const { userId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [togglePending, setTogglePending] = useState(false);
+
+  const activeTab = resolveActiveTab(searchParams);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,12 +141,12 @@ export default function UserProfile({ currentUser }) {
       try {
         const data = await apiGetUserProfile(userId, token);
         if (!cancelled) {
-          setProfile(data.user);
+          setProfile(data.user || null);
           setPosts(data.posts || []);
         }
       } catch (error) {
         if (!cancelled) {
-          setMessage(error.message);
+          setMessage(error instanceof Error ? error.message : 'Failed to load profile.');
           setProfile(null);
           setPosts([]);
         }
@@ -99,20 +163,150 @@ export default function UserProfile({ currentUser }) {
     };
   }, [userId, currentUser?.id]);
 
-  const joinedLabel = useMemo(() => {
-    if (!profile?.createdAt) return '';
-    return new Date(profile.createdAt).toLocaleDateString(undefined, {
-      month: 'short',
-      year: 'numeric'
-    });
-  }, [profile]);
   const postCards = useMemo(() => (
     posts.map((post) => ({
       ...post,
+      authorAvatarUrl: resolveMediaSource(post.authorAvatarUrl),
       coverImage: getPostCoverImage(post.content),
-      textPreview: getTextCardPreview(post.content)
+      textPreview: getTextPreview(post.content)
     }))
   ), [posts]);
+
+  const profileSpaces = useMemo(() => {
+    const map = new Map();
+
+    posts.forEach((post) => {
+      const forum = post.forum;
+      if (!forum || (!forum.id && !forum.slug)) {
+        return;
+      }
+      const key = String(forum.id || forum.slug);
+      const existing = map.get(key) || {
+        id: forum.id || key,
+        slug: forum.slug || '',
+        name: forum.name || 'General',
+        description: forum.description || '',
+        role: 'Contributor',
+        postCount: 0,
+        followerCount: Number(forum.followerCount || 0),
+        sectionScope: forum.sectionScope || [],
+        lastActivityAt: 0
+      };
+
+      existing.postCount += 1;
+      existing.lastActivityAt = Math.max(existing.lastActivityAt, Number(post.updatedAt || post.createdAt || 0));
+      existing.followerCount = Math.max(existing.followerCount, Number(forum.followerCount || 0));
+      if (!existing.description && forum.description) {
+        existing.description = forum.description;
+      }
+      if ((!existing.slug || existing.slug === key) && forum.slug) {
+        existing.slug = forum.slug;
+      }
+      if ((!existing.name || existing.name === 'General') && forum.name) {
+        existing.name = forum.name;
+      }
+      if ((existing.sectionScope || []).length === 0 && (forum.sectionScope || []).length > 0) {
+        existing.sectionScope = forum.sectionScope || [];
+      }
+      map.set(key, existing);
+    });
+
+    if (profile?.isSelf) {
+      forums.forEach((forum) => {
+        if (!forum?.id) {
+          return;
+        }
+        if (!(forum.ownerId === currentUser?.id || forum.canManage || forum.isFollowing)) {
+          return;
+        }
+        const key = String(forum.id);
+        const role = forum.ownerId === currentUser?.id
+          ? 'Owner'
+          : forum.canManage
+            ? 'Space Admin'
+            : forum.isFollowing
+              ? 'Member'
+              : 'Contributor';
+        const existing = map.get(key) || {
+          id: forum.id,
+          slug: forum.slug || '',
+          name: forum.name || 'Space',
+          description: forum.description || '',
+          role,
+          postCount: 0,
+          followerCount: Number(forum.followerCount || 0),
+          sectionScope: forum.sectionScope || [],
+          lastActivityAt: Number(forum.updatedAt || 0)
+        };
+
+        existing.role = mergeRole(existing.role, role);
+        existing.followerCount = Math.max(existing.followerCount, Number(forum.followerCount || 0));
+        if (!existing.description && forum.description) {
+          existing.description = forum.description;
+        }
+        if (!existing.slug && forum.slug) {
+          existing.slug = forum.slug;
+        }
+        if (!existing.name && forum.name) {
+          existing.name = forum.name;
+        }
+        if ((existing.sectionScope || []).length === 0 && (forum.sectionScope || []).length > 0) {
+          existing.sectionScope = forum.sectionScope || [];
+        }
+        map.set(key, existing);
+      });
+    }
+
+    return sortByTimestamp(
+      [...map.values()],
+      (item) => item.lastActivityAt || item.postCount || 0
+    );
+  }, [currentUser?.id, forums, posts, profile?.isSelf]);
+
+  const postSectionCounts = useMemo(() => {
+    const map = new Map();
+    posts.forEach((post) => {
+      const sectionValue = String(post.section || '').trim();
+      if (!sectionValue) {
+        return;
+      }
+      map.set(sectionValue, (map.get(sectionValue) || 0) + 1);
+    });
+    return [...map.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 6);
+  }, [posts]);
+
+  const activityItems = useMemo(() => {
+    return sortByTimestamp(posts, (item) => item.updatedAt || item.createdAt)
+      .slice(0, 12)
+      .map((post) => ({
+        id: post.id,
+        title: post.title,
+        forumName: post.forum?.name || 'General',
+        forumSlug: post.forum?.slug || '',
+        section: getSectionLabel(post.section),
+        timestamp: Number(post.updatedAt || post.createdAt || 0),
+        actionLabel: post.updatedAt ? 'Updated a post' : 'Published a post'
+      }));
+  }, [posts]);
+
+  const profileSummary = useMemo(() => {
+    return {
+      joined: formatJoinedDate(profile?.createdAt),
+      followerCount: Number(profile?.followerCount || 0),
+      followingCount: Number(profile?.followingCount || 0),
+      postCount: postCards.length,
+      spaceCount: profileSpaces.length
+    };
+  }, [postCards.length, profile?.createdAt, profile?.followerCount, profile?.followingCount, profileSpaces.length]);
+
+  const switchTab = (tab) => {
+    if (!PROFILE_TAB_KEYS.some((item) => item.key === tab)) {
+      return;
+    }
+    setSearchParams(tab === 'posts' ? {} : { tab });
+  };
 
   const toggleFollow = async () => {
     const token = authStorage.getToken();
@@ -120,25 +314,29 @@ export default function UserProfile({ currentUser }) {
       setMessage('Please login first.');
       return;
     }
+
+    setTogglePending(true);
     try {
-      if (profile.isFollowing) {
+      if (profile?.isFollowing) {
         await apiUnfollowUser(userId, token);
         setProfile((prev) => ({
           ...prev,
           isFollowing: false,
-          followerCount: Math.max(0, (prev?.followerCount || 0) - 1)
+          followerCount: Math.max(0, Number(prev?.followerCount || 0) - 1)
         }));
       } else {
         await apiFollowUser(userId, token);
         setProfile((prev) => ({
           ...prev,
           isFollowing: true,
-          followerCount: (prev?.followerCount || 0) + 1
+          followerCount: Number(prev?.followerCount || 0) + 1
         }));
       }
       setMessage('');
     } catch (error) {
-      setMessage(error.message);
+      setMessage(error instanceof Error ? error.message : 'Failed to update follow state.');
+    } finally {
+      setTogglePending(false);
     }
   };
 
@@ -166,149 +364,260 @@ export default function UserProfile({ currentUser }) {
 
   return (
     <div className="container page-shell">
-      <section className="panel user-space-hero mb-4">
-        <div>
-          {profile.avatarUrl ? (
-            <img src={profile.avatarUrl} alt={profile.name} className="user-space-avatar" />
-          ) : (
-            <div className="user-space-avatar-fallback">
-              {getUserAvatarInitial(profile.name)}
+      <section className="profile-page-shell">
+        <header className="profile-header">
+          <div className="profile-identity">
+            <Avatar
+              imageUrl={resolveMediaSource(profile.avatarUrl)}
+              name={profile.name}
+              size={84}
+              className="profile-avatar"
+            />
+            <div className="profile-identity-copy">
+              <p className="type-kicker mb-1">{profile.isSelf ? 'My Public Presence' : 'Creator Profile'}</p>
+              <h1 className="profile-name mb-1">{profile.name}</h1>
+              <p className="profile-handle mb-1">{deriveProfileHandle(profile)}</p>
+              <p className="profile-bio mb-0">
+                {profile.bio || 'Sharing practical ideas, community participation, and content that helps others learn.'}
+              </p>
             </div>
-          )}
-          <p className="type-kicker mb-2">User Space</p>
-          <h1 className="user-space-title type-title-lg mb-2">{profile.name}</h1>
-          <p className="type-body mb-0">
-            {profile.bio || 'Sharing technical work, implementation details, and practical lessons.'}
-          </p>
-        </div>
-        <div className="user-space-actions">
-          <div className="user-space-stats">
-            {profile.isSelf ? (
-              <Link to="/following?tab=followers" className="user-space-stat-link">
-                {profile.followerCount} followers
-              </Link>
-            ) : (
-              <span>{profile.followerCount} followers</span>
-            )}
-            {profile.isSelf ? (
-              <Link to="/following?tab=following" className="user-space-stat-link">
-                {profile.followingCount} following
-              </Link>
-            ) : (
-              <span>{profile.followingCount} following</span>
-            )}
-            {joinedLabel && <span>Joined {joinedLabel}</span>}
           </div>
-          {!profile.isSelf && currentUser && (
-            <button type="button" className="forum-primary-btn" onClick={toggleFollow}>
-              {profile.isFollowing ? 'Unfollow' : 'Follow'}
+
+          <div className="profile-header-actions">
+            {profile.isSelf ? (
+              <>
+                <Link to="/settings?panel=profile" className="forum-primary-btn text-decoration-none">
+                  Edit Profile
+                </Link>
+                <Link to="/my-posts" className="forum-secondary-btn text-decoration-none">
+                  My Posts
+                </Link>
+                <Link to="/my-spaces" className="forum-secondary-btn text-decoration-none">
+                  My Spaces
+                </Link>
+              </>
+            ) : currentUser ? (
+              <button
+                type="button"
+                className={profile.isFollowing ? 'forum-secondary-btn' : 'forum-primary-btn'}
+                onClick={toggleFollow}
+                disabled={togglePending}
+              >
+                {togglePending ? 'Updating...' : profile.isFollowing ? 'Unfollow' : 'Follow'}
+              </button>
+            ) : (
+              <Link to="/login" className="forum-secondary-btn text-decoration-none">
+                Login to Follow
+              </Link>
+            )}
+          </div>
+        </header>
+
+        <div className="profile-summary-row">
+          <span className="profile-summary-chip">{formatCount(profileSummary.followerCount)} followers</span>
+          <span className="profile-summary-chip">{formatCount(profileSummary.followingCount)} following</span>
+          <span className="profile-summary-chip">{formatCount(profileSummary.postCount)} posts</span>
+          <span className="profile-summary-chip">{formatCount(profileSummary.spaceCount)} spaces</span>
+          {profileSummary.joined ? <span className="profile-summary-chip">Joined {profileSummary.joined}</span> : null}
+        </div>
+
+        {message ? (
+          <div className="settings-alert is-error mb-0">{message}</div>
+        ) : null}
+
+        <nav className="profile-tabs" aria-label="Profile content tabs">
+          {PROFILE_TAB_KEYS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`profile-tab-btn ${activeTab === tab.key ? 'is-active' : ''}`.trim()}
+              onClick={() => switchTab(tab.key)}
+            >
+              {tab.label}
             </button>
-          )}
-          {profile.isSelf && (
-            <Link to="/my-posts" className="forum-secondary-btn text-decoration-none">
-              Manage My Posts
-            </Link>
-          )}
-          {!currentUser && !profile.isSelf && (
-            <Link to="/login" className="forum-secondary-btn text-decoration-none">
-              Login to Follow
-            </Link>
-          )}
-        </div>
-      </section>
-
-      {message && <div className="settings-alert is-error mb-4">{message}</div>}
-
-      <section className="panel user-space-posts-panel">
-        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-          <div>
-            <h3 className="mb-1 type-title-md">{profile.isSelf ? 'Your Published Posts' : `${profile.name}'s Posts`}</h3>
-            <p className="type-body mb-0">{posts.length} published posts</p>
-          </div>
-          <Link to="/forum" className="forum-secondary-btn text-decoration-none">Back to Feed</Link>
-        </div>
-
-        <div className={`forum-feed user-space-posts-feed ${postCards.length > 0 && postCards.length <= 3 ? 'is-sparse' : ''}`.trim()}>
-          {postCards.map((post) => (
-            <article key={post.id} className="forum-post-card">
-              <Link to={`/forum/post/${post.id}`} className="forum-post-cover-link">
-                <div className={`forum-post-cover ${post.coverImage ? 'has-image' : 'is-title-only'}`.trim()}>
-                  {post.coverImage ? (
-                    <img
-                      src={post.coverImage}
-                      alt={post.title}
-                      className="forum-post-cover-image"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="forum-post-cover-fallback">
-                      <div className="forum-post-cover-fallback-copy">
-                        <span className="forum-post-cover-fallback-title">{post.title}</span>
-                      </div>
-                    </div>
-                  )}
-                  <div className="forum-post-cover-badges">
-                    {post.forum?.name && post.forum?.slug ? (
-                      <span className="forum-origin-chip">
-                        <span className="forum-origin-chip-label">Space</span>
-                        <span>{post.forum.name}</span>
-                      </span>
-                    ) : (
-                      <span className="forum-origin-chip is-static">
-                        <span className="forum-origin-chip-label">Space</span>
-                        <span>{post.forum?.name || 'General'}</span>
-                      </span>
-                    )}
-                    <span className="forum-tag">{getSectionLabel(post.section)}</span>
-                  </div>
-                </div>
-              </Link>
-
-              <div className="forum-post-card-body">
-                {post.coverImage && (
-                  <h5 className="mb-0 forum-post-card-title">
-                    <Link to={`/forum/post/${post.id}`} className="post-title-link">
-                      {post.title}
-                    </Link>
-                  </h5>
-                )}
-
-                {!post.coverImage && (
-                  <p className="mb-0 forum-post-card-summary">
-                    <Link to={`/forum/post/${post.id}`} className="forum-post-summary-link">
-                      {post.textPreview || post.title}
-                    </Link>
-                  </p>
-                )}
-
-                <div className="forum-post-card-meta">
-                  <Link to={`/users/${post.authorId}`} className="forum-post-author-link">
-                    {profile.avatarUrl ? (
-                      <img
-                        src={profile.avatarUrl}
-                        alt={profile.name}
-                        className="forum-post-author-avatar-image"
-                      />
-                    ) : (
-                      <span className="forum-post-author-avatar" aria-hidden="true">{getUserAvatarInitial(profile.name)}</span>
-                    )}
-                    <span className="forum-post-author-name">{post.authorName}</span>
-                  </Link>
-                  <span className="forum-post-card-views">
-                    {typeof post.viewCount === 'number' ? `${post.viewCount} views` : formatTime(post.createdAt)}
-                  </span>
-                </div>
-              </div>
-            </article>
           ))}
+        </nav>
 
-          {postCards.length === 0 && (
-            <section className="settings-card">
-              <h4 className="mb-2">No posts yet</h4>
-              <p className="muted mb-0">This user has not published anything yet.</p>
-            </section>
-          )}
-        </div>
+        {activeTab === 'posts' ? (
+          <section className="profile-content-section">
+            <div className="profile-section-head">
+              <h2 className="profile-section-title mb-0">{profile.isSelf ? 'My Posts' : `${profile.name}'s Posts`}</h2>
+              <span className="profile-section-count">{postCards.length}</span>
+            </div>
+
+            {postCards.length > 0 ? (
+              <div className="forum-feed discovery-feed-grid profile-post-grid">
+                {postCards.map((post) => (
+                  <FeedCard
+                    key={post.id}
+                    post={post}
+                    coverImage={post.coverImage}
+                    textPreview={post.textPreview}
+                    isAggregateView={false}
+                    canManage={false}
+                    onModerate={() => {}}
+                  />
+                ))}
+              </div>
+            ) : (
+              <section className="profile-empty-state">
+                <h3 className="my-posts-empty-title mb-0">No posts yet</h3>
+                <p className="my-posts-empty-copy mb-0">
+                  {profile.isSelf
+                    ? 'Publish your first post to start building your public profile.'
+                    : 'This creator has not published any posts yet.'}
+                </p>
+              </section>
+            )}
+          </section>
+        ) : null}
+
+        {activeTab === 'spaces' ? (
+          <section className="profile-content-section">
+            <div className="profile-section-head">
+              <h2 className="profile-section-title mb-0">Spaces</h2>
+              <span className="profile-section-count">{profileSpaces.length}</span>
+            </div>
+
+            {profileSpaces.length > 0 ? (
+              <div className="profile-space-grid">
+                {profileSpaces.map((space) => {
+                  const sectionPreview = (space.sectionScope || [])
+                    .map((section) => getSectionLabel(section))
+                    .slice(0, 3)
+                    .join(' | ');
+
+                  return (
+                    <article key={`space-${space.id}`} className="profile-space-card">
+                      <div className="profile-space-card-head">
+                        <span className="profile-space-avatar" aria-hidden="true">
+                          {String(space.name || '').trim().charAt(0).toUpperCase() || 'S'}
+                        </span>
+                        <div className="profile-space-card-copy">
+                          <strong title={space.name}>{space.name}</strong>
+                          <span>{space.role}</span>
+                        </div>
+                      </div>
+
+                      <p className="profile-space-card-description mb-0">
+                        {space.description || 'Community space with ongoing discussion and creator activity.'}
+                      </p>
+
+                      <div className="profile-space-card-meta">
+                        <span>{formatCount(space.followerCount)} followers</span>
+                        <span>{formatCount(space.postCount)} posts</span>
+                        <span>{formatActivityTime(space.lastActivityAt)}</span>
+                      </div>
+
+                      {sectionPreview ? (
+                        <p className="profile-space-card-sections mb-0" title={sectionPreview}>
+                          {sectionPreview}
+                        </p>
+                      ) : null}
+
+                      <div className="profile-space-card-actions">
+                        {space.slug ? (
+                          <Link to={`/forum/${space.slug}`} className="following-link-btn">View Space</Link>
+                        ) : (
+                          <span className="muted">Space unavailable</span>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <section className="profile-empty-state">
+                <h3 className="my-posts-empty-title mb-0">No spaces to show</h3>
+                <p className="my-posts-empty-copy mb-0">
+                  {profile.isSelf
+                    ? 'Create, follow, or post in spaces to see them here.'
+                    : 'This creator has no visible space activity yet.'}
+                </p>
+              </section>
+            )}
+          </section>
+        ) : null}
+
+        {activeTab === 'about' ? (
+          <section className="profile-content-section">
+            <div className="profile-section-head">
+              <h2 className="profile-section-title mb-0">About</h2>
+            </div>
+
+            <div className="profile-about-grid">
+              <article className="profile-about-card">
+                <h3 className="profile-about-title mb-1">Bio</h3>
+                <p className="profile-about-copy mb-0">
+                  {profile.bio || 'No bio yet. This section can be expanded as profile details grow.'}
+                </p>
+              </article>
+
+              <article className="profile-about-card">
+                <h3 className="profile-about-title mb-1">Creator Focus</h3>
+                {postSectionCounts.length > 0 ? (
+                  <div className="profile-focus-chips">
+                    {postSectionCounts.map(([section, count]) => (
+                      <span key={`focus-${section}`} className="profile-focus-chip">
+                        {getSectionLabel(section)} · {count}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="profile-about-copy mb-0">No topic signals yet.</p>
+                )}
+              </article>
+
+              <article className="profile-about-card">
+                <h3 className="profile-about-title mb-1">Profile Snapshot</h3>
+                <div className="profile-about-stats">
+                  <span>{formatCount(profileSummary.followerCount)} followers</span>
+                  <span>{formatCount(profileSummary.followingCount)} following</span>
+                  <span>{formatCount(profileSummary.postCount)} posts</span>
+                  <span>{formatCount(profileSummary.spaceCount)} spaces</span>
+                  {profileSummary.joined ? <span>Joined {profileSummary.joined}</span> : null}
+                </div>
+              </article>
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === 'activity' ? (
+          <section className="profile-content-section">
+            <div className="profile-section-head">
+              <h2 className="profile-section-title mb-0">Activity</h2>
+              <span className="profile-section-count">{activityItems.length}</span>
+            </div>
+
+            {activityItems.length > 0 ? (
+              <div className="profile-activity-list">
+                {activityItems.map((item) => (
+                  <article key={`activity-${item.id}`} className="profile-activity-item">
+                    <div className="profile-activity-dot" aria-hidden="true" />
+                    <div className="profile-activity-copy">
+                      <p className="profile-activity-main mb-0">
+                        <span>{item.actionLabel}</span>
+                        <Link to={`/forum/post/${item.id}`}>{item.title}</Link>
+                      </p>
+                      <p className="profile-activity-meta mb-0">
+                        <span>{item.forumSlug ? <Link to={`/forum/${item.forumSlug}`}>{item.forumName}</Link> : item.forumName}</span>
+                        <span>{item.section}</span>
+                        <span>{formatActivityTime(item.timestamp)}</span>
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <section className="profile-empty-state">
+                <h3 className="my-posts-empty-title mb-0">No recent activity yet</h3>
+                <p className="my-posts-empty-copy mb-0">
+                  Activity will appear here as posts and participation grow.
+                </p>
+              </section>
+            )}
+          </section>
+        ) : null}
       </section>
     </div>
   );

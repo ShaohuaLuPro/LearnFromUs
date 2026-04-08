@@ -2,6 +2,7 @@ export type User = {
   id: string;
   name: string;
   email: string;
+  bio?: string;
   avatarUrl?: string;
   isAdmin?: boolean;
   adminPermissions?: SiteAdminPermissionKey[];
@@ -208,6 +209,7 @@ export type Comment = {
   authorId: string;
   authorName: string;
   authorEmail?: string;
+  authorAvatarUrl?: string;
   content: string;
   createdAt: number;
   updatedAt: number | null;

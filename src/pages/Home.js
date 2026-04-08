@@ -1,10 +1,12 @@
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MDEditor, { commands as mdCommands } from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
-import { apiDeleteMediaAsset, apiFollowForum, apiUnfollowForum, apiUploadMediaFile, buildMediaToken, resolveMediaSource } from '../api';
+import { apiDeleteMediaAsset, resolveMediaSource } from '../api';
 import Select from '../components/Select';
+import CoverImageUploader from '../components/post/CoverImageUploader';
+import FeedCard from '../components/feed/FeedCard';
 import { authStorage } from '../lib/authStorage';
 import {
   buildForumDirectory,
@@ -15,7 +17,6 @@ import {
 } from '../lib/forumInsights';
 import {
   getDefaultSectionValue,
-  getSectionLabel,
   getSectionOptions,
   getSectionSelectOptions,
   getSectionValues
@@ -62,18 +63,49 @@ const FEED_TIME_RANGE_OPTIONS = [
   { value: '30d', label: 'Past 30 days' }
 ];
 
-function getSparseFeedThreshold(viewportWidth) {
-  if (viewportWidth >= 1280) {
-    return 4;
-  }
-  if (viewportWidth >= 768) {
-    return 3;
-  }
-  return 2;
-}
-
 function getOptionLabel(options, value, fallback = '') {
   return options.find((option) => option.value === value)?.label || fallback;
+}
+
+function normalizeSectionValue(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function findMatchingSectionValue(sectionValue, candidates = []) {
+  const target = normalizeSectionValue(sectionValue);
+  if (!target) {
+    return '';
+  }
+
+  const match = candidates.find((candidate) => normalizeSectionValue(candidate) === target);
+  return match || String(sectionValue || '').trim();
+}
+
+function readAdminModeForUser(user) {
+  if (!user?.id) {
+    return false;
+  }
+
+  const hasAdminCapability = Boolean(
+    user.isAdmin
+    || user.hasAdminAccess
+    || user.canManageAdminAccess
+    || (user.adminPermissions || []).length > 0
+  );
+
+  if (!hasAdminCapability) {
+    return false;
+  }
+
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.sessionStorage.getItem(`tsumit.adminMode.${user.id}`) === '1';
+  } catch (_) {
+    return false;
+  }
 }
 
 function renderNativeSelectOptions(options) {
@@ -129,25 +161,22 @@ function getTextCardPreview(content) {
   return `${plainText.slice(0, 150).trimEnd()}...`;
 }
 
-function getAuthorInitial(name) {
-  const cleanName = String(name || '').trim();
-  if (!cleanName) {
-    return 'T';
-  }
-  return cleanName.slice(0, 1).toUpperCase();
-}
+function contentReferencesUploadedAsset(content, asset) {
+  const draftContent = String(content || '');
+  const references = [
+    asset?.token,
+    asset?.source,
+    asset?.storageUrl,
+    asset?.id ? `/api/media/${asset.id}` : ''
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
 
-function buildImageMarkdown(fileName, assetId) {
-  const altText = String(fileName || 'uploaded image')
-    .replace(/\.[^./\\]+$/, '')
-    .replace(/[-_]+/g, ' ')
-    .trim() || 'uploaded image';
-  return `\n![${altText}](${buildMediaToken(assetId)})\n`;
+  return references.some((reference) => draftContent.includes(reference));
 }
 
 function getUnusedUploadedAssets(uploadedAssets, content) {
-  const draftContent = String(content || '');
-  return uploadedAssets.filter((asset) => !draftContent.includes(asset.token));
+  return uploadedAssets.filter((asset) => !contentReferencesUploadedAsset(content, asset));
 }
 
 function getScopedDefaultSection(forum, forums) {
@@ -276,6 +305,9 @@ export default function Home({
   const navigate = useNavigate();
   const { sectionId, forumSlug } = useParams();
   const [searchParams] = useSearchParams();
+  const routeSectionValue = String(sectionId || '').trim();
+  const querySectionValue = String(searchParams.get('section') || '').trim();
+  const selectedRouteSection = routeSectionValue || querySectionValue;
   const selectedForumSlug = String(forumSlug || '').trim().toLowerCase();
   const selectedForum = useMemo(
     () => forums.find((forum) => forum.slug === selectedForumSlug) || null,
@@ -298,6 +330,10 @@ export default function Home({
   const sectionDisplayScope = useMemo(() => persistedSectionScope, [persistedSectionScope]);
   const visibleSections = useMemo(() => getSectionOptions(sectionDisplayScope), [sectionDisplayScope]);
   const visibleSectionValues = useMemo(() => visibleSections.map((item) => item.value), [visibleSections]);
+  const resolvedRouteSectionValue = useMemo(
+    () => findMatchingSectionValue(selectedRouteSection, visibleSectionValues),
+    [selectedRouteSection, visibleSectionValues]
+  );
   const [form, setForm] = useState({
     title: '',
     content: '',
@@ -310,7 +346,7 @@ export default function Home({
   const [searchQuery, setSearchQuery] = useState(currentFilters?.q || '');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const defaultSortMode = isAggregateView ? 'best' : 'hot';
-  const [selectedSections, setSelectedSections] = useState(sectionId ? [sectionId] : []);
+  const [selectedSections, setSelectedSections] = useState(selectedRouteSection ? [selectedRouteSection] : []);
   const [sortMode, setSortMode] = useState(defaultSortMode);
   const [timeRange, setTimeRange] = useState('all');
   const [composerLanguage, setComposerLanguage] = useState('javascript');
@@ -319,12 +355,9 @@ export default function Home({
   const [composerAiMessage, setComposerAiMessage] = useState('');
   const [composerAiLoading, setComposerAiLoading] = useState(false);
   const [composerAiAbortController, setComposerAiAbortController] = useState(null);
-  const [followPending, setFollowPending] = useState(false);
-  const [composerUploadMessage, setComposerUploadMessage] = useState('');
-  const [composerUploadLoading, setComposerUploadLoading] = useState(false);
+  const [isComposerCoverUploading, setIsComposerCoverUploading] = useState(false);
   const [composerUploadedAssets, setComposerUploadedAssets] = useState([]);
-  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1440 : window.innerWidth));
-  const composerFileInputRef = useRef(null);
+  const [isAdminModeEnabled, setIsAdminModeEnabled] = useState(() => readAdminModeForUser(currentUser));
 
   const forumDirectory = useMemo(() => buildForumDirectory(forums, posts), [forums, posts]);
 
@@ -340,32 +373,6 @@ export default function Home({
     }
     return nextMap;
   }, [forumDirectory]);
-  const followedForumCount = useMemo(
-    () => forums.filter((forum) => forum.isFollowing).length,
-    [forums]
-  );
-  const activeSortLabel = useMemo(
-    () => getOptionLabel(FEED_SORT_OPTIONS, sortMode, 'Best'),
-    [sortMode]
-  );
-  const activeTimeRangeLabel = useMemo(
-    () => getOptionLabel(FEED_TIME_RANGE_OPTIONS, timeRange, 'All time'),
-    [timeRange]
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-
-    const handleResize = () => {
-      setViewportWidth(window.innerWidth);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
   const preferredComposerForum = useMemo(() => {
     if (selectedForumOption) {
       return selectedForumOption;
@@ -405,7 +412,6 @@ export default function Home({
       tags: Array.isArray(draft.tags) ? draft.tags.join(', ') : String(draft.tags || '')
     });
     setMessage('');
-    setComposerUploadMessage('');
     setIsComposerOpen(true);
   }, [forums, preferredComposerForum, selectedForumOption]);
 
@@ -423,7 +429,10 @@ export default function Home({
       return timeFilteredPosts;
     }
 
-    return timeFilteredPosts.filter((post) => selectedSections.includes(post.section || fallbackSectionValue));
+    const selectedSectionSet = new Set(selectedSections.map((value) => normalizeSectionValue(value)));
+    return timeFilteredPosts.filter((post) =>
+      selectedSectionSet.has(normalizeSectionValue(post.section || fallbackSectionValue))
+    );
   }, [fallbackSectionValue, selectedSections, timeFilteredPosts]);
 
   const displayedPosts = useMemo(() => {
@@ -477,7 +486,6 @@ export default function Home({
       textPreview: getTextCardPreview(post.content)
     }))
   ), [displayedPosts]);
-  const useSparseFeedLayout = displayedFeedCards.length > 0 && displayedFeedCards.length <= getSparseFeedThreshold(viewportWidth);
 
   const sectionCounts = useMemo(() => {
     const counts = {};
@@ -560,10 +568,15 @@ export default function Home({
     }
     return '';
   }, [isAggregateView, selectedForum]);
+  const refineResultsPlaceholder = isAggregateView
+    ? 'Refine results'
+    : selectedRouteSection
+      ? 'Refine in this section'
+      : 'Refine in this space';
 
   useEffect(() => {
-    setSelectedSections(sectionId ? [sectionId] : []);
-  }, [sectionId, selectedForumSlug]);
+    setSelectedSections(resolvedRouteSectionValue ? [resolvedRouteSectionValue] : []);
+  }, [resolvedRouteSectionValue, selectedForumSlug]);
 
   useEffect(() => {
     setSortMode(defaultSortMode);
@@ -595,6 +608,37 @@ export default function Home({
       state: null
     });
   }, [applyComposerDraft, currentUser, location.pathname, location.search, location.state, navigate]);
+
+  useEffect(() => {
+    setIsAdminModeEnabled(readAdminModeForUser(currentUser));
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const syncAdminMode = (event) => {
+      if (!currentUser?.id) {
+        setIsAdminModeEnabled(false);
+        return;
+      }
+
+      const eventUserId = event?.detail?.userId;
+      if (eventUserId && eventUserId !== currentUser.id) {
+        return;
+      }
+
+      setIsAdminModeEnabled(readAdminModeForUser(currentUser));
+    };
+
+    window.addEventListener('tsumit:admin-mode-changed', syncAdminMode);
+    window.addEventListener('storage', syncAdminMode);
+    return () => {
+      window.removeEventListener('tsumit:admin-mode-changed', syncAdminMode);
+      window.removeEventListener('storage', syncAdminMode);
+    };
+  }, [currentUser]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -643,17 +687,27 @@ export default function Home({
 
   useEffect(() => {
     if (visibleSectionValues.length === 0) {
-      setSelectedSections([]);
       return;
     }
-    setSelectedSections((current) => current.filter((value) => visibleSectionValues.includes(value)));
-  }, [visibleSectionValues]);
+    setSelectedSections((current) => {
+      if (resolvedRouteSectionValue) {
+        return [resolvedRouteSectionValue];
+      }
+
+      return current
+        .map((value) => findMatchingSectionValue(value, visibleSectionValues))
+        .filter((value, index, list) => Boolean(value) && list.indexOf(value) === index);
+    });
+  }, [resolvedRouteSectionValue, visibleSectionValues]);
 
   const toggleSection = (sectionValue) => {
+    const resolvedValue = findMatchingSectionValue(sectionValue, visibleSectionValues);
+    const normalizedResolvedValue = normalizeSectionValue(resolvedValue);
+
     setSelectedSections((current) =>
-      current.includes(sectionValue)
-        ? current.filter((value) => value !== sectionValue)
-        : [...current, sectionValue]
+      current.some((value) => normalizeSectionValue(value) === normalizedResolvedValue)
+        ? current.filter((value) => normalizeSectionValue(value) !== normalizedResolvedValue)
+        : [...current, resolvedValue]
     );
   };
 
@@ -668,50 +722,15 @@ export default function Home({
     setSortMode(defaultSortMode);
   };
 
-  const selectedForumPermissions = selectedForum?.currentUserPermissions || [];
-  const canViewForumFollowers = Boolean(
-    currentUser && selectedForum && (
-      currentUser.isAdmin
-      || selectedForum.ownerId === currentUser.id
-      || selectedForumPermissions.includes('view_followers')
-    )
-  );
-
-  const isFollowingSelectedForum = Boolean(currentUser && selectedForum?.isFollowing);
-
-  const toggleForumFollow = async () => {
-    if (!currentUser) {
-      navigate('/login');
-      return;
-    }
-
-    const token = authStorage.getToken();
-    if (!token || !selectedForum?.id) {
-      navigate('/login');
-      return;
-    }
-
-    setFollowPending(true);
-    setMessage('');
-    try {
-      if (isFollowingSelectedForum) {
-        await apiUnfollowForum(selectedForum.id, token);
-      } else {
-        await apiFollowForum(selectedForum.id, token);
-      }
-      await onLoadForums();
-      setMessage(isFollowingSelectedForum ? 'Space removed from your saved list.' : 'Space saved to your list.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to update saved space.');
-    } finally {
-      setFollowPending(false);
-    }
-  };
-
   const submitPost = async (event) => {
     event.preventDefault();
     setMessage('');
     const publishedContent = form.content;
+
+    if (isComposerCoverUploading) {
+      setMessage('Please wait for the cover image upload to finish before publishing.');
+      return;
+    }
 
     if (!form.forumId) {
       setMessage('Choose a space first.');
@@ -742,7 +761,7 @@ export default function Home({
     setComposerAiOpen(false);
     setComposerAiInstruction('');
     setComposerAiMessage('');
-    setComposerUploadMessage('');
+    setIsComposerCoverUploading(false);
     setComposerUploadedAssets([]);
     setSearchQuery('');
     setSelectedSections([]);
@@ -762,46 +781,6 @@ export default function Home({
     }));
   };
 
-  const openComposerImagePicker = useCallback(() => {
-    composerFileInputRef.current?.click();
-  }, []);
-
-  const handleComposerImageSelected = useCallback(async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) {
-      return;
-    }
-
-    const token = authStorage.getToken();
-    if (!token) {
-      setMessage('Login expired. Please sign in again before uploading.');
-      return;
-    }
-
-    setMessage('');
-    setComposerUploadMessage('');
-    setComposerUploadLoading(true);
-    try {
-      const asset = await apiUploadMediaFile(file, token);
-      setComposerUploadedAssets((current) => (
-        current.some((entry) => entry.id === asset.id)
-          ? current
-          : [...current, { id: asset.id, token: buildMediaToken(asset.id) }]
-      ));
-      const imageMarkdown = buildImageMarkdown(file.name, asset.id);
-      setForm((prev) => ({
-        ...prev,
-        content: `${String(prev.content || '').trimEnd()}${imageMarkdown}`
-      }));
-      setComposerUploadMessage('Image uploaded and inserted into the draft.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to upload image.');
-    } finally {
-      setComposerUploadLoading(false);
-    }
-  }, []);
-
   const cleanupComposerAssets = useCallback(async (mode = 'all', content = '') => {
     if (composerUploadedAssets.length === 0) {
       return;
@@ -809,7 +788,9 @@ export default function Home({
 
     const token = authStorage.getToken();
     if (!token) {
-      setComposerUploadedAssets(mode === 'unused' ? composerUploadedAssets.filter((asset) => String(content || '').includes(asset.token)) : []);
+      setComposerUploadedAssets(mode === 'unused'
+        ? composerUploadedAssets.filter((asset) => contentReferencesUploadedAsset(content, asset))
+        : []);
       return;
     }
 
@@ -848,7 +829,7 @@ export default function Home({
     setComposerAiOpen(false);
     setComposerAiInstruction('');
     setComposerAiMessage('');
-    setComposerUploadMessage('');
+    setIsComposerCoverUploading(false);
     setComposerUploadedAssets([]);
     setIsComposerOpen(false);
   }, [cleanupComposerAssets, stopComposerAiRewrite]);
@@ -923,6 +904,11 @@ export default function Home({
   }, [composerAiInstruction, form, forums, onAiRewritePostDraft, preferredComposerForum, selectedForumOption]);
 
   const moderatePost = async (post) => {
+    if (!canManagePost(post)) {
+      setMessage('Admin mode is off. Enable admin mode to moderate posts.');
+      return;
+    }
+
     const forumId = post.forum?.id;
     if (!forumId) {
       setMessage('This post is not attached to a space yet.');
@@ -968,9 +954,21 @@ export default function Home({
 
     return mdCommands.getCommands().filter((command) => !['code', 'codeBlock'].includes(command?.name || command?.keyCommand || ''));
   }, [showComposerCodeTools]);
-  const canSiteModerate = Boolean(currentUser?.isAdmin || currentUser?.adminPermissions?.includes('moderation'));
+  const hasAdminCapability = Boolean(
+    currentUser?.isAdmin
+    || currentUser?.hasAdminAccess
+    || currentUser?.canManageAdminAccess
+    || (currentUser?.adminPermissions || []).length > 0
+  );
+  const canSiteModerate = Boolean(
+    isAdminModeEnabled
+    && (currentUser?.isAdmin || currentUser?.adminPermissions?.includes('moderation'))
+  );
   const canManagePost = (post) => {
     if (!currentUser || !post.forum?.id) {
+      return false;
+    }
+    if (hasAdminCapability && !isAdminModeEnabled) {
       return false;
     }
 
@@ -987,356 +985,143 @@ export default function Home({
   }
 
   return (
-    <div className="container page-shell">
-      <section className={`panel mb-4 forum-view-intro ${isAggregateView ? 'is-aggregate-view' : 'is-forum-view'}`.trim()}>
-        <div className="forum-view-intro-row">
-          <div className="forum-view-intro-main">
-            <div className="forum-view-intro-copy-block">
-              <div className="forum-view-intro-kicker-row">
-                <p className="type-kicker mb-0">{isAggregateView ? 'Community Feed' : 'Space'}</p>
-                <span className="forum-view-intro-status-pill">{isAggregateView ? 'Cross-space' : 'Live board'}</span>
-              </div>
-              <h3 className="mb-1 type-title-md">
-                {isAggregateView ? 'All spaces, one smart feed' : selectedForum?.name || 'Space'}
-              </h3>
-              <p className="forum-view-intro-copy mb-0">
-                {isAggregateView
-                  ? 'Posts here are prioritized by the spaces you follow, recent updates, and overall space activity.'
-                  : (selectedForum?.description || 'Browse posts and practical writeups from this space.')}
-              </p>
-              {isAggregateView && (
-                <div className="forum-view-intro-meta-row">
-                  <span className="forum-view-intro-badge">
-                    <strong>{forums.length}</strong>
-                    <span>Spaces in feed</span>
-                  </span>
-                  <span className="forum-view-intro-badge">
-                    <strong>{followedForumCount}</strong>
-                    <span>Following</span>
-                  </span>
-                  <span className="forum-view-intro-badge">
-                    <strong>{displayedPosts.length}</strong>
-                    <span>Visible posts</span>
-                  </span>
-                </div>
-              )}
-
-              {!isAggregateView && (
-                <div className="forum-view-intro-meta-row">
-                  <span className="forum-view-intro-badge">
-                    <strong>{selectedForum?.sectionScope?.length || 0}</strong>
-                    <span>Sections</span>
-                  </span>
-                  <span className="forum-view-intro-badge">
-                    <strong>{activeSortLabel}</strong>
-                    <span>Ranking</span>
-                  </span>
-                  <span className="forum-view-intro-badge">
-                    <strong>{activeTimeRangeLabel}</strong>
-                    <span>Time range</span>
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {selectedForum && (
-              <div className="forum-view-intro-stats">
-                <>
-                  <span className="forum-view-intro-stat">
-                    <strong>{selectedForum.followerCount ?? 0}</strong>
-                    <span>Followers</span>
-                  </span>
-                  <span className="forum-view-intro-stat">
-                    <strong>{selectedForum.livePostCount ?? selectedForum.postCount ?? 0}</strong>
-                    <span>Posts</span>
-                  </span>
-                </>
-              </div>
-            )}
-          </div>
-          <div className="forum-view-intro-actions">
-            <Link to="/explore" className="explore-intro-link text-decoration-none">
-              <span className="explore-intro-link-kicker">Discover</span>
-              <strong>Explore</strong>
-              <span className="explore-intro-link-copy">Browse more spaces and trending communities.</span>
-              <span className="explore-intro-link-footer">
-                <span>Space directory</span>
-                <span className="explore-intro-link-arrow" aria-hidden="true">↗</span>
-              </span>
-            </Link>
-            {selectedForum && (
-              <div className="forum-view-intro-action-row">
-                {canViewForumFollowers && (
-                  <Link
-                    to={`/forum/${selectedForum.slug}/followers`}
-                    className="forum-secondary-btn forum-intro-btn text-decoration-none"
-                  >
-                    View Followers
-                  </Link>
-                )}
-                {currentUser ? (
-                  <button
-                    type="button"
-                    className={`${isFollowingSelectedForum ? 'forum-secondary-btn' : 'forum-primary-btn'} forum-intro-btn`.trim()}
-                    onClick={toggleForumFollow}
-                    disabled={followPending}
-                  >
-                    {followPending ? 'Updating...' : isFollowingSelectedForum ? 'Unfollow Space' : 'Follow Space'}
-                  </button>
-                ) : (
-                  <Link to="/login" className="forum-secondary-btn forum-intro-btn text-decoration-none">
-                    Login to Follow
-                  </Link>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <div className="forum-layout">
+    <div className="container page-shell">
+      <div className="forum-layout community-feed-surface">
         <div className="forum-main forum-main-full">
-          <section className="panel mb-4 forum-filter-panel">
-            <div className="forum-sections-head mb-3">
-              <div>
-                <h3 className="mb-1 type-title-md">Filters</h3>
-                <p className="type-body mb-0">
-                  {isAggregateView
-                    ? 'Tune the feed with search, time window, and ranking filters across all spaces.'
-                    : 'Combine section, time window, and ranking filters inside this space.'}
-                </p>
-              </div>
-              {!isAggregateView && (
-                <div className="forum-sections-head-actions">
-                  <span className="muted">{sectionDisplayScope.length || 0} sections</span>
-                </div>
-              )}
+          <section className="community-feed-header mb-3" aria-label="Community feed controls">
+            <div className="community-feed-heading-row">
+              <h1 className="community-feed-title mb-0">{isAggregateView ? 'Community' : (selectedForum?.name || 'Community')}</h1>
+              <span className="community-feed-count">
+                {displayedPosts.length}
+                {posts.length !== displayedPosts.length ? ` of ${posts.length}` : ''} posts
+              </span>
             </div>
 
-            <div className="forum-filter-shell mb-3">
-              <div className="forum-filter-search-row">
-                <input
-                  className="form-control forum-input tag-search-input"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={isAggregateView ? 'Search posts across all spaces' : 'Search title, content, tags, author, section'}
-                />
-                {searchQuery && (
-                  <button type="button" className="forum-secondary-btn" onClick={() => setSearchQuery('')}>
-                    Clear Search
-                  </button>
-                )}
-              </div>
-
-              <div className="forum-filter-controls">
-                {currentUser && followedForumOptions.length > 1 && (
-                  <label className="forum-filter-control">
-                    <span className="forum-filter-control-label">Space scope</span>
-                    <div className="forum-native-select-wrap">
-                      <select
-                        className="forum-native-select"
-                        value={selectedFeedSwitcherValue}
-                        onChange={(e) => switchForumFeed(e.target.value)}
-                      >
-                        {renderNativeSelectOptions(followedForumOptions)}
-                      </select>
-                    </div>
-                  </label>
-                )}
-
-                <label className="forum-filter-control">
-                  <span className="forum-filter-control-label">Sort by</span>
+            <div className="community-feed-control-bar">
+              {currentUser && followedForumOptions.length > 1 && (
+                <label className="community-feed-control">
+                  <span className="community-feed-control-label">All spaces</span>
                   <div className="forum-native-select-wrap">
                     <select
                       className="forum-native-select"
-                      value={sortMode}
-                      onChange={(e) => setSortMode(e.target.value)}
+                      value={selectedFeedSwitcherValue}
+                      onChange={(e) => switchForumFeed(e.target.value)}
                     >
-                      {renderNativeSelectOptions(FEED_SORT_OPTIONS)}
+                      {renderNativeSelectOptions(followedForumOptions)}
                     </select>
                   </div>
                 </label>
-
-                <label className="forum-filter-control">
-                  <span className="forum-filter-control-label">Time range</span>
-                  <div className="forum-native-select-wrap">
-                    <select
-                      className="forum-native-select"
-                      value={timeRange}
-                      onChange={(e) => setTimeRange(e.target.value)}
-                    >
-                      {renderNativeSelectOptions(FEED_TIME_RANGE_OPTIONS)}
-                    </select>
-                  </div>
-                </label>
-              </div>
-
-              {(searchQuery || selectedSections.length > 0 || timeRange !== 'all' || sortMode !== defaultSortMode) && (
-                <div className="forum-filter-footer">
-                  <button type="button" className="forum-secondary-btn" onClick={resetFeedFilters}>
-                    Reset Filters
-                  </button>
-                </div>
               )}
+
+              <label className="community-feed-control">
+                <span className="community-feed-control-label">{getOptionLabel(FEED_SORT_OPTIONS, sortMode, 'Best')}</span>
+                <div className="forum-native-select-wrap">
+                  <select
+                    className="forum-native-select"
+                    value={sortMode}
+                    onChange={(e) => setSortMode(e.target.value)}
+                  >
+                    {renderNativeSelectOptions(FEED_SORT_OPTIONS)}
+                  </select>
+                </div>
+              </label>
+
+              <label className="community-feed-control">
+                <span className="community-feed-control-label">{getOptionLabel(FEED_TIME_RANGE_OPTIONS, timeRange, 'All time')}</span>
+                <div className="forum-native-select-wrap">
+                  <select
+                    className="forum-native-select"
+                    value={timeRange}
+                    onChange={(e) => setTimeRange(e.target.value)}
+                  >
+                    {renderNativeSelectOptions(FEED_TIME_RANGE_OPTIONS)}
+                  </select>
+                </div>
+              </label>
+
+              <label className="community-feed-control community-feed-control-search">
+                <span className="community-feed-control-label">Refine results</span>
+                <div className="community-feed-search">
+                  <input
+                    className="form-control forum-input tag-search-input"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={refineResultsPlaceholder}
+                    aria-label={refineResultsPlaceholder}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      className="community-feed-search-clear"
+                      onClick={() => setSearchQuery('')}
+                      aria-label="Clear refine filter"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </label>
             </div>
 
-            {!isAggregateView && (
-              <div className="section-grid">
-                <div className="section-card is-open">
-                  <div className="section-chip-wrap">
-                    {visibleSections.map((item) => (
-                      <div
-                        key={item.value}
-                        className="section-chip-row"
-                      >
-                        <button
-                          type="button"
-                          className={`section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`.trim()}
-                          onClick={() => toggleSection(item.value)}
-                        >
-                          <span>{item.label}</span>
-                          <span className="section-count">{sectionCounts[item.value] || 0}</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!isAggregateView && selectedSections.length > 0 && (
-              <div className="section-filter-row mt-3">
+            {!isAggregateView && visibleSections.length > 0 && (
+              <div className="community-feed-section-bar">
                 <button
                   type="button"
-                  className="section-filter is-active"
+                  className={`community-section-chip ${selectedSections.length === 0 ? 'is-active' : ''}`.trim()}
                   onClick={clearSections}
                 >
-                  Clear Sections
+                  <span>All Sections</span>
                 </button>
-                {selectedSections.map((sectionValue) => (
+                {visibleSections.map((item) => (
                   <button
-                    key={sectionValue}
+                    key={item.value}
                     type="button"
-                    className="section-filter"
-                    onClick={() => toggleSection(sectionValue)}
+                    className={`community-section-chip ${selectedSections.includes(item.value) ? 'is-active' : ''}`.trim()}
+                    onClick={() => toggleSection(item.value)}
                   >
-                    {getSectionLabel(sectionValue)}
+                    <span>{item.label}</span>
+                    <span className="community-section-chip-count">{sectionCounts[item.value] || 0}</span>
                   </button>
                 ))}
               </div>
             )}
+
+            {(searchQuery || selectedSections.length > 0 || timeRange !== 'all' || sortMode !== defaultSortMode) && (
+              <div className="community-feed-reset-row">
+                <button type="button" className="forum-secondary-btn community-feed-reset-btn" onClick={resetFeedFilters}>
+                  Reset
+                </button>
+              </div>
+            )}
           </section>
 
-          <section className="panel forum-feed-panel">
-            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-              <div>
-                <h3 className="mb-1 type-title-md">{isAggregateView ? 'Smart Feed' : 'Space Posts'}</h3>
-                <p className="muted mb-0">
-                  {isAggregateView
-                    ? 'Every post keeps its space label so users always know where it came from.'
-                    : 'Posts inside this space, ordered by your current filters.'}
-                </p>
-              </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
-                <span className="muted">
-                  {displayedPosts.length}
-                  {posts.length !== displayedPosts.length ? ` of ${posts.length}` : ''} posts
-                </span>
-                {!currentUser ? (
-                  <Link to="/login" className="forum-primary-btn text-decoration-none">
-                    Login to Post
-                  </Link>
-                ) : (
-                  <button type="button" className="forum-primary-btn" onClick={() => { setMessage(''); setIsComposerOpen(true); }}>
-                    Create a Post
-                  </button>
-                )}
-              </div>
+          <section className="forum-feed-panel">
+            <div className="community-feed-action-row">
+              {!currentUser ? (
+                <Link to="/login" className="forum-primary-btn text-decoration-none">
+                  Login to Post
+                </Link>
+              ) : (
+                <button type="button" className="forum-primary-btn" onClick={() => { setMessage(''); setIsComposerOpen(true); }}>
+                  Create a Post
+                </button>
+              )}
             </div>
 
             {message && <div className="settings-alert is-success mb-3">{message}</div>}
             {loadingPosts && <p className="muted mb-3">Refreshing posts...</p>}
 
-            <div className={`forum-feed ${useSparseFeedLayout ? 'is-sparse' : ''}`.trim()}>
+            <div className="forum-feed discovery-feed-grid">
               {displayedFeedCards.map(({ post, coverImage, textPreview }) => (
-                <article key={post.id} className="forum-post-card">
-                  <Link to={`/forum/post/${post.id}`} className="forum-post-cover-link">
-                    <div className={`forum-post-cover ${coverImage ? 'has-image' : 'is-title-only'}`.trim()}>
-                      {coverImage ? (
-                        <img
-                          src={coverImage}
-                          alt={post.title}
-                          className="forum-post-cover-image"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="forum-post-cover-fallback">
-                          <div className="forum-post-cover-fallback-copy">
-                            <span className="forum-post-cover-fallback-title">{post.title}</span>
-                          </div>
-                        </div>
-                      )}
-                      <div className="forum-post-cover-badges">
-                        {post.forum?.name && post.forum?.slug ? (
-                          <span className="forum-origin-chip">
-                            <span className="forum-origin-chip-label">Space</span>
-                            <span>{post.forum.name}</span>
-                          </span>
-                        ) : (
-                          <span className="forum-origin-chip is-static">
-                            <span className="forum-origin-chip-label">Space</span>
-                            <span>{post.forum?.name || 'General'}</span>
-                          </span>
-                        )}
-                        {!isAggregateView && (
-                          <span className="forum-tag">{getSectionLabel(post.section)}</span>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-
-                  <div className="forum-post-card-body">
-                    {coverImage && (
-                      <h5 className="mb-0 forum-post-card-title">
-                        <Link to={`/forum/post/${post.id}`} className="post-title-link">
-                          {post.title}
-                        </Link>
-                      </h5>
-                    )}
-
-                    {!coverImage && (
-                      <p className="mb-0 forum-post-card-summary">
-                        <Link to={`/forum/post/${post.id}`} className="forum-post-summary-link">
-                          {textPreview || post.title}
-                        </Link>
-                      </p>
-                    )}
-
-                    <div className="forum-post-card-meta">
-                      <Link to={`/users/${post.authorId}`} className="forum-post-author-link">
-                        {post.authorAvatarUrl ? (
-                          <img
-                            src={post.authorAvatarUrl}
-                            alt={post.authorName}
-                            className="forum-post-author-avatar-image"
-                          />
-                        ) : (
-                          <span className="forum-post-author-avatar" aria-hidden="true">{getAuthorInitial(post.authorName)}</span>
-                        )}
-                        <span className="forum-post-author-name">{post.authorName}</span>
-                      </Link>
-                      <span className="forum-post-card-views">{getPostViewCount(post)} views</span>
-                    </div>
-
-                    {canManagePost(post) && (
-                      <div className="forum-post-card-submeta">
-                        <button type="button" className="forum-danger-btn forum-post-card-remove" onClick={() => moderatePost(post)}>
-                          Remove
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </article>
+                <FeedCard
+                  key={post.id}
+                  post={post}
+                  coverImage={coverImage}
+                  textPreview={textPreview}
+                  isAggregateView={isAggregateView}
+                  canManage={canManagePost(post)}
+                  onModerate={() => moderatePost(post)}
+                />
               ))}
 
               {!loadingPosts && displayedPosts.length === 0 && (
@@ -1347,6 +1132,16 @@ export default function Home({
                 </p>
               )}
             </div>
+          </section>
+
+          <section className="community-feed-discover mt-4">
+            <div>
+              <h2 className="community-feed-discover-title mb-1">Discover more</h2>
+              <p className="community-feed-discover-copy mb-0">Explore spaces, trending topics, and creators.</p>
+            </div>
+            <Link to="/explore" className="community-feed-discover-link">
+              Open Explore
+            </Link>
           </section>
         </div>
       </div>
@@ -1420,12 +1215,21 @@ export default function Home({
 
               <div className="mb-2">
                 <label className="form-label">Content</label>
-                <input
-                  ref={composerFileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                  className="d-none"
-                  onChange={handleComposerImageSelected}
+                <CoverImageUploader
+                  content={form.content}
+                  onTransformContent={(transformer) => {
+                    setForm((prev) => ({ ...prev, content: transformer(String(prev.content || '')) }));
+                  }}
+                  onAssetUploaded={(asset) => {
+                    setComposerUploadedAssets((current) => (
+                      current.some((entry) => entry.id === asset.id)
+                        ? current
+                        : [...current, asset]
+                    ));
+                  }}
+                  onUploadingChange={setIsComposerCoverUploading}
+                  onError={(nextMessage) => setMessage(nextMessage)}
+                  className="mb-3"
                 />
                 {showComposerCodeTools && (
                   <div className="composer-toolbar">
@@ -1437,26 +1241,6 @@ export default function Home({
                     />
                     <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
                       Insert Code Block
-                    </button>
-                    <button
-                      type="button"
-                      className="forum-secondary-btn"
-                      disabled={composerUploadLoading}
-                      onClick={openComposerImagePicker}
-                    >
-                      {composerUploadLoading ? 'Uploading Image...' : 'Upload Image'}
-                    </button>
-                  </div>
-                )}
-                {!showComposerCodeTools && (
-                  <div className="composer-toolbar">
-                    <button
-                      type="button"
-                      className="forum-secondary-btn"
-                      disabled={composerUploadLoading}
-                      onClick={openComposerImagePicker}
-                    >
-                      {composerUploadLoading ? 'Uploading Image...' : 'Upload Image'}
                     </button>
                   </div>
                 )}
@@ -1477,7 +1261,6 @@ export default function Home({
                     ? 'Choose a language, insert a code block, then paste your code inside it.'
                     : 'This space keeps the composer simple, so the code block shortcut is hidden.'}
                 </div>
-                {composerUploadMessage && <div className="form-help">{composerUploadMessage}</div>}
               </div>
 
               <section className="settings-card mb-3">
@@ -1549,7 +1332,9 @@ export default function Home({
               {message && <p className="mt-3 mb-0 muted">{message}</p>}
 
               <div className="forum-actions mt-4">
-                <button type="submit" className="forum-primary-btn">Publish</button>
+                <button type="submit" className="forum-primary-btn" disabled={isComposerCoverUploading}>
+                  {isComposerCoverUploading ? 'Uploading Cover...' : 'Publish'}
+                </button>
                 <button type="button" className="forum-secondary-btn" onClick={closeComposer}>Cancel</button>
               </div>
             </form>

@@ -162,6 +162,14 @@ export function resolveMediaSource(source?: string | null) {
     return '';
   }
 
+  if (rawSource.startsWith('/api/media/')) {
+    return `${API_BASE_URL}${rawSource}`;
+  }
+
+  if (rawSource.startsWith('api/media/')) {
+    return `${API_BASE_URL}/${rawSource.replace(/^\/+/, '')}`;
+  }
+
   if (rawSource.startsWith(MEDIA_TOKEN_PREFIX)) {
     const assetId = rawSource.slice(MEDIA_TOKEN_PREFIX.length).trim();
     if (!assetId) {
@@ -251,6 +259,13 @@ export async function apiUpdateForumDetails(
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(input)
+  });
+}
+
+export async function apiDeleteForum(forumId: string, token: string) {
+  return request<{ ok: boolean; message?: string }>(`/api/forums/${forumId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
   });
 }
 
@@ -515,6 +530,17 @@ export async function apiGetUserProfile(userId: string, token?: string) {
   });
 }
 
+export async function apiSearchUsers(query: string, limit = 6, token?: string) {
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) {
+    return { users: [] as NetworkUser[] };
+  }
+
+  return request<{ users: NetworkUser[] }>(`/api/users/search${buildQuery({ q: cleanQuery, limit })}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+}
+
 export async function apiGetFollowing(token: string) {
   return request<{
     users: NetworkUser[];
@@ -660,7 +686,7 @@ export async function apiRejectForumManagerInvite(inviteId: string, token: strin
 }
 
 export async function apiUpdateProfile(
-  input: { name: string; avatarAssetId?: string; removeAvatar?: boolean },
+  input: { name: string; bio?: string; avatarAssetId?: string; removeAvatar?: boolean },
   token: string
 ) {
   return request<AuthResponse>('/api/account/profile', {

@@ -4,7 +4,6 @@ import IntroSection from '../components/home/IntroSection';
 import FeatureSection from '../components/home/FeatureSection';
 import ContentPreviewSection from '../components/home/ContentPreviewSection';
 import CTASection from '../components/home/CTASection';
-import FooterSection from '../components/home/FooterSection';
 import { buildHomeContent } from '../components/home/homeContent';
 import styles from '../components/home/HomePage.module.css';
 import { useHomeAssetPreload } from '../hooks/useHomeAssetPreload';
@@ -35,10 +34,7 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
     [currentUser, forumCountDisplay, sectionCountDisplay]
   );
   const { layout, focusProfile } = useResponsiveLayout();
-  const sectionIds = useMemo(
-    () => ['hero', 'intro', 'features', 'preview', 'cta', 'footer'],
-    []
-  );
+  const sectionIds = useMemo(() => ['hero', 'intro', 'features', 'preview', 'cta'], []);
   const { activeSectionId, getSectionRef } = useCenteredSection(sectionIds, focusProfile);
   useHomeAssetPreload(content.preview.collections.map((item) => item.image));
 
@@ -75,12 +71,6 @@ export default function Landing({ currentUser, forums = [], loadingForums = fals
         sceneId="cta"
         sceneRef={getSectionRef('cta')}
         isActive={activeSectionId === 'cta'}
-      />
-      <FooterSection
-        content={content.footer}
-        sceneId="footer"
-        sceneRef={getSectionRef('footer')}
-        isActive={activeSectionId === 'footer'}
       />
     </div>
   );

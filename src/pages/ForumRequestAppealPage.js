@@ -181,7 +181,7 @@ export default function ForumRequestAppealPage({
             <Link to="/forums/request/history" className="forum-primary-btn text-decoration-none">
               Request History
             </Link>
-            <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
+            <Link to="/my-spaces" className="forum-secondary-btn text-decoration-none">
               Back to My Spaces
             </Link>
           </div>

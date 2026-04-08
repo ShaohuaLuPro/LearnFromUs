@@ -1,4 +1,4 @@
-import { footerLegalLinks, landingFooterGroups } from '../siteChromeConfig';
+import { buildFooterContent } from '../siteChromeConfig';
 
 export const HOME_COLLECTIONS = [
   {
@@ -191,21 +191,6 @@ export function buildHomeContent({ currentUser, forumCountDisplay, sectionCountD
         }
       ]
     },
-    footer: {
-      eyebrow: 'Closing Frame',
-      title: 'A calm ending, built on the same system.',
-      description:
-        'The landing footer stays light and intentional so the page closes with clarity instead of collapsing into a crowded sitemap.',
-      groups: landingFooterGroups.map((group) => ({
-        ...group,
-        links: [...group.links]
-      })),
-      legal: [...footerLegalLinks],
-      brand: {
-        name: 'tsumit',
-        statement: 'Real execution, shared with enough structure to stay useful.',
-        copyright: `© ${new Date().getFullYear()} tsumit. All rights reserved.`
-      }
-    }
+    footer: buildFooterContent()
   };
 }

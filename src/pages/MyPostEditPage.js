@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
-import { apiDeleteMediaAsset, apiUploadMediaFile, buildMediaToken } from '../api';
+import { apiDeleteMediaAsset } from '../api';
 import MarkdownBlock from '../components/MarkdownBlock';
 import Select from '../components/Select';
+import CoverImageUploader from '../components/post/CoverImageUploader';
 import { authStorage } from '../lib/authStorage';
 import {
   getDefaultSectionValue,
@@ -51,17 +52,22 @@ function formatTime(timestamp) {
   });
 }
 
-function buildImageMarkdown(fileName, assetId) {
-  const altText = String(fileName || 'uploaded image')
-    .replace(/\.[^./\\]+$/, '')
-    .replace(/[-_]+/g, ' ')
-    .trim() || 'uploaded image';
-  return `\n![${altText}](${buildMediaToken(assetId)})\n`;
+function contentReferencesUploadedAsset(content, asset) {
+  const draftContent = String(content || '');
+  const references = [
+    asset?.token,
+    asset?.source,
+    asset?.storageUrl,
+    asset?.id ? `/api/media/${asset.id}` : ''
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  return references.some((reference) => draftContent.includes(reference));
 }
 
 function getUnusedUploadedAssets(uploadedAssets, content) {
-  const draftContent = String(content || '');
-  return uploadedAssets.filter((asset) => !draftContent.includes(asset.token));
+  return uploadedAssets.filter((asset) => !contentReferencesUploadedAsset(content, asset));
 }
 
 export default function MyPostEditPage({
@@ -87,10 +93,8 @@ export default function MyPostEditPage({
   const [aiRewriteMessage, setAiRewriteMessage] = useState('');
   const [aiRewriteLoading, setAiRewriteLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [imageUploadMessage, setImageUploadMessage] = useState('');
-  const [imageUploadLoading, setImageUploadLoading] = useState(false);
+  const [isCoverUploading, setIsCoverUploading] = useState(false);
   const [uploadedEditAssets, setUploadedEditAssets] = useState([]);
-  const imageFileInputRef = useRef(null);
 
   const cleanupUploadedEditAssets = useCallback(async (mode = 'all', content = '') => {
     if (uploadedEditAssets.length === 0) {
@@ -99,7 +103,9 @@ export default function MyPostEditPage({
 
     const token = authStorage.getToken();
     if (!token) {
-      setUploadedEditAssets(mode === 'unused' ? uploadedEditAssets.filter((asset) => String(content || '').includes(asset.token)) : []);
+      setUploadedEditAssets(mode === 'unused'
+        ? uploadedEditAssets.filter((asset) => contentReferencesUploadedAsset(content, asset))
+        : []);
       return;
     }
 
@@ -119,7 +125,7 @@ export default function MyPostEditPage({
     );
 
     if (mode === 'unused') {
-      setUploadedEditAssets((current) => current.filter((asset) => String(content || '').includes(asset.token)));
+      setUploadedEditAssets((current) => current.filter((asset) => contentReferencesUploadedAsset(content, asset)));
       return;
     }
 
@@ -176,6 +182,11 @@ export default function MyPostEditPage({
   const isPermanentlyDeleted = Boolean(post?.moderation?.isPermanentlyDeleted);
   const appealLog = post?.moderation?.appealLog || [];
   const hasAppealHistory = appealLog.length > 0 || Boolean(post?.moderation?.appealRequestedAt);
+  const postStatus = isPermanentlyDeleted
+    ? { label: 'Removed', tone: 'removed' }
+    : isModerated
+      ? { label: 'Under review', tone: 'review' }
+      : { label: 'Published', tone: 'published' };
 
   const goBack = useCallback(async () => {
     await cleanupUploadedEditAssets('all');
@@ -185,6 +196,10 @@ export default function MyPostEditPage({
   const submitEdit = async (event) => {
     event.preventDefault();
     if (!postId) {
+      return;
+    }
+    if (isCoverUploading) {
+      setError('Please wait for the cover image upload to finish before saving.');
       return;
     }
 
@@ -226,46 +241,6 @@ export default function MyPostEditPage({
       content: `${String(prev.content || '').trimEnd()}${snippet}`
     }));
   };
-
-  const openImagePicker = useCallback(() => {
-    imageFileInputRef.current?.click();
-  }, []);
-
-  const handleImageSelected = useCallback(async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) {
-      return;
-    }
-
-    const token = authStorage.getToken();
-    if (!token) {
-      setError('Login expired. Please sign in again before uploading.');
-      return;
-    }
-
-    setError('');
-    setImageUploadMessage('');
-    setImageUploadLoading(true);
-    try {
-      const asset = await apiUploadMediaFile(file, token);
-      setUploadedEditAssets((current) => (
-        current.some((entry) => entry.id === asset.id)
-          ? current
-          : [...current, { id: asset.id, token: buildMediaToken(asset.id) }]
-      ));
-      const imageMarkdown = buildImageMarkdown(file.name, asset.id);
-      setEditForm((prev) => ({
-        ...prev,
-        content: `${String(prev.content || '').trimEnd()}${imageMarkdown}`
-      }));
-      setImageUploadMessage('Image uploaded and inserted into the post.');
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to upload image.');
-    } finally {
-      setImageUploadLoading(false);
-    }
-  }, []);
 
   const runAiRewrite = async (instructionOverride) => {
     const instruction = String(instructionOverride || aiInstruction).trim();
@@ -359,264 +334,292 @@ export default function MyPostEditPage({
   }
 
   return (
-    <div className="container page-shell">
-      <section className="panel my-post-edit-panel">
-        <div className="my-post-edit-head">
-          <div>
-            <p className="type-kicker mb-2">Workspace</p>
-            <h2 className="mb-1 type-title-md">Edit Post</h2>
-            <p className="type-body mb-0">AI rewrite and delete live here now, so your My Posts list stays clean.</p>
-          </div>
-          <div className="forum-actions">
-            {hasAppealHistory && (
-              <Link to={`/my-posts/${post.id}/appeal`} className="forum-secondary-btn text-decoration-none">Appeal Record</Link>
-            )}
-            <Link to={`/forum/post/${post.id}`} className="forum-secondary-btn text-decoration-none">View Post</Link>
-            <button type="button" className="forum-secondary-btn" onClick={() => { void goBack(); }}>Back to My Posts</button>
-          </div>
-        </div>
+    <div className="container page-shell my-post-edit-page">
+      <div className="forum-layout my-post-edit-surface">
+        <div className="forum-main forum-main-full">
+          <section className="my-post-edit-header mb-3" aria-label="Edit post header">
+            <div className="my-post-edit-heading-row">
+              <div>
+                <h1 className="community-feed-title mb-1">Edit Post</h1>
+                <p className="my-post-edit-subtext mb-0">Refine your post with clear content editing and lightweight publishing controls.</p>
+              </div>
+              <div className="my-post-edit-header-actions">
+                {hasAppealHistory && (
+                  <Link to={`/my-posts/${post.id}/appeal`} className="forum-secondary-btn text-decoration-none">Appeal Record</Link>
+                )}
+                <Link to={`/forum/post/${post.id}`} className="forum-secondary-btn text-decoration-none">View Post</Link>
+                <button type="button" className="forum-secondary-btn" onClick={() => { void goBack(); }}>Back to My Posts</button>
+              </div>
+            </div>
 
-        <div className="my-post-edit-meta mb-3">
-          {post.forum?.name && post.forum?.slug ? (
-            <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip">
-              <span className="forum-origin-chip-label">Space</span>
-              <span>{post.forum.name}</span>
-            </Link>
-          ) : (
-            <span className="forum-origin-chip is-static">
-              <span className="forum-origin-chip-label">Space</span>
-              <span>{post.forum?.name || 'General'}</span>
-            </span>
-          )}
-          <span className="forum-tag">{getSectionLabel(post.section)}</span>
-          <span className="muted">Created {formatTime(post.createdAt)}</span>
-        </div>
-
-        {(message || error) && (
-          <div className={`settings-alert ${error ? 'is-error' : 'is-success'} mb-3`}>
-            {error || message}
-          </div>
-        )}
-
-        {(isModerated || hasAppealHistory) && (
-          <div className={`moderation-banner mb-3 ${isPermanentlyDeleted ? 'is-danger' : ''}`}>
-            <strong>
-              {isPermanentlyDeleted
-                ? 'Permanently deleted by admin.'
-                : isModerated
-                  ? 'Removed by admin.'
-                  : 'Moderation history.'}
-            </strong>{' '}
-            {isPermanentlyDeleted
-              ? (post.moderation.permanentDeleteNote || post.moderation.deletedReason || 'No final decision note provided.')
-              : isModerated
-                ? (post.moderation.deletedReason || 'No reason provided.')
-                : 'This post has a saved appeal record you can review from the appeal page.'}
-          </div>
-        )}
-
-        {isPermanentlyDeleted ? (
-          <section className="settings-card">
-            <h3 className="mb-2">Editing is closed for this post</h3>
-            <p className="muted mb-3">This post already has a final permanent delete decision, so it can no longer be edited.</p>
-            <div className="forum-actions">
-              {hasAppealHistory && (
-                <Link to={`/my-posts/${post.id}/appeal`} className="forum-secondary-btn text-decoration-none">Open Appeal Record</Link>
+            <div className="my-post-edit-summary-row">
+              {post.forum?.name && post.forum?.slug ? (
+                <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip">
+                  <span className="forum-origin-chip-label">Space</span>
+                  <span>{post.forum.name}</span>
+                </Link>
+              ) : (
+                <span className="forum-origin-chip is-static">
+                  <span className="forum-origin-chip-label">Space</span>
+                  <span>{post.forum?.name || 'General'}</span>
+                </span>
               )}
-              <button type="button" className="forum-secondary-btn" onClick={() => { void goBack(); }}>Back to My Posts</button>
+              <span className="forum-tag">{getSectionLabel(editForm.section || post.section)}</span>
+              <span className={`my-post-edit-status-pill is-${postStatus.tone}`}>{postStatus.label}</span>
+              <span className="my-post-edit-meta-chip">Created {formatTime(post.createdAt)}</span>
+              <span className="my-post-edit-meta-chip">Updated {formatTime(post.updatedAt || post.createdAt)}</span>
             </div>
           </section>
-        ) : (
-          <form onSubmit={submitEdit} className="forum-form">
-            {isModerated && (
-              <div className="moderation-banner mb-3">
-                <strong>Editing a moderated post.</strong>{' '}
-                Your changes will be saved, but the post will stay hidden until an admin restores it.
-              </div>
-            )}
 
-            <div className="mb-2">
-              <input
-                className="form-control forum-input"
-                value={editForm.title}
-                onChange={(event) => setEditForm((prev) => ({ ...prev, title: event.target.value }))}
-              />
+          {(message || error) && (
+            <div className={`settings-alert ${error ? 'is-error' : 'is-success'} mb-3`}>
+              {error || message}
             </div>
-            <div className="mb-2">
-              <Select
-                options={editSectionOptions}
-                value={editForm.section}
-                onChange={(nextValue) => setEditForm((prev) => ({ ...prev, section: nextValue }))}
-              />
+          )}
+
+          {(isModerated || hasAppealHistory) && (
+            <div className={`moderation-banner mb-3 ${isPermanentlyDeleted ? 'is-danger' : ''}`}>
+              <strong>
+                {isPermanentlyDeleted
+                  ? 'Permanently deleted by admin.'
+                  : isModerated
+                    ? 'Removed by admin.'
+                    : 'Moderation history.'}
+              </strong>{' '}
+              {isPermanentlyDeleted
+                ? (post.moderation.permanentDeleteNote || post.moderation.deletedReason || 'No final decision note provided.')
+                : isModerated
+                  ? (post.moderation.deletedReason || 'No reason provided.')
+                  : 'This post has a saved appeal record you can review from the appeal page.'}
             </div>
-            <div className="mb-2">
-              <input
-                className="form-control forum-input"
-                value={editForm.tags}
-                onChange={(event) => setEditForm((prev) => ({ ...prev, tags: event.target.value }))}
-              />
-            </div>
-            <div className="mb-2">
-              <input
-                ref={imageFileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                className="d-none"
-                onChange={handleImageSelected}
-              />
-              <div className="composer-toolbar">
-                <Select
-                  options={codeLanguageOptions}
-                  value={editorLanguage}
-                  onChange={setEditorLanguage}
-                  className="code-language-select"
-                />
-                <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
-                  Insert Code Block
-                </button>
-                <button
-                  type="button"
-                  className="forum-secondary-btn"
-                  disabled={imageUploadLoading}
-                  onClick={openImagePicker}
-                >
-                  {imageUploadLoading ? 'Uploading Image...' : 'Upload Image'}
-                </button>
-                <button
-                  type="button"
-                  className="forum-secondary-btn"
-                  onClick={() => setAiRewriteOpen((current) => !current)}
-                >
-                  {aiRewriteOpen ? 'Hide AI Rewrite' : 'Open AI Rewrite'}
-                </button>
-                <button
-                  type="button"
-                  className="forum-secondary-btn"
-                  onClick={() => setShowPreview((current) => !current)}
-                >
-                  {showPreview ? 'Hide Preview' : 'Show Preview'}
-                </button>
-              </div>
-              <div data-color-mode="light" className="markdown-editor-shell">
-                <MDEditor
-                  value={editForm.content}
-                  onChange={(value) => setEditForm((prev) => ({ ...prev, content: value || '' }))}
-                  preview="edit"
-                  height={320}
-                />
-              </div>
-              {imageUploadMessage && <div className="form-help mt-2">{imageUploadMessage}</div>}
+          )}
 
-              {showPreview && (
-                <section className="settings-card mt-3 my-posts-preview-shell">
-                  <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                    <div>
-                      <h4 className="mb-1">Post Preview</h4>
-                      <p className="muted mb-0">This is how the post will roughly look after publishing.</p>
-                    </div>
-                    <div className="forum-post-kicker">
-                      {post.forum?.name && post.forum?.slug ? (
-                        <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip">
-                          <span className="forum-origin-chip-label">Space</span>
-                          <span>{post.forum.name}</span>
-                        </Link>
-                      ) : (
-                        <span className="forum-origin-chip is-static">
-                          <span className="forum-origin-chip-label">Space</span>
-                          <span>{post.forum?.name || 'General'}</span>
-                        </span>
-                      )}
-                      <span className="forum-tag">{getSectionLabel(editForm.section)}</span>
-                    </div>
-                  </div>
-
-                  <h3 className="post-detail-title my-posts-preview-title">{editForm.title || 'Untitled draft'}</h3>
-
-                  {!!String(editForm.tags || '').trim() && (
-                    <div className="post-tag-row mb-3">
-                      {String(editForm.tags)
-                        .split(',')
-                        .map((tag) => tag.trim())
-                        .filter(Boolean)
-                        .map((tag) => (
-                          <span key={`preview-${tag}`} className="post-tag-pill">#{tag}</span>
-                        ))}
-                    </div>
-                  )}
-
-                  <MarkdownBlock content={editForm.content} className="post-detail-content my-posts-preview-content" />
-                </section>
-              )}
-            </div>
-
-            {aiRewriteOpen && (
-              <section className="settings-card mb-3">
-                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                  <div>
-                    <h4 className="mb-1">AI Rewrite</h4>
-                    <p className="muted mb-0">Use OpenAI to polish, shorten, expand, or restyle this post draft.</p>
-                  </div>
-                  <span className="muted">Works on the current editor content</span>
-                </div>
-
-                <div className="forum-actions mb-3">
-                  {AI_REWRITE_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className="forum-secondary-btn"
-                      disabled={aiRewriteLoading}
-                      onClick={() => {
-                        setAiInstruction(preset.instruction);
-                        runAiRewrite(preset.instruction);
-                      }}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-
-                <label className="form-label">Custom instruction</label>
-                <textarea
-                  className="form-control forum-input"
-                  rows={3}
-                  value={aiInstruction}
-                  onChange={(event) => setAiInstruction(event.target.value)}
-                  placeholder="Example: tighten the intro, keep the technical details, and make the conclusion more actionable."
-                />
-                <div className="forum-actions mt-3">
-                  {aiRewriteLoading && (
-                    <button
-                      type="button"
-                      className="forum-secondary-btn"
-                      onClick={stopAiRewrite}
-                    >
-                      Stop
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="forum-primary-btn"
-                    disabled={aiRewriteLoading}
-                    onClick={() => runAiRewrite()}
-                  >
-                    {aiRewriteLoading ? 'Rewriting...' : 'Rewrite with AI'}
-                  </button>
-                </div>
-                {aiRewriteMessage && <p className="muted mt-3 mb-0">{aiRewriteMessage}</p>}
-              </section>
-            )}
-
-            <div className="my-post-edit-footer">
+          {isPermanentlyDeleted ? (
+            <section className="settings-card my-post-edit-locked-card">
+              <h3 className="mb-2">Editing is closed for this post</h3>
+              <p className="muted mb-3">This post already has a final permanent delete decision, so it can no longer be edited.</p>
               <div className="forum-actions">
-                <button type="submit" className="forum-primary-btn">Save</button>
-                <button type="button" className="forum-secondary-btn" onClick={() => { void goBack(); }}>Cancel</button>
+                {hasAppealHistory && (
+                  <Link to={`/my-posts/${post.id}/appeal`} className="forum-secondary-btn text-decoration-none">Open Appeal Record</Link>
+                )}
+                <button type="button" className="forum-secondary-btn" onClick={() => { void goBack(); }}>Back to My Posts</button>
               </div>
-              <button type="button" className="forum-danger-btn" onClick={handleDelete}>Delete Post</button>
-            </div>
-          </form>
-        )}
-      </section>
+            </section>
+          ) : (
+            <form onSubmit={submitEdit} className="my-post-edit-workspace">
+              <section className="my-post-edit-main-column">
+                {isModerated && (
+                  <div className="moderation-banner">
+                    <strong>Editing a moderated post.</strong>{' '}
+                    Your changes will be saved, but the post will stay hidden until an admin restores it.
+                  </div>
+                )}
+
+                <article className="my-post-edit-card is-title-card">
+                  <label className="form-label" htmlFor="edit-post-title">Title</label>
+                  <input
+                    id="edit-post-title"
+                    className="form-control forum-input my-post-edit-input"
+                    value={editForm.title}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, title: event.target.value }))}
+                    placeholder="Write a clear, specific title"
+                    autoComplete="off"
+                  />
+                </article>
+
+                <article className="my-post-edit-card">
+                  <div className="my-post-edit-card-head">
+                    <div>
+                      <h3 className="my-post-edit-card-title mb-1">Content</h3>
+                      <p className="muted mb-0">Focus on clarity and structure so readers can scan quickly.</p>
+                    </div>
+                  </div>
+
+                  <CoverImageUploader
+                    content={editForm.content}
+                    onTransformContent={(transformer) => {
+                      setEditForm((prev) => ({ ...prev, content: transformer(String(prev.content || '')) }));
+                    }}
+                    onAssetUploaded={(asset) => {
+                      setUploadedEditAssets((current) => (
+                        current.some((entry) => entry.id === asset.id)
+                          ? current
+                          : [...current, asset]
+                      ));
+                    }}
+                    onUploadingChange={setIsCoverUploading}
+                    onError={(nextMessage) => setError(nextMessage)}
+                    className="mb-3"
+                  />
+
+                  <div className="my-post-edit-toolbar">
+                    <Select
+                      options={codeLanguageOptions}
+                      value={editorLanguage}
+                      onChange={setEditorLanguage}
+                      className="code-language-select"
+                    />
+                    <button type="button" className="forum-secondary-btn" onClick={insertCodeTemplate}>
+                      Insert Code Block
+                    </button>
+                    <button
+                      type="button"
+                      className="forum-secondary-btn"
+                      onClick={() => setAiRewriteOpen((current) => !current)}
+                    >
+                      {aiRewriteOpen ? 'Hide AI Rewrite' : 'Open AI Rewrite'}
+                    </button>
+                    <button
+                      type="button"
+                      className="forum-secondary-btn"
+                      onClick={() => setShowPreview((current) => !current)}
+                    >
+                      {showPreview ? 'Hide Preview' : 'Show Preview'}
+                    </button>
+                  </div>
+
+                  <div data-color-mode="light" className="markdown-editor-shell my-post-edit-editor-shell">
+                    <MDEditor
+                      value={editForm.content}
+                      onChange={(value) => setEditForm((prev) => ({ ...prev, content: value || '' }))}
+                      preview="edit"
+                      height={420}
+                    />
+                  </div>
+                </article>
+
+                {aiRewriteOpen && (
+                  <article className="my-post-edit-card">
+                    <div className="my-post-edit-card-head">
+                      <div>
+                        <h3 className="my-post-edit-card-title mb-1">AI Rewrite</h3>
+                        <p className="muted mb-0">Polish, shorten, expand, or restyle this draft while you edit.</p>
+                      </div>
+                      <span className="my-post-edit-card-note">Works on current editor content</span>
+                    </div>
+
+                    <div className="forum-actions mb-3">
+                      {AI_REWRITE_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className="forum-secondary-btn"
+                          disabled={aiRewriteLoading}
+                          onClick={() => {
+                            setAiInstruction(preset.instruction);
+                            runAiRewrite(preset.instruction);
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <label className="form-label" htmlFor="ai-rewrite-custom-instruction">Custom instruction</label>
+                    <textarea
+                      id="ai-rewrite-custom-instruction"
+                      className="form-control forum-input my-post-edit-textarea"
+                      rows={3}
+                      value={aiInstruction}
+                      onChange={(event) => setAiInstruction(event.target.value)}
+                      placeholder="Example: tighten the intro, keep the technical details, and make the conclusion more actionable."
+                    />
+                    <div className="forum-actions mt-3">
+                      {aiRewriteLoading && (
+                        <button
+                          type="button"
+                          className="forum-secondary-btn"
+                          onClick={stopAiRewrite}
+                        >
+                          Stop
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="forum-primary-btn"
+                        disabled={aiRewriteLoading}
+                        onClick={() => runAiRewrite()}
+                      >
+                        {aiRewriteLoading ? 'Rewriting...' : 'Rewrite with AI'}
+                      </button>
+                    </div>
+                    {aiRewriteMessage && <p className="muted mt-3 mb-0">{aiRewriteMessage}</p>}
+                  </article>
+                )}
+
+                {showPreview && (
+                  <article className="my-post-edit-card my-post-edit-preview-card">
+                    <div className="my-post-edit-card-head">
+                      <div>
+                        <h3 className="my-post-edit-card-title mb-1">Preview</h3>
+                        <p className="muted mb-0">A live preview of your post content.</p>
+                      </div>
+                    </div>
+
+                    <h3 className="post-detail-title my-posts-preview-title">{editForm.title || 'Untitled draft'}</h3>
+
+                    {!!String(editForm.tags || '').trim() && (
+                      <div className="post-tag-row mb-3">
+                        {String(editForm.tags)
+                          .split(',')
+                          .map((tag) => tag.trim())
+                          .filter(Boolean)
+                          .map((tag) => (
+                            <span key={`preview-${tag}`} className="post-tag-pill">#{tag}</span>
+                          ))}
+                      </div>
+                    )}
+
+                    <MarkdownBlock content={editForm.content} className="post-detail-content my-posts-preview-content" />
+                  </article>
+                )}
+              </section>
+
+              <aside className="my-post-edit-side-column">
+                <article className="my-post-edit-card is-side-card">
+                  <h3 className="my-post-edit-card-title mb-2">Post Settings</h3>
+
+                  <label className="form-label mb-2">Section</label>
+                  <Select
+                    options={editSectionOptions}
+                    value={editForm.section}
+                    onChange={(nextValue) => setEditForm((prev) => ({ ...prev, section: nextValue }))}
+                  />
+
+                  <label className="form-label mt-3 mb-2" htmlFor="edit-post-tags">Tags</label>
+                  <input
+                    id="edit-post-tags"
+                    className="form-control forum-input my-post-edit-input"
+                    value={editForm.tags}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, tags: event.target.value }))}
+                    placeholder="react, auth, postgres"
+                    autoComplete="off"
+                  />
+
+                  <p className="my-post-edit-helper mb-0">Separate tags with commas.</p>
+                </article>
+
+                <article className="my-post-edit-card is-side-card">
+                  <h3 className="my-post-edit-card-title mb-2">Save Changes</h3>
+                  <div className="my-post-edit-save-actions">
+                    <button type="submit" className="forum-primary-btn" disabled={isCoverUploading}>
+                      {isCoverUploading ? 'Uploading Cover...' : 'Save'}
+                    </button>
+                    <button type="button" className="forum-secondary-btn" onClick={() => { void goBack(); }}>Cancel</button>
+                  </div>
+                  <p className="my-post-edit-helper mb-0">Your edits update this post in place.</p>
+                </article>
+
+                <article className="my-post-edit-card is-side-card is-danger-zone">
+                  <h3 className="my-post-edit-card-title mb-2">Danger Zone</h3>
+                  <p className="my-post-edit-helper mb-2">Delete this post permanently. This action cannot be undone.</p>
+                  <button type="button" className="forum-danger-btn" onClick={handleDelete}>Delete Post</button>
+                </article>
+              </aside>
+            </form>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

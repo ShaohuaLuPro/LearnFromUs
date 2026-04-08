@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { apiRecordPostView } from '../api';
+import { apiRecordPostView, resolveMediaSource } from '../api';
+import Avatar from '../components/Avatar';
 import MarkdownBlock from '../components/MarkdownBlock';
 import { applySeo, buildCanonical, buildPageTitle, DEFAULT_DESCRIPTION } from '../lib/seo';
 
@@ -19,6 +20,29 @@ function getSectionLabel(value) {
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function readAdminModeForUser(user) {
+  if (!user?.id) {
+    return false;
+  }
+
+  const hasAdminCapability = Boolean(
+    user.isAdmin
+    || user.hasAdminAccess
+    || user.canManageAdminAccess
+    || (user.adminPermissions || []).length > 0
+  );
+
+  if (!hasAdminCapability || typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.sessionStorage.getItem(`tsumit.adminMode.${user.id}`) === '1';
+  } catch (_) {
+    return false;
+  }
 }
 
 export default function PostDetail({
@@ -42,7 +66,17 @@ export default function PostDetail({
   const [error, setError] = useState('');
   const [commentMessage, setCommentMessage] = useState('');
   const [commentError, setCommentError] = useState('');
-  const canSiteModerate = Boolean(currentUser?.isAdmin || currentUser?.adminPermissions?.includes('moderation'));
+  const [isAdminModeEnabled, setIsAdminModeEnabled] = useState(() => readAdminModeForUser(currentUser));
+  const hasAdminCapability = Boolean(
+    currentUser?.isAdmin
+    || currentUser?.hasAdminAccess
+    || currentUser?.canManageAdminAccess
+    || (currentUser?.adminPermissions || []).length > 0
+  );
+  const canSiteModerate = Boolean(
+    isAdminModeEnabled
+    && (currentUser?.isAdmin || currentUser?.adminPermissions?.includes('moderation'))
+  );
 
   useEffect(() => {
     if (!post) {
@@ -124,9 +158,51 @@ export default function PostDetail({
     void apiRecordPostView(postId).catch(() => {});
   }, [postId]);
 
+  useEffect(() => {
+    setIsAdminModeEnabled(readAdminModeForUser(currentUser));
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const syncAdminMode = (event) => {
+      if (!currentUser?.id) {
+        setIsAdminModeEnabled(false);
+        return;
+      }
+
+      const eventUserId = event?.detail?.userId;
+      if (eventUserId && eventUserId !== currentUser.id) {
+        return;
+      }
+
+      setIsAdminModeEnabled(readAdminModeForUser(currentUser));
+    };
+
+    window.addEventListener('tsumit:admin-mode-changed', syncAdminMode);
+    window.addEventListener('storage', syncAdminMode);
+    return () => {
+      window.removeEventListener('tsumit:admin-mode-changed', syncAdminMode);
+      window.removeEventListener('storage', syncAdminMode);
+    };
+  }, [currentUser]);
+
   const removePost = async () => {
     setError('');
     setMessage('');
+
+    if (!post?.forum?.id || !currentUser) {
+      setError('You do not have permission to remove this post.');
+      return;
+    }
+
+    if (hasAdminCapability && !isAdminModeEnabled) {
+      setError('Admin mode is off. Enable Admin mode to access moderation actions.');
+      return;
+    }
+
     const result = canSiteModerate
       ? await onAdminRemovePost(postId, reason)
       : await onOwnerRemovePost(post.forum?.id || '', postId, reason);
@@ -187,8 +263,22 @@ export default function PostDetail({
   }
 
   const canModeratePost = Boolean(
-    currentUser && post?.forum?.ownerId && (canSiteModerate || post.forum.ownerId === currentUser.id)
+    currentUser
+    && post?.forum?.ownerId
+    && !(hasAdminCapability && !isAdminModeEnabled)
+    && (canSiteModerate || post.forum.ownerId === currentUser.id)
   );
+  const normalizedSection = String(post?.section || '').trim();
+  const scopedSections = Array.isArray(post?.forum?.sectionScope) ? post.forum.sectionScope : [];
+  const resolvedSectionValue = scopedSections.find(
+    (value) => String(value || '').trim().toLowerCase() === normalizedSection.toLowerCase()
+  ) || normalizedSection;
+  const sectionLinkTarget = resolvedSectionValue
+    ? (post?.forum?.slug
+      ? `/forum/${post.forum.slug}/section/${encodeURIComponent(resolvedSectionValue)}`
+      : `/forum?section=${encodeURIComponent(resolvedSectionValue)}`)
+    : '';
+
   return (
     <div className="container page-shell">
       <section className="panel post-detail-shell">
@@ -200,24 +290,43 @@ export default function PostDetail({
         </div>
 
         <div className="post-detail-meta">
-          {post.forum?.slug ? (
-            <Link to={`/forum/${post.forum.slug}`} className="forum-origin-chip text-decoration-none">
-              <span className="forum-origin-chip-label">Space</span>
-              <span>{post.forum.name}</span>
+          <div className="post-detail-meta-inline">
+            <Link to={`/users/${post.authorId}`} className="post-author-link post-detail-author-link">
+              <Avatar
+                imageUrl={resolveMediaSource(post.authorAvatarUrl)}
+                name={post.authorName}
+                size={34}
+                className="post-detail-author-avatar"
+              />
+              <span className="post-detail-author-name">{post.authorName}</span>
             </Link>
-          ) : post.forum?.name ? (
-            <span className="forum-origin-chip is-static">
-              <span className="forum-origin-chip-label">Space</span>
-              <span>{post.forum.name}</span>
-            </span>
-          ) : null}
-          <span className="forum-tag">{getSectionLabel(post.section)}</span>
-          <span className="muted">
-            Posted by{' '}
-            <Link to={`/users/${post.authorId}`} className="post-author-link">
-              {post.authorName}
-            </Link>
-          </span>
+
+            {!!post.forum?.name && (
+              <>
+                <span className="post-detail-meta-separator" aria-hidden="true">·</span>
+                {post.forum?.slug ? (
+                  <Link to={`/forum/${post.forum.slug}`} className="post-detail-context-link">
+                    {post.forum.name}
+                  </Link>
+                ) : (
+                  <span className="post-detail-context-text">{post.forum.name}</span>
+                )}
+              </>
+            )}
+
+            {!!resolvedSectionValue && (
+              <>
+                <span className="post-detail-meta-separator" aria-hidden="true">·</span>
+                {sectionLinkTarget ? (
+                  <Link to={sectionLinkTarget} className="post-detail-context-link">
+                    {getSectionLabel(resolvedSectionValue)}
+                  </Link>
+                ) : (
+                  <span className="post-detail-context-text">{getSectionLabel(resolvedSectionValue)}</span>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {(message || error) && (
@@ -296,8 +405,14 @@ export default function PostDetail({
               comments.map((comment) => (
                 <article key={comment.id} className="post-comment-card">
                   <div className="post-comment-meta">
-                    <Link to={`/users/${comment.authorId}`} className="post-author-link">
-                      {comment.authorName}
+                    <Link to={`/users/${comment.authorId}`} className="post-author-link post-comment-author-link">
+                      <Avatar
+                        imageUrl={resolveMediaSource(comment.authorAvatarUrl)}
+                        name={comment.authorName}
+                        size={34}
+                        className="post-comment-avatar"
+                      />
+                      <span className="post-comment-author-name">{comment.authorName}</span>
                     </Link>
                     <span className="muted">{formatTime(comment.createdAt)}</span>
                   </div>

@@ -168,12 +168,12 @@ export default function MyForumManagers({ currentUser, forums = [], onLoadForums
 
       await apiRemoveForumManager(forumId, managerId, token);
       await onLoadForums?.();
-      window.location.assign('/my-forums');
+      window.location.assign('/my-spaces');
     });
   };
 
   if ((forumId && forums.length > 0 && !selectedForum) || (!loading && !selectedManager)) {
-    return <Navigate to="/my-forums" replace />;
+    return <Navigate to="/my-spaces" replace />;
   }
 
   return (
@@ -187,7 +187,7 @@ export default function MyForumManagers({ currentUser, forums = [], onLoadForums
               Review and update the detailed permissions for this space manager.
             </p>
           </div>
-          <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
+          <Link to="/my-spaces" className="forum-secondary-btn text-decoration-none">
             Back to My Spaces
           </Link>
         </div>

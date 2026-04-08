@@ -297,7 +297,9 @@ export default function Home({
   onCreatePost,
   onAiRewritePostDraft,
   onUpdateForumSections,
-  onOwnerRemovePost
+  onOwnerRemovePost,
+  onToggleLike,
+  onToggleBookmark
 }) {
   void pagination;
   void onUpdateForumSections;
@@ -924,6 +926,14 @@ export default function Home({
     setMessage(result.message || (result.ok ? 'Post removed.' : 'Failed to remove post.'));
   };
 
+  const handleToggleLike = useCallback(async (postId, nextLiked) => {
+    return onToggleLike(postId, nextLiked);
+  }, [onToggleLike]);
+
+  const handleToggleBookmark = useCallback(async (postId, nextBookmarked) => {
+    return onToggleBookmark(postId, nextBookmarked);
+  }, [onToggleBookmark]);
+
   const switchForumFeed = (nextValue) => {
     if (!nextValue || nextValue === selectedFeedSwitcherValue) {
       return;
@@ -1119,6 +1129,9 @@ export default function Home({
                   coverImage={coverImage}
                   textPreview={textPreview}
                   isAggregateView={isAggregateView}
+                  currentUser={currentUser}
+                  onToggleLike={handleToggleLike}
+                  onToggleBookmark={handleToggleBookmark}
                   canManage={canManagePost(post)}
                   onModerate={() => moderatePost(post)}
                 />

@@ -68,7 +68,39 @@ function buildPublicPostsWhere(filters) {
   };
 }
 
-async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
+function buildInteractionSelect(viewerId, params) {
+  if (!viewerId) {
+    return `
+      COALESCE((SELECT COUNT(*)::int FROM post_like pl WHERE pl.post_id = p.id), 0) AS like_count,
+      COALESCE((SELECT COUNT(*)::int FROM post_bookmark pb WHERE pb.post_id = p.id), 0) AS bookmark_count,
+      FALSE AS viewer_has_liked,
+      FALSE AS viewer_has_bookmarked
+    `;
+  }
+
+  params.push(viewerId, viewerId);
+  const likeViewerIndex = params.length - 1;
+  const bookmarkViewerIndex = params.length;
+
+  return `
+    COALESCE((SELECT COUNT(*)::int FROM post_like pl WHERE pl.post_id = p.id), 0) AS like_count,
+    COALESCE((SELECT COUNT(*)::int FROM post_bookmark pb WHERE pb.post_id = p.id), 0) AS bookmark_count,
+    EXISTS (
+      SELECT 1
+      FROM post_like viewer_like
+      WHERE viewer_like.post_id = p.id
+        AND viewer_like.user_id = $${likeViewerIndex}
+    ) AS viewer_has_liked,
+    EXISTS (
+      SELECT 1
+      FROM post_bookmark viewer_bookmark
+      WHERE viewer_bookmark.post_id = p.id
+        AND viewer_bookmark.user_id = $${bookmarkViewerIndex}
+    ) AS viewer_has_bookmarked
+  `;
+}
+
+async function listPublicPosts(pool, mapPostRow, filtersInput = {}, viewerId = '') {
   const filters = parsePostListFilters(filtersInput);
   const { whereSql, params } = buildPublicPostsWhere(filters);
   const client = await pool.connect();
@@ -84,6 +116,7 @@ async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
     );
 
     const queryParams = [...params];
+    const interactionSelect = buildInteractionSelect(viewerId, queryParams);
     let limitOffsetSql = '';
     if (filters.pageSize !== 'all') {
       queryParams.push(filters.pageSize, filters.offset);
@@ -97,6 +130,7 @@ async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
               u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
               f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
+              ${interactionSelect},
               COALESCE(f.section_scope, '{}') AS forum_section_scope,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
               COUNT(DISTINCT c.id)::int AS comment_count
@@ -135,14 +169,17 @@ async function listPublicPosts(pool, mapPostRow, filtersInput = {}) {
   }
 }
 
-async function getPublicPostById(pool, mapPostRow, postId) {
+async function getPublicPostById(pool, mapPostRow, postId, viewerId = '') {
   const client = await pool.connect();
   try {
+    const params = [postId];
+    const interactionSelect = buildInteractionSelect(viewerId, params);
     const result = await client.query(
       `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
               p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
               u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
               f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
+              ${interactionSelect},
               COALESCE(f.section_scope, '{}') AS forum_section_scope,
               COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
               COUNT(DISTINCT c.id)::int AS comment_count
@@ -156,7 +193,7 @@ async function getPublicPostById(pool, mapPostRow, postId) {
          AND p.is_published = TRUE
          AND p.deleted_by_admin_at IS NULL
        GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, f.section_scope`,
-      [postId]
+      params
     );
 
     return result.rows[0] ? mapPostRow(result.rows[0]) : null;

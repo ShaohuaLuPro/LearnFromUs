@@ -202,7 +202,6 @@ body.sidebar-collapsed {
 
 .type-title-lg,
 .landing-title,
-.app-loading-title,
 .post-detail-title,
 .section-title,
 h1 {
@@ -255,7 +254,6 @@ label,
 .feature-card,
 .hero-card,
 .goodbye-card,
-.app-loading-card,
 .auth-card,
 .forum-view-intro,
 .forum-post-card,
@@ -1074,8 +1072,7 @@ button:disabled,
 
 .forum-post-cover-fallback::before,
 .landing-principle-card::before,
-.landing-principle-card::after,
-.app-loading-glow {
+.landing-principle-card::after {
   content: none !important;
   display: none !important;
 }
@@ -3152,28 +3149,6 @@ button:disabled,
   padding: 24px !important;
 }
 
-.app-loading-shell {
-  background: var(--bg);
-}
-
-.app-loading-card {
-  max-width: 760px;
-  padding: 32px !important;
-}
-
-.app-loading-badge {
-  background: var(--surface-muted);
-  color: var(--brand);
-}
-
-.app-loading-copy {
-  color: var(--text-secondary);
-}
-
-.app-loading-skeleton {
-  background: var(--surface-muted);
-}
-
 .site-footer,
 .landing-hero,
 .landing-principle-card,
@@ -3609,7 +3584,6 @@ button:disabled,
 
   .type-title-lg,
   .landing-title,
-  .app-loading-title,
   .post-detail-title,
   h1 {
     font-size: 30px;
@@ -3690,7 +3664,6 @@ button:disabled,
 .feature-card,
 .hero-card,
 .goodbye-card,
-.app-loading-card,
 .auth-card,
 .forum-view-intro,
 .forum-post-card,
@@ -3990,7 +3963,6 @@ textarea.form-control,
 
 .industry-card-content,
 .landing-stat-card,
-.app-loading-card,
 .footer-meta {
   padding: 24px;
 }
@@ -5232,6 +5204,13 @@ body.search-mode-active {
   text-decoration: none;
 }
 
+.discovery-post-author-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
 .discovery-post-author-avatar,
 .discovery-post-author-avatar-image {
   width: 1.22rem;
@@ -5254,6 +5233,15 @@ body.search-mode-active {
 .discovery-post-author-name {
   color: #475569;
   font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.discovery-post-publish-date {
+  color: #94a3b8;
+  font-size: 0.66rem;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -5284,6 +5272,123 @@ body.search-mode-active {
 
 .discovery-post-remove-btn:hover {
   color: #991b1b;
+}
+
+.post-engagement-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.post-engagement-bar.is-compact {
+  margin-top: 0.2rem;
+}
+
+.post-engagement-bar.is-detail {
+  margin-bottom: 0.25rem;
+}
+
+.post-engagement-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  border-radius: 999px;
+  padding: 0.42rem 0.72rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+}
+
+.post-engagement-btn:hover:not(:disabled) {
+  color: #1e293b;
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  transform: translateY(-1px);
+}
+
+.post-engagement-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.post-engagement-btn.is-active {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fff5f5;
+}
+
+.post-engagement-btn.is-bookmarked {
+  color: #0f766e;
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.post-engagement-btn-icon {
+  width: 0.92rem;
+  height: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.post-engagement-btn-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.post-engagement-btn-count {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.forum-recommendations-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.forum-recommendations-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.forum-recommendation-tag-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.forum-recommendation-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.28rem 0.6rem;
+}
+
+.saved-posts-empty-state {
+  display: grid;
+  justify-items: flex-start;
+  gap: 0.9rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  padding: 1.5rem;
 }
 
 .my-posts-surface {
@@ -6041,6 +6146,69 @@ body.search-mode-active {
   color: var(--brand);
 }
 
+.platform-sidebar-footer {
+  margin-top: auto;
+  padding: 14px 8px 4px;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  display: grid;
+  gap: 8px;
+}
+
+.platform-sidebar-footer-brand {
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.platform-sidebar-footer-brand:hover {
+  color: var(--brand);
+}
+
+.platform-sidebar-footer-copy,
+.platform-sidebar-footer-meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.platform-sidebar-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.platform-sidebar-footer-link {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.platform-sidebar-footer-link:hover {
+  color: var(--text-main);
+}
+
+.platform-sidebar-footer.is-collapsed {
+  justify-items: center;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.platform-sidebar-footer.is-drawer {
+  margin-top: auto;
+  padding-top: 16px;
+  padding-bottom: 0;
+}
+
+.platform-sidebar-footer.is-drawer .platform-sidebar-footer-copy,
+.platform-sidebar-footer.is-drawer .platform-sidebar-footer-meta {
+  display: none;
+}
+
 .platform-sidebar.is-collapsed {
   padding-left: 8px;
   padding-right: 8px;
@@ -6551,8 +6719,10 @@ body.search-mode-active {
 }
 
 .platform-mobile-drawer-body {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
+  min-height: 100%;
 }
 
 .platform-sidebar-nav.is-drawer .platform-sidebar-link {

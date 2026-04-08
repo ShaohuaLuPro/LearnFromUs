@@ -392,6 +392,9 @@ export default function UserProfile({ currentUser, forums = [] }) {
                 <Link to="/my-posts" className="forum-secondary-btn text-decoration-none">
                   My Posts
                 </Link>
+                <Link to="/saved" className="forum-secondary-btn text-decoration-none">
+                  Saved
+                </Link>
                 <Link to="/my-spaces" className="forum-secondary-btn text-decoration-none">
                   My Spaces
                 </Link>

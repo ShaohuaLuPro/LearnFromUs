@@ -4,6 +4,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { apiGetPosts, apiSearchUsers } from '../api';
 import type { Forum, NetworkUser, Post } from '../types';
 import Avatar from './Avatar';
+import SidebarFooter from './SidebarFooter';
 import SidebarToggleButton from './SidebarToggleButton';
 import {
   GLOBAL_SEARCH_PLACEHOLDER,
@@ -27,6 +28,7 @@ type HeaderProps = {
   forums: Forum[];
   posts: Post[];
   onLogout: () => void;
+  showSidebarFooter?: boolean;
 };
 
 type DropdownItem = {
@@ -154,7 +156,7 @@ function SparkIcon() {
   );
 }
 
-export default function Header({ currentUser, forums, posts, onLogout }: HeaderProps) {
+export default function Header({ currentUser, forums, posts, onLogout, showSidebarFooter = true }: HeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isDesktop, setIsDesktop] = useState(() => (
@@ -694,6 +696,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     () => currentUser ? [
       { key: 'profile', label: 'My Profile', to: `/users/${currentUser.id}` },
       { key: 'posts', label: 'My Posts', to: '/my-posts' },
+      { key: 'saved', label: 'Saved', to: '/saved' },
       { key: 'spaces', label: 'My Spaces', to: '/my-spaces' },
       { key: 'following', label: 'Following', to: '/following' },
       { key: 'settings', label: 'Settings', to: '/settings' }
@@ -922,6 +925,14 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     );
   };
 
+  const renderSidebarFooter = (isDrawer = false) => {
+    if (!showSidebarFooter) {
+      return null;
+    }
+
+    return <SidebarFooter collapsed={isSidebarCollapsed && !isDrawer} isDrawer={isDrawer} />;
+  };
+
   return (
     <>
       <aside className={`platform-sidebar ${isSidebarCollapsed ? 'is-collapsed' : ''}`.trim()} aria-label="Primary navigation sidebar">
@@ -935,6 +946,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
         </div>
         {renderSidebarNav(false)}
         {renderSidebarSpaces(false)}
+        {renderSidebarFooter(false)}
       </aside>
 
       <header className="platform-topbar">
@@ -1109,6 +1121,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
         <Offcanvas.Body className="platform-mobile-drawer-body">
           {renderSidebarNav(true)}
           {renderSidebarSpaces(true)}
+          {renderSidebarFooter(true)}
         </Offcanvas.Body>
       </Offcanvas>
 

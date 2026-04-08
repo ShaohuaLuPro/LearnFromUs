@@ -17,10 +17,12 @@ import type {
   MediaVisibility,
   NetworkUser,
   Post,
+  PostInteractionState,
   PostListFilters,
   PostListResponse,
   SiteAdminAccessPayload,
   SiteAdminAccessEntry,
+  UserInterestTag,
   User,
   WorkspacePostLink,
   WritingStyleProfile
@@ -152,6 +154,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export { TOKEN_KEY };
+export function resolveApiUrl(path: string) {
+  const cleanPath = String(path || '').trim();
+  if (!cleanPath) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(cleanPath)) {
+    return cleanPath;
+  }
+
+  return `${API_BASE_URL}${cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`}`;
+}
+
 export function buildMediaToken(assetId: string) {
   return `${MEDIA_TOKEN_PREFIX}${String(assetId || '').trim()}`;
 }
@@ -163,11 +178,11 @@ export function resolveMediaSource(source?: string | null) {
   }
 
   if (rawSource.startsWith('/api/media/')) {
-    return `${API_BASE_URL}${rawSource}`;
+    return resolveApiUrl(rawSource);
   }
 
   if (rawSource.startsWith('api/media/')) {
-    return `${API_BASE_URL}/${rawSource.replace(/^\/+/, '')}`;
+    return resolveApiUrl(rawSource);
   }
 
   if (rawSource.startsWith(MEDIA_TOKEN_PREFIX)) {
@@ -175,7 +190,7 @@ export function resolveMediaSource(source?: string | null) {
     if (!assetId) {
       return '';
     }
-    return `${API_BASE_URL}/api/media/${encodeURIComponent(assetId)}`;
+    return resolveApiUrl(`/api/media/${encodeURIComponent(assetId)}`);
   }
 
   return rawSource;
@@ -215,8 +230,10 @@ export async function apiMe(token: string) {
   });
 }
 
-export async function apiGetPosts(filters: PostListFilters = {}) {
-  return request<PostListResponse>(`/api/posts${buildQuery(filters as Record<string, string | number | string[] | undefined>)}`);
+export async function apiGetPosts(filters: PostListFilters = {}, token?: string) {
+  return request<PostListResponse>(`/api/posts${buildQuery(filters as Record<string, string | number | string[] | undefined>)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
 }
 
 export async function apiGetForums(token?: string) {
@@ -269,17 +286,86 @@ export async function apiDeleteForum(forumId: string, token: string) {
   });
 }
 
-export async function apiGetPost(postId: string) {
-  return request<{ post: Post }>(`/api/posts/${postId}`);
+export async function apiGetPost(postId: string, token?: string) {
+  return request<{ post: Post }>(`/api/posts/${postId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
 }
 
 export async function apiGetComments(postId: string) {
   return request<{ comments: Comment[] }>(`/api/posts/${postId}/comments`);
 }
 
-export async function apiRecordPostView(postId: string) {
+export async function apiRecordPostView(postId: string, token?: string) {
   return request<{ ok: boolean; viewCount: number }>(`/api/posts/${postId}/view`, {
-    method: 'POST'
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+}
+
+export async function apiTrackPostEngagement(
+  postId: string,
+  input: { dwellTimeMs: number; source?: string },
+  token: string
+) {
+  return request<{ ok: boolean; tracked: boolean; dwellTimeMs: number }>(`/api/posts/${postId}/engagement`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function apiLikePost(postId: string, token: string) {
+  return request<{ ok: boolean } & PostInteractionState>(`/api/posts/${postId}/like`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiUnlikePost(postId: string, token: string) {
+  return request<{ ok: boolean } & PostInteractionState>(`/api/posts/${postId}/like`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiBookmarkPost(postId: string, token: string) {
+  return request<{ ok: boolean } & PostInteractionState>(`/api/posts/${postId}/bookmark`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiRemovePostBookmark(postId: string, token: string) {
+  return request<{ ok: boolean } & PostInteractionState>(`/api/posts/${postId}/bookmark`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiGetSavedPosts(token: string) {
+  return request<{ posts: Post[] }>('/api/account/saved-posts', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiGetRecommendedPosts(token: string, limit = 8) {
+  return request<{
+    posts: Post[];
+    topTags: UserInterestTag[];
+    fallback: boolean;
+    weights: Record<string, number>;
+  }>(`/api/posts/recommended${buildQuery({ limit })}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function apiGetInterestSummary(token: string, limit = 24) {
+  return request<{
+    tags: UserInterestTag[];
+    weights: Record<string, number>;
+  }>(`/api/account/interests${buildQuery({ limit })}`, {
+    headers: { Authorization: `Bearer ${token}` }
   });
 }
 

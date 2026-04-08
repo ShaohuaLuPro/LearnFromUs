@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { apiRecordPostView, resolveMediaSource } from '../api';
+import { apiRecordPostView, apiTrackPostEngagement, resolveMediaSource } from '../api';
 import Avatar from '../components/Avatar';
 import MarkdownBlock from '../components/MarkdownBlock';
+import PostEngagementBar from '../components/post/PostEngagementBar';
+import { authStorage } from '../lib/authStorage';
 import { applySeo, buildCanonical, buildPageTitle, DEFAULT_DESCRIPTION } from '../lib/seo';
 
 function formatTime(timestamp) {
@@ -50,6 +52,8 @@ export default function PostDetail({
   onAdminRemovePost,
   onOwnerRemovePost,
   onGetPostDetail,
+  onToggleLike,
+  onToggleBookmark,
   onGetComments,
   onCreateComment
 }) {
@@ -67,6 +71,7 @@ export default function PostDetail({
   const [commentMessage, setCommentMessage] = useState('');
   const [commentError, setCommentError] = useState('');
   const [isAdminModeEnabled, setIsAdminModeEnabled] = useState(() => readAdminModeForUser(currentUser));
+  const engagementSessionRef = useRef({ lastVisibleAt: 0, accruedMs: 0 });
   const hasAdminCapability = Boolean(
     currentUser?.isAdmin
     || currentUser?.hasAdminAccess
@@ -155,8 +160,63 @@ export default function PostDetail({
     }
 
     window.sessionStorage.setItem(storageKey, String(Date.now()));
-    void apiRecordPostView(postId).catch(() => {});
+    void apiRecordPostView(postId, authStorage.getToken() || undefined).catch(() => {});
   }, [postId]);
+
+  useEffect(() => {
+    if (!postId || !currentUser?.id || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const token = authStorage.getToken();
+    if (!token) {
+      return undefined;
+    }
+
+    const session = engagementSessionRef.current;
+    session.accruedMs = 0;
+    session.lastVisibleAt = document.visibilityState === 'hidden' ? 0 : Date.now();
+
+    const flushDwellTime = () => {
+      if (session.lastVisibleAt) {
+        session.accruedMs += Date.now() - session.lastVisibleAt;
+        session.lastVisibleAt = 0;
+      }
+
+      const dwellTimeMs = Math.trunc(session.accruedMs);
+      if (dwellTimeMs < 1500) {
+        return;
+      }
+
+      session.accruedMs = 0;
+      void apiTrackPostEngagement(postId, { dwellTimeMs, source: 'post_detail' }, token)
+        .catch(() => {
+          session.accruedMs += dwellTimeMs;
+        });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushDwellTime();
+        return;
+      }
+
+      if (!session.lastVisibleAt) {
+        session.lastVisibleAt = Date.now();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', flushDwellTime);
+    window.addEventListener('beforeunload', flushDwellTime);
+
+    return () => {
+      flushDwellTime();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', flushDwellTime);
+      window.removeEventListener('beforeunload', flushDwellTime);
+    };
+  }, [currentUser?.id, postId]);
 
   useEffect(() => {
     setIsAdminModeEnabled(readAdminModeForUser(currentUser));
@@ -236,6 +296,25 @@ export default function PostDetail({
     setComments((current) => [...current, result.comment]);
     setCommentContent('');
     setCommentMessage('Comment posted.');
+  };
+
+  const syncInteractionState = (interaction) => {
+    if (!interaction?.postId) {
+      return;
+    }
+
+    setPost((current) => (
+      current && current.id === interaction.postId
+        ? {
+          ...current,
+          likeCount: interaction.likeCount,
+          bookmarkCount: interaction.bookmarkCount,
+          isLiked: interaction.isLiked,
+          isBookmarked: interaction.isBookmarked,
+          savedAt: interaction.savedAt ?? null
+        }
+        : current
+    ));
   };
 
   if (loading) {
@@ -346,6 +425,15 @@ export default function PostDetail({
             ))}
           </div>
         )}
+
+        <PostEngagementBar
+          post={post}
+          currentUser={currentUser}
+          onToggleLike={onToggleLike}
+          onToggleBookmark={onToggleBookmark}
+          onStateChange={syncInteractionState}
+          className="mb-3"
+        />
 
         <MarkdownBlock content={post.content} />
 

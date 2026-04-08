@@ -193,6 +193,12 @@ export type Post = {
   updatedAt: number | null;
   viewCount?: number;
   commentCount?: number;
+  likeCount?: number;
+  bookmarkCount?: number;
+  isLiked?: boolean;
+  isBookmarked?: boolean;
+  savedAt?: number | null;
+  interestScore?: number | null;
   authorId: string;
   authorName: string;
   authorEmail?: string;
@@ -238,6 +244,26 @@ export type PostListResponse = {
     forum?: string;
     section: string[];
   };
+};
+
+export type PostInteractionState = {
+  postId: string;
+  likeCount: number;
+  bookmarkCount: number;
+  isLiked: boolean;
+  isBookmarked: boolean;
+  savedAt?: number | null;
+};
+
+export type UserInterestTag = {
+  tag: string;
+  score: number;
+  likeCount: number;
+  bookmarkCount: number;
+  clickCount: number;
+  repeatVisitCount: number;
+  dwellTimeMs: number;
+  updatedAt: number | null;
 };
 
 export type MediaAssetStatus = 'pending' | 'uploaded' | 'failed' | 'deleted';

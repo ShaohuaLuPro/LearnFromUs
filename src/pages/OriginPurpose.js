@@ -40,7 +40,7 @@ export default function OriginPurpose() {
           {ORIGIN_PANELS.map((panel) => (
             <article key={panel.key} className={`about-origin-panel about-origin-panel-${panel.key}`}>
               <div className="about-origin-copy">
-                <h3 className="about-story-title about-origin-panel-title mb-2">{panel.lead}</h3>
+                <h3 className="about-story-title about-origin-panel-title mb-0">{panel.lead}</h3>
                 {panel.key === 'vision' ? (
                   <div className="about-origin-copy-stack">
                     <p className="about-story-copy mb-0">

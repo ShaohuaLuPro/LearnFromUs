@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { getSectionLabel } from '../../lib/sections';
+import PostEngagementBar from '../post/PostEngagementBar';
 
 function getAuthorInitial(name) {
   const cleanName = String(name || '').trim();
@@ -21,11 +22,27 @@ function formatViewCount(value) {
   return String(count);
 }
 
+function formatPublishDate(value) {
+  const timestamp = Number(value || 0);
+  if (!timestamp) {
+    return '';
+  }
+
+  return new Date(timestamp).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+}
+
 export default function FeedCard({
   post,
   coverImage,
   textPreview,
   isAggregateView,
+  currentUser,
+  onToggleLike,
+  onToggleBookmark,
   canManage,
   onModerate
 }) {
@@ -34,6 +51,7 @@ export default function FeedCard({
   const authorLink = `/users/${post.authorId}`;
   const sectionLabel = getSectionLabel(post.section);
   const forumName = post.forum?.name || 'General';
+  const publishDate = formatPublishDate(post.createdAt);
 
   return (
     <article className={`discovery-post-tile ${hasImage ? 'has-image' : 'is-text-cover'}`.trim()}>
@@ -80,10 +98,23 @@ export default function FeedCard({
             ) : (
               <span className="discovery-post-author-avatar" aria-hidden="true">{getAuthorInitial(post.authorName)}</span>
             )}
-            <span className="discovery-post-author-name">{post.authorName}</span>
+            <span className="discovery-post-author-copy">
+              <span className="discovery-post-author-name">{post.authorName}</span>
+              {publishDate ? <span className="discovery-post-publish-date">Published {publishDate}</span> : null}
+            </span>
           </Link>
           <span className="discovery-post-views">{formatViewCount(post.viewCount)} views</span>
         </div>
+
+        {(onToggleLike || onToggleBookmark) ? (
+          <PostEngagementBar
+            post={post}
+            currentUser={currentUser}
+            onToggleLike={onToggleLike}
+            onToggleBookmark={onToggleBookmark}
+            compact
+          />
+        ) : null}
 
         {canManage ? (
           <div className="discovery-post-tools">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AgentChatbox from './components/AgentChatbox';
 import Footer from './components/Footer';
 import Header from './components/Header';
@@ -35,31 +35,16 @@ import MyPosts from './pages/MyPosts';
 import PostAppealRecordPage from './pages/PostAppealRecordPage';
 import PostDetail from './pages/PostDetail';
 import Privacy from './pages/Privacy';
+import SavedPosts from './pages/SavedPosts';
 import Settings from './pages/Settings';
 import Terms from './pages/Terms';
 import UserProfile from './pages/UserProfile';
 
-function LoadingShell() {
+function RoutePendingState() {
   return (
-    <div className="app-loading-shell">
-      <div className="container">
-        <section className="app-loading-card">
-          <div className="app-loading-badge">Starting up</div>
-          <h1 className="app-loading-title">Waking up the tsumit backend.</h1>
-          <p className="app-loading-copy">
-            The API is running on a free instance, so the first request can take a moment while the
-            server resumes.
-          </p>
-
-          <div className="app-loading-glow" />
-
-          <div className="app-loading-skeletons">
-            <div className="app-loading-skeleton app-loading-skeleton-wide" />
-            <div className="app-loading-skeleton app-loading-skeleton-mid" />
-            <div className="app-loading-skeleton app-loading-skeleton-card" />
-            <div className="app-loading-skeleton app-loading-skeleton-card" />
-          </div>
-        </section>
+    <div className="container page-shell">
+      <div className="panel">
+        <p className="muted mb-0">Loading...</p>
       </div>
     </div>
   );
@@ -68,14 +53,43 @@ function LoadingShell() {
 export default function AppRoutes() {
   const auth = useAuth();
   const posts = usePosts();
+  const location = useLocation();
+  const authPendingElement = <RoutePendingState />;
   const canManageAdminAccess = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.canManageAdminAccess);
   const canModerate = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('moderation'));
   const canViewAnalytics = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('analytics'));
   const canReviewForumRequests = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('forum_requests'));
   const canResetPasswords = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('password_reset'));
-  if (auth.authLoading || (!posts.initialized && posts.loadingPosts)) {
-    return <LoadingShell />;
-  }
+  const showMainFooter = (
+    location.pathname === '/'
+    || location.pathname === '/origin-purpose'
+    || location.pathname === '/terms'
+    || location.pathname === '/privacy'
+    || location.pathname === '/legal'
+    || location.pathname === '/goodbye'
+    || location.pathname.startsWith('/about')
+  );
+
+  const requireUser = (element: React.ReactNode) => {
+    if (auth.authLoading) {
+      return authPendingElement;
+    }
+    return auth.currentUser ? element : <Navigate to="/login" replace />;
+  };
+
+  const requireCapability = (allowed: boolean, element: React.ReactNode, redirectTo = '/forum') => {
+    if (auth.authLoading) {
+      return authPendingElement;
+    }
+    return allowed ? element : <Navigate to={redirectTo} replace />;
+  };
+
+  const requireGuest = (element: React.ReactNode) => {
+    if (auth.authLoading) {
+      return authPendingElement;
+    }
+    return auth.currentUser ? <Navigate to="/forum" replace /> : element;
+  };
 
   const updateProfile = async (
     { name, bio, avatarAssetId, removeAvatar }: { name: string; bio?: string; avatarAssetId?: string; removeAvatar?: boolean }
@@ -100,7 +114,13 @@ export default function AppRoutes() {
     <div className="app-wrapper app-platform">
       <RouteSeo />
       <ScrollToTop />
-      <Header currentUser={auth.currentUser} forums={posts.forums} posts={posts.posts} onLogout={auth.logout} />
+      <Header
+        currentUser={auth.currentUser}
+        forums={posts.forums}
+        posts={posts.posts}
+        onLogout={auth.logout}
+        showSidebarFooter={!showMainFooter}
+      />
       <div className="app-platform-main-column">
         <main className="app-main app-main-platform">
           <Routes>
@@ -122,6 +142,9 @@ export default function AppRoutes() {
                 posts={posts.posts}
                 currentUser={auth.currentUser}
                 onLoadForums={posts.loadForums}
+                onGetRecommendedPosts={posts.getRecommendedPosts}
+                onToggleLike={posts.setPostLike}
+                onToggleBookmark={posts.setPostBookmark}
               />
             )}
           />
@@ -141,6 +164,8 @@ export default function AppRoutes() {
                 onAiRewritePostDraft={posts.aiRewritePostDraft}
                 onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
+                onToggleLike={posts.setPostLike}
+                onToggleBookmark={posts.setPostBookmark}
               />
             )}
           />
@@ -160,18 +185,18 @@ export default function AppRoutes() {
                 onAiRewritePostDraft={posts.aiRewritePostDraft}
                 onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
+                onToggleLike={posts.setPostLike}
+                onToggleBookmark={posts.setPostBookmark}
               />
             )}
           />
           <Route
             path="/forum/:forumSlug/followers"
-            element={auth.currentUser ? (
+            element={requireUser(
               <ForumFollowersPage
                 currentUser={auth.currentUser}
                 forums={posts.forums}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
@@ -190,6 +215,8 @@ export default function AppRoutes() {
                 onAiRewritePostDraft={posts.aiRewritePostDraft}
                 onUpdateForumSections={posts.updateForumSections}
                 onOwnerRemovePost={posts.ownerRemovePost}
+                onToggleLike={posts.setPostLike}
+                onToggleBookmark={posts.setPostBookmark}
               />
             )}
           />
@@ -216,88 +243,88 @@ export default function AppRoutes() {
           />
           <Route
             path="/following"
-            element={auth.currentUser ? (
+            element={requireUser(
               <Following
                 forums={posts.forums}
                 currentUser={auth.currentUser}
                 onLoadForums={posts.loadForums}
               />
-            ) : <Navigate to="/login" replace />}
+            )}
+          />
+          <Route
+            path="/saved"
+            element={requireUser(
+              <SavedPosts
+                currentUser={auth.currentUser}
+                onGetSavedPosts={posts.getSavedPosts}
+                onToggleLike={posts.setPostLike}
+                onToggleBookmark={posts.setPostBookmark}
+              />
+            )}
           />
           <Route
             path="/forums/request"
-            element={auth.currentUser ? (
+            element={requireUser(
               <ForumRequestPage
                 currentUser={auth.currentUser}
                 onRequestForum={posts.requestForum}
                 onAiRewriteForumRequest={posts.aiRewriteForumRequest}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/forums/request/history"
-            element={auth.currentUser ? (
+            element={requireUser(
               <ForumRequestHistoryPage
                 forumWorkspace={posts.forumWorkspace}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/forums/request/:requestId/appeal"
-            element={auth.currentUser ? (
+            element={requireUser(
               <ForumRequestAppealPage
                 forumWorkspace={posts.forumWorkspace}
                 loadingWorkspace={posts.loadingForums}
                 onAppealForumRequest={posts.appealForumRequest}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/forums/request/review"
-            element={canReviewForumRequests ? (
+            element={requireCapability(
+              canReviewForumRequests,
               <ForumRequestReviewPage
                 forumWorkspace={posts.forumWorkspace}
                 onApproveForumRequest={posts.approveForumRequest}
                 onRejectForumRequest={posts.rejectForumRequest}
               />
-            ) : (
-              <Navigate to="/forum" replace />
             )}
           />
           <Route
             path="/settings"
-            element={auth.currentUser ? (
+            element={requireUser(
               <Settings
                 currentUser={auth.currentUser}
                 onUpdateProfile={updateProfile}
                 onUpdatePassword={auth.updatePassword}
                 onDeleteAccount={deleteAccount}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/my-posts"
-            element={auth.currentUser ? (
+            element={requireUser(
               <MyPosts
                 currentUser={auth.currentUser}
                 onGetMyPosts={posts.getMyPosts}
                 onDeletePost={posts.deletePost}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/my-posts/:postId/edit"
-            element={auth.currentUser ? (
+            element={requireUser(
               <MyPostEditPage
                 currentUser={auth.currentUser}
                 forums={posts.forums}
@@ -306,13 +333,11 @@ export default function AppRoutes() {
                 onDeletePost={posts.deletePost}
                 onGetMyPosts={posts.getMyPosts}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/my-posts/:postId/appeal"
-            element={auth.currentUser ? (
+            element={requireUser(
               <PostAppealRecordPage
                 mode="author"
                 currentUser={auth.currentUser}
@@ -320,100 +345,86 @@ export default function AppRoutes() {
                 onAppealPost={posts.appealPost}
                 onDeletePost={posts.deletePost}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/my-spaces"
-            element={auth.currentUser ? (
+            element={requireUser(
               <MyForums
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 onLoadForums={posts.loadForums}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/my-spaces/invitations"
-            element={auth.currentUser ? (
+            element={requireUser(
               <MyForumInvitations
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 posts={posts.posts}
                 onLoadForums={posts.loadForums}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/my-spaces/:forumId/managers/:managerId"
-            element={auth.currentUser ? (
+            element={requireUser(
               <MyForumManagers
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 onLoadForums={posts.loadForums}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/my-spaces/:spaceId/manage"
-            element={auth.currentUser ? (
+            element={requireUser(
               <MySpaceManage
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 onLoadForums={posts.loadForums}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route path="/my-forums" element={<Navigate to="/my-spaces" replace />} />
           <Route path="/my-forums/invitations" element={<Navigate to="/my-spaces/invitations" replace />} />
           <Route
             path="/my-forums/:forumId/managers/:managerId"
-            element={auth.currentUser ? (
+            element={requireUser(
               <MyForumManagers
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 onLoadForums={posts.loadForums}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/my-forums/:forumId/manage"
-            element={auth.currentUser ? (
+            element={requireUser(
               <MySpaceManage
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 onLoadForums={posts.loadForums}
               />
-            ) : (
-              <Navigate to="/login" replace />
             )}
           />
           <Route
             path="/moderation"
-            element={canModerate ? (
+            element={requireCapability(
+              canModerate,
               <Moderation
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 onGetModerationPosts={posts.getModerationPosts}
               />
-            ) : (
-              <Navigate to="/forum" replace />
             )}
           />
           <Route
             path="/moderation/posts/:postId/appeal"
-            element={canModerate ? (
+            element={requireCapability(
+              canModerate,
               <PostAppealRecordPage
                 mode="admin"
                 currentUser={auth.currentUser}
@@ -422,51 +433,43 @@ export default function AppRoutes() {
                 onPermanentDeletePost={posts.adminPermanentDeletePost}
                 onRestorePost={posts.adminRestorePost}
               />
-            ) : (
-              <Navigate to="/forum" replace />
             )}
           />
           <Route
             path="/analytics"
-            element={canViewAnalytics ? (
+            element={requireCapability(
+              canViewAnalytics,
               <Analytics
                 onQueryAdminAnalytics={posts.queryAdminAnalytics}
                 onGetParquetDatasets={posts.getAdminParquetDatasets}
                 onDownloadParquetDataset={posts.downloadAdminParquetDataset}
               />
-            ) : (
-              <Navigate to="/forum" replace />
             )}
           />
           <Route
             path="/admin/access"
-            element={canManageAdminAccess ? (
+            element={requireCapability(
+              canManageAdminAccess,
               <AdminAccess currentUser={auth.currentUser} />
-            ) : (
-              <Navigate to="/forum" replace />
             )}
           />
           <Route
             path="/admin/access/:userId"
-            element={canManageAdminAccess ? (
+            element={requireCapability(
+              canManageAdminAccess,
               <AdminAccessDetail currentUser={auth.currentUser} />
-            ) : (
-              <Navigate to="/forum" replace />
             )}
           />
           <Route
             path="/admin/password-reset"
-            element={canResetPasswords ? (
+            element={requireCapability(
+              canResetPasswords,
               <AdminPasswordReset />
-            ) : (
-              <Navigate to="/forum" replace />
             )}
           />
           <Route
             path="/login"
-            element={auth.currentUser ? (
-              <Navigate to="/forum" replace />
-            ) : (
+            element={requireGuest(
               <Login
                 onLogin={auth.login}
                 onRegister={auth.register}
@@ -483,6 +486,8 @@ export default function AppRoutes() {
                 onAdminRemovePost={posts.adminRemovePost}
                 onOwnerRemovePost={posts.ownerRemovePost}
                 onGetPostDetail={posts.getPostDetail}
+                onToggleLike={posts.setPostLike}
+                onToggleBookmark={posts.setPostBookmark}
                 onGetComments={posts.getComments}
                 onCreateComment={posts.createComment}
               />
@@ -490,7 +495,7 @@ export default function AppRoutes() {
           />
           </Routes>
         </main>
-        <Footer />
+        {showMainFooter ? <Footer /> : null}
       </div>
       <AgentChatbox
         currentUser={auth.currentUser}

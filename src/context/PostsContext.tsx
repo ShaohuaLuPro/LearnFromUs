@@ -11,12 +11,14 @@ import {
   apiAiRewritePost,
   apiAiRewritePostDraft,
   apiAppealPost,
+  apiBookmarkPost,
   apiCreateComment,
   apiCreatePost,
   apiDeletePost,
   apiDownloadAdminParquetDataset,
   apiGetForums,
   apiGetAdminAnalytics,
+  apiGetInterestSummary,
   apiGetComments,
   apiGetAdminParquetDatasets,
   apiGetModerationPosts,
@@ -25,14 +27,31 @@ import {
   apiOwnerRestorePost,
   apiGetPost,
   apiGetPosts,
+  apiGetRecommendedPosts,
+  apiGetSavedPosts,
+  apiLikePost,
   apiQueryAdminAnalytics,
   apiRejectForumRequest,
+  apiRemovePostBookmark,
   apiRequestForum,
+  apiUnlikePost,
   apiUpdateForumSections,
   apiUpdatePost
 } from '../api';
 import { useAuth } from './AuthContext';
-import type { AnalyticsReport, Comment, Forum, ForumRequest, ForumRequestDraft, ForumWorkspace, Pagination, Post, PostListFilters } from '../types';
+import type {
+  AnalyticsReport,
+  Comment,
+  Forum,
+  ForumRequest,
+  ForumRequestDraft,
+  ForumWorkspace,
+  Pagination,
+  Post,
+  PostInteractionState,
+  PostListFilters,
+  UserInterestTag
+} from '../types';
 
 type ActionResult<T = undefined> = {
   ok: boolean;
@@ -40,6 +59,7 @@ type ActionResult<T = undefined> = {
   data?: T;
   posts?: Post[];
   post?: Post;
+  interaction?: PostInteractionState;
   forum?: Forum | null;
   comments?: Comment[];
   comment?: Comment;
@@ -47,10 +67,12 @@ type ActionResult<T = undefined> = {
   workspace?: ForumWorkspace | null;
   request?: ForumRequest;
   datasets?: Array<{ key: string; fileName: string }>;
+  tags?: UserInterestTag[];
+  weights?: Record<string, number>;
+  fallback?: boolean;
 };
 
 type PostsContextValue = {
-  initialized: boolean;
   loadingPosts: boolean;
   loadingForums: boolean;
   posts: Post[];
@@ -78,6 +100,11 @@ type PostsContextValue = {
   ) => Promise<ActionResult<Record<string, unknown>>>;
   deletePost: (postId: string) => Promise<ActionResult>;
   getPostDetail: (postId: string) => Promise<ActionResult<Post>>;
+  setPostLike: (postId: string, nextLiked: boolean) => Promise<ActionResult<PostInteractionState>>;
+  setPostBookmark: (postId: string, nextBookmarked: boolean) => Promise<ActionResult<PostInteractionState>>;
+  getSavedPosts: () => Promise<ActionResult<Post[]>>;
+  getRecommendedPosts: (limit?: number) => Promise<ActionResult<Post[]>>;
+  getInterestSummary: (limit?: number) => Promise<ActionResult<UserInterestTag[]>>;
   getComments: (postId: string) => Promise<ActionResult<Comment[]>>;
   createComment: (postId: string, input: { content: string }) => Promise<ActionResult<Comment>>;
   appealPost: (postId: string, note: string) => Promise<ActionResult>;
@@ -132,8 +159,33 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
   const [filters, setFilters] = useState<Required<PostListFilters>>(DEFAULT_FILTERS);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [loadingForums, setLoadingForums] = useState(true);
-  const [initialized, setInitialized] = useState(false);
   const filtersRef = useRef<Required<PostListFilters>>(DEFAULT_FILTERS);
+  const postsRef = useRef<Post[]>([]);
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
+
+  const syncPostInteractionState = useCallback((postId: string, interaction: PostInteractionState) => {
+    if (!postId) {
+      return;
+    }
+
+    startTransition(() => {
+      setPosts((current) => current.map((post) => (
+        post.id === postId
+          ? {
+            ...post,
+            likeCount: interaction.likeCount,
+            bookmarkCount: interaction.bookmarkCount,
+            isLiked: interaction.isLiked,
+            isBookmarked: interaction.isBookmarked,
+            savedAt: interaction.savedAt ?? null
+          }
+          : post
+      )));
+    });
+  }, []);
 
   const loadPosts = useCallback(async (nextFilters: PostListFilters = {}) => {
     const mergedFilters: Required<PostListFilters> = {
@@ -152,7 +204,7 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
 
     setLoadingPosts(true);
     try {
-      const data = await apiGetPosts(mergedFilters);
+      const data = await apiGetPosts(mergedFilters, getToken() || undefined);
       startTransition(() => {
         filtersRef.current = mergedFilters;
         setPosts(data.posts || []);
@@ -164,13 +216,12 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to load posts.' };
     } finally {
       setLoadingPosts(false);
-      setInitialized(true);
     }
-  }, []);
+  }, [getToken]);
 
   useEffect(() => {
-    loadPosts(DEFAULT_FILTERS);
-  }, [loadPosts]);
+    loadPosts(filtersRef.current);
+  }, [loadPosts, currentUser?.id]);
 
   const loadForums = useCallback(async () => {
     setLoadingForums(true);
@@ -296,12 +347,151 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
 
   const getPostDetail = useCallback(async (postId: string) => {
     try {
-      const data = await apiGetPost(postId);
+      const data = await apiGetPost(postId, getToken() || undefined);
       return { ok: true, post: data.post };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Failed to load post detail.' };
     }
-  }, []);
+  }, [getToken]);
+
+  const setPostLike = useCallback(async (postId: string, nextLiked: boolean) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+
+    const previousPost = postsRef.current.find((post) => post.id === postId);
+    if (previousPost) {
+      syncPostInteractionState(postId, {
+        postId,
+        likeCount: Math.max(0, Number(previousPost.likeCount || 0) + (nextLiked ? 1 : -1)),
+        bookmarkCount: Number(previousPost.bookmarkCount || 0),
+        isLiked: nextLiked,
+        isBookmarked: Boolean(previousPost.isBookmarked),
+        savedAt: previousPost.savedAt ?? null
+      });
+    }
+
+    try {
+      const data = nextLiked ? await apiLikePost(postId, token) : await apiUnlikePost(postId, token);
+      const interaction: PostInteractionState = {
+        postId: data.postId,
+        likeCount: data.likeCount,
+        bookmarkCount: data.bookmarkCount,
+        isLiked: data.isLiked,
+        isBookmarked: data.isBookmarked,
+        savedAt: data.savedAt ?? null
+      };
+      syncPostInteractionState(postId, interaction);
+      return { ok: true, interaction };
+    } catch (error) {
+      if (previousPost) {
+        syncPostInteractionState(postId, {
+          postId,
+          likeCount: Number(previousPost.likeCount || 0),
+          bookmarkCount: Number(previousPost.bookmarkCount || 0),
+          isLiked: Boolean(previousPost.isLiked),
+          isBookmarked: Boolean(previousPost.isBookmarked),
+          savedAt: previousPost.savedAt ?? null
+        });
+      }
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to update like.' };
+    }
+  }, [getToken, syncPostInteractionState]);
+
+  const setPostBookmark = useCallback(async (postId: string, nextBookmarked: boolean) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.' };
+    }
+
+    const previousPost = postsRef.current.find((post) => post.id === postId);
+    if (previousPost) {
+      syncPostInteractionState(postId, {
+        postId,
+        likeCount: Number(previousPost.likeCount || 0),
+        bookmarkCount: Math.max(0, Number(previousPost.bookmarkCount || 0) + (nextBookmarked ? 1 : -1)),
+        isLiked: Boolean(previousPost.isLiked),
+        isBookmarked: nextBookmarked,
+        savedAt: nextBookmarked ? Date.now() : null
+      });
+    }
+
+    try {
+      const data = nextBookmarked ? await apiBookmarkPost(postId, token) : await apiRemovePostBookmark(postId, token);
+      const interaction: PostInteractionState = {
+        postId: data.postId,
+        likeCount: data.likeCount,
+        bookmarkCount: data.bookmarkCount,
+        isLiked: data.isLiked,
+        isBookmarked: data.isBookmarked,
+        savedAt: data.savedAt ?? null
+      };
+      syncPostInteractionState(postId, interaction);
+      return { ok: true, interaction };
+    } catch (error) {
+      if (previousPost) {
+        syncPostInteractionState(postId, {
+          postId,
+          likeCount: Number(previousPost.likeCount || 0),
+          bookmarkCount: Number(previousPost.bookmarkCount || 0),
+          isLiked: Boolean(previousPost.isLiked),
+          isBookmarked: Boolean(previousPost.isBookmarked),
+          savedAt: previousPost.savedAt ?? null
+        });
+      }
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to update saved state.' };
+    }
+  }, [getToken, syncPostInteractionState]);
+
+  const getSavedPosts = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.', posts: [] };
+    }
+    try {
+      const data = await apiGetSavedPosts(token);
+      return { ok: true, posts: data.posts || [] };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to load saved posts.', posts: [] };
+    }
+  }, [getToken]);
+
+  const getRecommendedPosts = useCallback(async (limit = 8) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.', posts: [] };
+    }
+    try {
+      const data = await apiGetRecommendedPosts(token, limit);
+      return {
+        ok: true,
+        posts: data.posts || [],
+        tags: data.topTags || [],
+        weights: data.weights || {},
+        fallback: Boolean(data.fallback)
+      };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to load recommendations.', posts: [] };
+    }
+  }, [getToken]);
+
+  const getInterestSummary = useCallback(async (limit = 24) => {
+    const token = getToken();
+    if (!token) {
+      return { ok: false, message: 'Please login first.', tags: [] };
+    }
+    try {
+      const data = await apiGetInterestSummary(token, limit);
+      return {
+        ok: true,
+        tags: data.tags || [],
+        weights: data.weights || {}
+      };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Failed to load interest summary.', tags: [] };
+    }
+  }, [getToken]);
 
   const getComments = useCallback(async (postId: string) => {
     try {
@@ -628,7 +818,6 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<PostsContextValue>(() => ({
-    initialized,
     loadingPosts,
     loadingForums,
     posts,
@@ -646,6 +835,11 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     aiRewriteForumRequest,
     deletePost,
     getPostDetail,
+    setPostLike,
+    setPostBookmark,
+    getSavedPosts,
+    getRecommendedPosts,
+    getInterestSummary,
     getComments,
     createComment,
     appealPost,
@@ -670,7 +864,6 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     syncAuthorName,
     removeAuthorPosts
   }), [
-    initialized,
     loadingPosts,
     loadingForums,
     posts,
@@ -688,6 +881,11 @@ export function PostsProvider({ children }: { children: React.ReactNode }) {
     aiRewriteForumRequest,
     deletePost,
     getPostDetail,
+    setPostLike,
+    setPostBookmark,
+    getSavedPosts,
+    getRecommendedPosts,
+    getInterestSummary,
     getComments,
     createComment,
     appealPost,

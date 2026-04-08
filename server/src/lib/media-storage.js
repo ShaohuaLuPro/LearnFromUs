@@ -1,5 +1,5 @@
 const path = require('path');
-const { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const DEFAULT_ALLOWED_MIME_TYPES = [
@@ -186,6 +186,14 @@ function createMediaStorage(inputConfig = getMediaConfig()) {
     }));
   }
 
+  async function getObject({ objectKey, bucket = config.bucket }) {
+    ensureConfigured();
+    return client.send(new GetObjectCommand({
+      Bucket: bucket,
+      Key: objectKey
+    }));
+  }
+
   async function deleteObject({ objectKey, bucket = config.bucket }) {
     ensureConfigured();
     return client.send(new DeleteObjectCommand({
@@ -212,6 +220,7 @@ function createMediaStorage(inputConfig = getMediaConfig()) {
     },
     createUploadUrl,
     headObject,
+    getObject,
     deleteObject,
     buildAssetUrl
   };

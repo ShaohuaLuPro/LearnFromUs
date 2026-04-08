@@ -7,6 +7,7 @@ import {
   resolveMediaSource
 } from '../api';
 import Avatar from '../components/Avatar';
+import FeedCard from '../components/feed/FeedCard';
 import ForumSectionPills from '../components/ForumSectionPills';
 import { authStorage } from '../lib/authStorage';
 import { buildForumDirectory, sortByRecentActivity } from '../lib/forumInsights';
@@ -70,6 +71,37 @@ function matchByQuery(query, ...fragments) {
   }
 
   return fragments.some((fragment) => normalizeText(fragment).includes(query));
+}
+
+function getPostCoverImage(content) {
+  const markdownMatch = String(content || '').match(/!\[[^\]]*]\((\S+?)(?:\s+["'][^"']*["'])?\)/i);
+  if (markdownMatch?.[1]) {
+    return resolveMediaSource(markdownMatch[1].replace(/^<|>$/g, '').trim());
+  }
+
+  const htmlMatch = String(content || '').match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (htmlMatch?.[1]) {
+    return resolveMediaSource(htmlMatch[1].trim());
+  }
+
+  return '';
+}
+
+function getTextPreview(content, maxLength = 150) {
+  const text = String(content || '')
+    .replace(/!\[[^\]]*]\((.*?)\)/g, ' ')
+    .replace(/<img[^>]*>/gi, ' ')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/[#>*_[\]()-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength).trimEnd()}...`;
 }
 
 function CreatorCard({
@@ -180,7 +212,15 @@ function SpaceCard({
   );
 }
 
-export default function Explore({ forums, posts, currentUser, onLoadForums }) {
+export default function Explore({
+  forums,
+  posts,
+  currentUser,
+  onLoadForums,
+  onGetRecommendedPosts,
+  onToggleLike,
+  onToggleBookmark
+}) {
   const [search, setSearch] = useState('');
   const [sortMode, setSortMode] = useState('relevance');
   const [selectedInterest, setSelectedInterest] = useState('__all');
@@ -191,6 +231,10 @@ export default function Explore({ forums, posts, currentUser, onLoadForums }) {
   const [knownUserMeta, setKnownUserMeta] = useState(() => new Map());
   const [localFollowedForumKeys, setLocalFollowedForumKeys] = useState(() => new Set());
   const [feedback, setFeedback] = useState({ type: '', text: '' });
+  const [recommendedPosts, setRecommendedPosts] = useState([]);
+  const [recommendedTags, setRecommendedTags] = useState([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(Boolean(currentUser));
+  const [recommendationsFallback, setRecommendationsFallback] = useState(false);
 
   const forumDirectory = useMemo(() => buildForumDirectory(forums, posts), [forums, posts]);
   const searchQuery = normalizeText(search);
@@ -198,6 +242,13 @@ export default function Explore({ forums, posts, currentUser, onLoadForums }) {
     const sections = getSectionValues(forumDirectory.flatMap((forum) => forum.sectionScope || []));
     return sections.map((value) => ({ value, label: getSectionLabel(value) }));
   }, [forumDirectory]);
+  const recommendedPostCards = useMemo(() => (
+    recommendedPosts.map((post) => ({
+      post,
+      coverImage: getPostCoverImage(post.content),
+      textPreview: getTextPreview(post.content)
+    }))
+  ), [recommendedPosts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -257,6 +308,42 @@ export default function Explore({ forums, posts, currentUser, onLoadForums }) {
       cancelled = true;
     };
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || typeof onGetRecommendedPosts !== 'function') {
+      setRecommendedPosts([]);
+      setRecommendedTags([]);
+      setRecommendationsFallback(false);
+      setRecommendationsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRecommendationsLoading(true);
+
+    void onGetRecommendedPosts(6).then((result) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (!result?.ok) {
+        setRecommendedPosts([]);
+        setRecommendedTags([]);
+        setRecommendationsFallback(false);
+        setRecommendationsLoading(false);
+        return;
+      }
+
+      setRecommendedPosts(result.posts || []);
+      setRecommendedTags(result.tags || []);
+      setRecommendationsFallback(Boolean(result.fallback));
+      setRecommendationsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, onGetRecommendedPosts]);
 
   const followedForumKeySet = useMemo(() => {
     const keys = new Set(localFollowedForumKeys);
@@ -508,6 +595,70 @@ export default function Explore({ forums, posts, currentUser, onLoadForums }) {
     }
   }, [onLoadForums]);
 
+  const syncRecommendedInteraction = useCallback((postId, interaction) => {
+    if (!interaction?.postId) {
+      return;
+    }
+
+    setRecommendedPosts((current) => current.map((post) => (
+      post.id === postId
+        ? {
+          ...post,
+          likeCount: interaction.likeCount,
+          bookmarkCount: interaction.bookmarkCount,
+          isLiked: interaction.isLiked,
+          isBookmarked: interaction.isBookmarked,
+          savedAt: interaction.savedAt ?? null
+        }
+        : post
+    )));
+  }, []);
+
+  const handleToggleRecommendedLike = useCallback(async (postId, nextLiked) => {
+    const previousPosts = recommendedPosts;
+    setRecommendedPosts((current) => current.map((post) => (
+      post.id === postId
+        ? {
+          ...post,
+          likeCount: Math.max(0, Number(post.likeCount || 0) + (nextLiked ? 1 : -1)),
+          isLiked: nextLiked
+        }
+        : post
+    )));
+
+    const result = await onToggleLike(postId, nextLiked);
+    if (result?.ok && result.interaction) {
+      syncRecommendedInteraction(postId, result.interaction);
+      return result;
+    }
+
+    setRecommendedPosts(previousPosts);
+    return result;
+  }, [onToggleLike, recommendedPosts, syncRecommendedInteraction]);
+
+  const handleToggleRecommendedBookmark = useCallback(async (postId, nextBookmarked) => {
+    const previousPosts = recommendedPosts;
+    setRecommendedPosts((current) => current.map((post) => (
+      post.id === postId
+        ? {
+          ...post,
+          bookmarkCount: Math.max(0, Number(post.bookmarkCount || 0) + (nextBookmarked ? 1 : -1)),
+          isBookmarked: nextBookmarked,
+          savedAt: nextBookmarked ? Date.now() : null
+        }
+        : post
+    )));
+
+    const result = await onToggleBookmark(postId, nextBookmarked);
+    if (result?.ok && result.interaction) {
+      syncRecommendedInteraction(postId, result.interaction);
+      return result;
+    }
+
+    setRecommendedPosts(previousPosts);
+    return result;
+  }, [onToggleBookmark, recommendedPosts, syncRecommendedInteraction]);
+
   return (
     <div className="container page-shell">
       <div className="discover-page-shell">
@@ -589,6 +740,56 @@ export default function Explore({ forums, posts, currentUser, onLoadForums }) {
             {feedback.text}
           </div>
         ) : null}
+
+        <section className="discover-content-section">
+          <div className="discover-section-head">
+            <div>
+              <h2 className="discover-section-title mb-1">Recommended Posts</h2>
+              <p className="discover-section-copy mb-0">
+                {recommendationsFallback
+                  ? 'A recent mix while your interest profile is still warming up.'
+                  : 'Posts matched from the tags and sections you keep engaging with.'}
+              </p>
+            </div>
+            <span className="discover-section-count">{recommendedPostCards.length}</span>
+          </div>
+
+          {recommendedTags.length > 0 ? (
+            <div className="forum-recommendation-tag-row discover-recommendation-tag-row" aria-label="Interest tags">
+              {recommendedTags.slice(0, 5).map((tag) => (
+                <span key={tag.tag} className="forum-recommendation-tag-pill">
+                  {tag.tag.replace(/^section:/, '')}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {recommendationsLoading ? (
+            <p className="muted mb-0">Loading personalized post recommendations...</p>
+          ) : recommendedPostCards.length > 0 ? (
+            <div className="forum-feed discovery-feed-grid recommendation-feed-grid">
+              {recommendedPostCards.map(({ post, coverImage, textPreview }) => (
+                <FeedCard
+                  key={`discover-recommended-${post.id}`}
+                  post={post}
+                  coverImage={coverImage}
+                  textPreview={textPreview}
+                  isAggregateView
+                  currentUser={currentUser}
+                  onToggleLike={handleToggleRecommendedLike}
+                  onToggleBookmark={handleToggleRecommendedBookmark}
+                  canManage={false}
+                  onModerate={() => {}}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="discover-empty-state">
+              <h3 className="mb-1">No post recommendations yet</h3>
+              <p className="mb-0">Like, save, and open a few posts, then come back here for more tailored discovery.</p>
+            </div>
+          )}
+        </section>
 
         <section className="discover-content-section">
           <div className="discover-section-head">

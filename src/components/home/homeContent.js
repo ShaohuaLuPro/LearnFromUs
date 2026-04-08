@@ -1,4 +1,5 @@
 import { buildFooterContent } from '../siteChromeConfig';
+import { resolveHomeCollectionImage } from '../../lib/homeMedia';
 
 export const HOME_COLLECTIONS = [
   {
@@ -6,48 +7,42 @@ export const HOME_COLLECTIONS = [
     title: 'Housing',
     subtitle: 'Home & Living',
     blurb: 'Practical systems for better daily living and smarter decisions at home.',
-    image:
-      'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=1200&q=80'
+    image: resolveHomeCollectionImage('housing')
   },
   {
     key: 'sports',
     title: 'Sports',
     subtitle: 'Fitness & Training',
     blurb: 'Actionable training insights focused on consistency, progress, and execution.',
-    image:
-      'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1200&q=80'
+    image: resolveHomeCollectionImage('sports')
   },
   {
     key: 'social',
     title: 'Social',
     subtitle: 'Community & Dating',
     blurb: 'Real-world communication and relationship strategies that actually work.',
-    image:
-      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=80'
+    image: resolveHomeCollectionImage('social')
   },
   {
     key: 'ai',
     title: 'AI',
     subtitle: 'Artificial Intelligence',
     blurb: 'From prompts to production, learn AI workflows built around practical outcomes.',
-    image:
-      'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80'
+    image: resolveHomeCollectionImage('ai')
   },
   {
     key: 'food',
     title: 'Food',
     subtitle: 'Cooking & Taste',
     blurb: 'Simple food systems, better habits, and practical choices that fit real life.',
-    image:
-      'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80'
+    image: resolveHomeCollectionImage('food')
   },
   {
     key: 'travel',
     title: 'Travel',
     subtitle: 'Movement & Experience',
     blurb: 'Travel with more intention, less friction, and decisions that stay useful on the move.',
-    image:
-      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80'
+    image: resolveHomeCollectionImage('travel')
   }
 ];
 

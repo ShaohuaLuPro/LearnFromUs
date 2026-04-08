@@ -15,6 +15,7 @@ const { createOpenAIAgentRouter } = require('./lib/openai-agent-router');
 const { createOpenAIDraftService, SECTION_ENUM, sanitizeDraftTitle, sanitizePublishableContent } = require('./lib/openai-drafts');
 const { createOpenAIForumRequestDraftService } = require('./lib/openai-forum-request-drafts');
 const { createOpenAIPostRewriter } = require('./lib/openai-post-rewriter');
+const { INTEREST_SIGNAL_WEIGHTS, buildInterestUpdates, getInterestTags } = require('./lib/personalization');
 const { createHybridRateLimitStore, createRateLimitMiddleware } = require('./lib/rate-limit');
 const { listPublicPosts, getPublicPostById } = require('./lib/post-queries');
 const {
@@ -470,7 +471,146 @@ function normalizePositiveInteger(value) {
   return Math.floor(parsed);
 }
 
+const SITE_MEDIA_FALLBACK_URLS = {
+  housing: 'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=1200&q=80',
+  sports: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1200&q=80',
+  social: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=80',
+  ai: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80',
+  food: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80',
+  travel: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80'
+};
+
+const SITE_MEDIA_OBJECT_KEY_ENV = {
+  housing: 'HOME_MEDIA_HOUSING_OBJECT_KEY',
+  sports: 'HOME_MEDIA_SPORTS_OBJECT_KEY',
+  social: 'HOME_MEDIA_SOCIAL_OBJECT_KEY',
+  ai: 'HOME_MEDIA_AI_OBJECT_KEY',
+  food: 'HOME_MEDIA_FOOD_OBJECT_KEY',
+  travel: 'HOME_MEDIA_TRAVEL_OBJECT_KEY'
+};
+
+function buildPublicMediaPath(assetId) {
+  return `/api/media/${encodeURIComponent(String(assetId || '').trim())}`;
+}
+
+function getSiteMediaConfig(siteMediaKey, env = process.env) {
+  const normalizedKey = String(siteMediaKey || '').trim().toLowerCase();
+  const fallbackUrl = SITE_MEDIA_FALLBACK_URLS[normalizedKey];
+  if (!fallbackUrl) {
+    return null;
+  }
+
+  const objectKeyEnv = SITE_MEDIA_OBJECT_KEY_ENV[normalizedKey];
+  const objectKey = String((objectKeyEnv && env[objectKeyEnv]) || '').trim();
+
+  return {
+    key: normalizedKey,
+    objectKey,
+    fallbackUrl
+  };
+}
+
+async function pipeReadableToResponse(body, res) {
+  await new Promise((resolve, reject) => {
+    body.on('error', reject);
+    res.on('finish', resolve);
+    res.on('close', resolve);
+    body.pipe(res);
+  });
+}
+
+async function sendMediaBody(body, res) {
+  if (!body) {
+    res.status(404).send('Not found');
+    return;
+  }
+
+  if (typeof body.pipe === 'function') {
+    await pipeReadableToResponse(body, res);
+    return;
+  }
+
+  if (typeof body.transformToByteArray === 'function') {
+    const bytes = await body.transformToByteArray();
+    res.send(Buffer.from(bytes));
+    return;
+  }
+
+  if (typeof body.arrayBuffer === 'function') {
+    const buffer = Buffer.from(await body.arrayBuffer());
+    res.send(buffer);
+    return;
+  }
+
+  throw new Error('Unsupported media response body.');
+}
+
+function applyMediaResponseHeaders(res, mediaResponse, fallbackCacheControl = 'public, max-age=31536000, immutable') {
+  const contentType = String(mediaResponse?.ContentType || '').trim();
+  const cacheControl = String(mediaResponse?.CacheControl || fallbackCacheControl).trim();
+  const etag = String(mediaResponse?.ETag || '').trim();
+  const contentLength = Number(mediaResponse?.ContentLength);
+  const lastModified = mediaResponse?.LastModified ? new Date(mediaResponse.LastModified) : null;
+
+  if (contentType) {
+    res.type(contentType);
+  }
+  if (cacheControl) {
+    res.set('Cache-Control', cacheControl);
+  }
+  if (etag) {
+    res.set('ETag', etag);
+  }
+  if (Number.isFinite(contentLength) && contentLength > 0) {
+    res.set('Content-Length', String(contentLength));
+  }
+  if (lastModified && Number.isFinite(lastModified.getTime())) {
+    res.set('Last-Modified', lastModified.toUTCString());
+  }
+  res.set('Content-Disposition', 'inline');
+}
+
+async function sendStorageObject(res, input) {
+  const mediaResponse = await mediaStorage.getObject(input);
+  applyMediaResponseHeaders(res, mediaResponse);
+  await sendMediaBody(mediaResponse.Body, res);
+}
+
+async function sendRemoteMedia(res, url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    return res.status(404).send('Not found');
+  }
+
+  const contentType = String(response.headers.get('content-type') || '').trim();
+  const cacheControl = String(response.headers.get('cache-control') || 'public, max-age=86400').trim();
+  const etag = String(response.headers.get('etag') || '').trim();
+  const contentLength = Number(response.headers.get('content-length'));
+  const lastModified = response.headers.get('last-modified');
+
+  if (contentType) {
+    res.type(contentType);
+  }
+  if (cacheControl) {
+    res.set('Cache-Control', cacheControl);
+  }
+  if (etag) {
+    res.set('ETag', etag);
+  }
+  if (Number.isFinite(contentLength) && contentLength > 0) {
+    res.set('Content-Length', String(contentLength));
+  }
+  if (lastModified) {
+    res.set('Last-Modified', lastModified);
+  }
+  res.set('Content-Disposition', 'inline');
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  res.send(buffer);
+}
+
 function serializeMediaAsset(row) {
+  const publicUrl = row.visibility === 'public' ? buildPublicMediaPath(row.id) : '';
   return {
     id: row.id,
     ownerId: row.owner_id,
@@ -480,7 +620,7 @@ function serializeMediaAsset(row) {
     status: row.status,
     visibility: row.visibility,
     objectKey: row.object_key,
-    url: mediaStorage.buildAssetUrl({
+    url: publicUrl || mediaStorage.buildAssetUrl({
       objectKey: row.object_key,
       bucket: row.bucket,
       region: row.region
@@ -492,6 +632,297 @@ function serializeMediaAsset(row) {
     updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
     uploadedAt: row.uploaded_at ? new Date(row.uploaded_at).getTime() : null
   };
+}
+
+function mapUserInterestRow(row) {
+  return {
+    tag: row.tag,
+    score: Number(row.score || 0),
+    likeCount: Number(row.like_count || 0),
+    bookmarkCount: Number(row.bookmark_count || 0),
+    clickCount: Number(row.click_count || 0),
+    repeatVisitCount: Number(row.repeat_visit_count || 0),
+    dwellTimeMs: Number(row.dwell_time_ms || 0),
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null
+  };
+}
+
+async function getPostInterestMetadata(db, postId) {
+  const result = await db.query(
+    `SELECT p.id, p.section,
+            COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+     FROM post p
+     LEFT JOIN post_tag pt ON pt.post_id = p.id
+     LEFT JOIN tag t ON t.id = pt.tag_id
+     WHERE p.id = $1
+       AND p.is_published = TRUE
+       AND p.deleted_by_admin_at IS NULL
+     GROUP BY p.id`,
+    [postId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getPostInteractionState(db, postId, viewerId = '') {
+  const params = [postId];
+  let viewerSelect = 'FALSE AS is_liked, FALSE AS is_bookmarked, NULL::timestamptz AS saved_at';
+  if (viewerId) {
+    params.push(viewerId, viewerId);
+    viewerSelect = `
+      EXISTS (
+        SELECT 1
+        FROM post_like viewer_like
+        WHERE viewer_like.post_id = $1
+          AND viewer_like.user_id = $2
+      ) AS is_liked,
+      EXISTS (
+        SELECT 1
+        FROM post_bookmark viewer_bookmark
+        WHERE viewer_bookmark.post_id = $1
+          AND viewer_bookmark.user_id = $3
+      ) AS is_bookmarked,
+      (
+        SELECT viewer_saved.created_at
+        FROM post_bookmark viewer_saved
+        WHERE viewer_saved.post_id = $1
+          AND viewer_saved.user_id = $3
+        LIMIT 1
+      ) AS saved_at
+    `;
+  }
+
+  const result = await db.query(
+    `SELECT
+        COALESCE((SELECT COUNT(*)::int FROM post_like pl WHERE pl.post_id = $1), 0) AS like_count,
+        COALESCE((SELECT COUNT(*)::int FROM post_bookmark pb WHERE pb.post_id = $1), 0) AS bookmark_count,
+        ${viewerSelect}
+    `,
+    params
+  );
+
+  const row = result.rows[0] || {};
+  return {
+    postId,
+    likeCount: Number(row.like_count || 0),
+    bookmarkCount: Number(row.bookmark_count || 0),
+    isLiked: Boolean(row.is_liked),
+    isBookmarked: Boolean(row.is_bookmarked),
+    savedAt: row.saved_at ? new Date(row.saved_at).getTime() : null
+  };
+}
+
+async function applyInterestSignal(client, userId, postMeta, signal) {
+  if (!userId || !postMeta) {
+    return [];
+  }
+
+  const updates = buildInterestUpdates({
+    tags: postMeta.tags || [],
+    section: postMeta.section || '',
+    likeDelta: signal.likeDelta || 0,
+    bookmarkDelta: signal.bookmarkDelta || 0,
+    clickDelta: signal.clickDelta || 0,
+    repeatVisitDelta: signal.repeatVisitDelta || 0,
+    dwellTimeMs: signal.dwellTimeMs || 0
+  });
+
+  for (const update of updates) {
+    const insertScore = Math.max(0, Number(update.scoreDelta || 0));
+    const insertLikeDelta = Math.max(0, Number(update.likeDelta || 0));
+    const insertBookmarkDelta = Math.max(0, Number(update.bookmarkDelta || 0));
+    const insertClickDelta = Math.max(0, Number(update.clickDelta || 0));
+    const insertRepeatVisitDelta = Math.max(0, Number(update.repeatVisitDelta || 0));
+    const insertDwellTimeMs = Math.max(0, Number(update.dwellTimeMs || 0));
+
+    await client.query(
+      `INSERT INTO user_tag_interest (
+         user_id, tag, score, like_count, bookmark_count, click_count, repeat_visit_count, dwell_time_ms, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       ON CONFLICT (user_id, tag) DO UPDATE
+       SET score = GREATEST(user_tag_interest.score + $9, 0),
+           like_count = GREATEST(user_tag_interest.like_count + $10, 0),
+           bookmark_count = GREATEST(user_tag_interest.bookmark_count + $11, 0),
+           click_count = GREATEST(user_tag_interest.click_count + $12, 0),
+           repeat_visit_count = GREATEST(user_tag_interest.repeat_visit_count + $13, 0),
+           dwell_time_ms = GREATEST(user_tag_interest.dwell_time_ms + $14, 0),
+           updated_at = NOW()`,
+      [
+        userId,
+        update.tag,
+        insertScore,
+        insertLikeDelta,
+        insertBookmarkDelta,
+        insertClickDelta,
+        insertRepeatVisitDelta,
+        insertDwellTimeMs,
+        Number(update.scoreDelta || 0),
+        Number(update.likeDelta || 0),
+        Number(update.bookmarkDelta || 0),
+        Number(update.clickDelta || 0),
+        Number(update.repeatVisitDelta || 0),
+        Math.max(0, Number(update.dwellTimeMs || 0))
+      ]
+    );
+  }
+
+  return updates;
+}
+
+async function trackPostViewInterest(client, userId, postMeta) {
+  if (!userId || !postMeta) {
+    return { totalViewCount: 0, repeatedVisitCount: 0 };
+  }
+
+  const existing = await client.query(
+    `SELECT total_view_count, repeated_visit_count
+     FROM post_engagement
+     WHERE user_id = $1 AND post_id = $2
+     FOR UPDATE`,
+    [userId, postMeta.id]
+  );
+
+  const previous = existing.rows[0];
+  const nextTotalViewCount = Number(previous?.total_view_count || 0) + 1;
+  const nextRepeatedVisitCount = Number(previous?.repeated_visit_count || 0) + (previous ? 1 : 0);
+
+  if (previous) {
+    await client.query(
+      `UPDATE post_engagement
+       SET last_viewed_at = NOW(),
+           total_view_count = $3,
+           repeated_visit_count = $4,
+           updated_at = NOW()
+       WHERE user_id = $1 AND post_id = $2`,
+      [userId, postMeta.id, nextTotalViewCount, nextRepeatedVisitCount]
+    );
+  } else {
+    await client.query(
+      `INSERT INTO post_engagement (
+         user_id, post_id, first_viewed_at, last_viewed_at, total_view_count, repeated_visit_count, updated_at
+       )
+       VALUES ($1, $2, NOW(), NOW(), 1, 0, NOW())`,
+      [userId, postMeta.id]
+    );
+  }
+
+  await applyInterestSignal(client, userId, postMeta, {
+    clickDelta: 1,
+    repeatVisitDelta: previous ? 1 : 0
+  });
+
+  return {
+    totalViewCount: nextTotalViewCount,
+    repeatedVisitCount: nextRepeatedVisitCount
+  };
+}
+
+async function trackPostDwellInterest(client, userId, postMeta, dwellTimeMs) {
+  if (!userId || !postMeta) {
+    return null;
+  }
+
+  const boundedDwellTime = Math.min(Math.max(Math.trunc(Number(dwellTimeMs || 0)), 0), 120000);
+  if (boundedDwellTime < 1500) {
+    return null;
+  }
+
+  const existing = await client.query(
+    `SELECT total_view_count, total_dwell_time_ms
+     FROM post_engagement
+     WHERE user_id = $1 AND post_id = $2
+     FOR UPDATE`,
+    [userId, postMeta.id]
+  );
+
+  const previous = existing.rows[0];
+  const nextTotalViews = Math.max(1, Number(previous?.total_view_count || 1));
+  const nextTotalDwellTime = Number(previous?.total_dwell_time_ms || 0) + boundedDwellTime;
+  const nextAverageDwellTime = Math.round(nextTotalDwellTime / nextTotalViews);
+
+  if (previous) {
+    await client.query(
+      `UPDATE post_engagement
+       SET last_viewed_at = NOW(),
+           total_dwell_time_ms = $3,
+           average_dwell_time_ms = $4,
+           last_dwell_time_ms = $5,
+           updated_at = NOW()
+       WHERE user_id = $1 AND post_id = $2`,
+      [userId, postMeta.id, nextTotalDwellTime, nextAverageDwellTime, boundedDwellTime]
+    );
+  } else {
+    await client.query(
+      `INSERT INTO post_engagement (
+         user_id, post_id, first_viewed_at, last_viewed_at, total_view_count,
+         total_dwell_time_ms, average_dwell_time_ms, last_dwell_time_ms, updated_at
+       )
+       VALUES ($1, $2, NOW(), NOW(), 1, $3, $4, $5, NOW())`,
+      [userId, postMeta.id, boundedDwellTime, boundedDwellTime, boundedDwellTime]
+    );
+  }
+
+  await applyInterestSignal(client, userId, postMeta, {
+    dwellTimeMs: boundedDwellTime
+  });
+
+  return {
+    dwellTimeMs: boundedDwellTime,
+    averageDwellTimeMs: nextAverageDwellTime
+  };
+}
+
+async function getUserTopInterestTags(db, userId, limit = 12) {
+  if (!userId) {
+    return [];
+  }
+
+  const result = await db.query(
+    `SELECT tag, score, like_count, bookmark_count, click_count, repeat_visit_count, dwell_time_ms, updated_at
+     FROM user_tag_interest
+     WHERE user_id = $1
+       AND score > 0
+     ORDER BY score DESC, updated_at DESC
+     LIMIT $2`,
+    [userId, Math.max(1, Math.min(Math.trunc(Number(limit) || 12), 24))]
+  );
+
+  return result.rows.map(mapUserInterestRow);
+}
+
+async function getSavedPostsByUser(db, userId) {
+  const params = [userId, userId];
+  const result = await db.query(
+    `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
+            p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
+            u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
+            f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
+            owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope,
+            COALESCE(f.show_code_block_tools, TRUE) AS forum_show_code_block_tools, f.is_core AS forum_is_core,
+            COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+            COALESCE((SELECT COUNT(*)::int FROM post_like pl WHERE pl.post_id = p.id), 0) AS like_count,
+            COALESCE((SELECT COUNT(*)::int FROM post_bookmark pb_all WHERE pb_all.post_id = p.id), 0) AS bookmark_count,
+            EXISTS (SELECT 1 FROM post_like viewer_like WHERE viewer_like.post_id = p.id AND viewer_like.user_id = $2) AS viewer_has_liked,
+            TRUE AS viewer_has_bookmarked,
+            pb.created_at AS saved_at
+     FROM post_bookmark pb
+     JOIN post p ON p.id = pb.post_id
+     JOIN app_user u ON u.id = p.author_id
+     LEFT JOIN forum f ON f.id = p.forum_id
+     LEFT JOIN app_user owner ON owner.id = f.owner_id
+     LEFT JOIN post_tag pt ON pt.post_id = p.id
+     LEFT JOIN tag t ON t.id = pt.tag_id
+     WHERE pb.user_id = $1
+       AND p.is_published = TRUE
+       AND p.deleted_by_admin_at IS NULL
+     GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, owner.username,
+              f.section_scope, f.show_code_block_tools, f.is_core, pb.created_at
+     ORDER BY pb.created_at DESC`,
+    params
+  );
+
+  return result.rows.map(mapPostRow);
 }
 
 async function sendPasswordResetEmail({ to, name, resetUrl }) {
@@ -552,6 +983,90 @@ async function getPostViewCounts(postIds = []) {
     }
   });
   return counts;
+}
+
+async function getRecommendedPostsForUser(client, userId, limit = 8) {
+  const topInterests = await getUserTopInterestTags(client, userId, 12);
+  if (topInterests.length === 0) {
+    const fallback = await listPublicPosts(pool, mapPostRow, { page: 1, pageSize: 'all' }, userId);
+    return {
+      posts: (fallback.posts || []).slice(0, limit),
+      topInterests,
+      fallback: true
+    };
+  }
+
+  const interestScoreMap = new Map(topInterests.map((item) => [item.tag, Number(item.score || 0)]));
+  const engagementResult = await client.query(
+    `SELECT post_id, total_view_count
+     FROM post_engagement
+     WHERE user_id = $1`,
+    [userId]
+  );
+  const seenCountMap = new Map(
+    engagementResult.rows.map((row) => [String(row.post_id), Number(row.total_view_count || 0)])
+  );
+
+  const candidateResult = await client.query(
+    `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
+            p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
+            u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
+            f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
+            owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope,
+            COALESCE(f.show_code_block_tools, TRUE) AS forum_show_code_block_tools, f.is_core AS forum_is_core,
+            COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+            COALESCE((SELECT COUNT(*)::int FROM post_like pl WHERE pl.post_id = p.id), 0) AS like_count,
+            COALESCE((SELECT COUNT(*)::int FROM post_bookmark pb WHERE pb.post_id = p.id), 0) AS bookmark_count,
+            EXISTS (SELECT 1 FROM post_like viewer_like WHERE viewer_like.post_id = p.id AND viewer_like.user_id = $1) AS viewer_has_liked,
+            EXISTS (SELECT 1 FROM post_bookmark viewer_bookmark WHERE viewer_bookmark.post_id = p.id AND viewer_bookmark.user_id = $1) AS viewer_has_bookmarked
+     FROM post p
+     JOIN app_user u ON u.id = p.author_id
+     LEFT JOIN forum f ON f.id = p.forum_id
+     LEFT JOIN app_user owner ON owner.id = f.owner_id
+     LEFT JOIN post_tag pt ON pt.post_id = p.id
+     LEFT JOIN tag t ON t.id = pt.tag_id
+     WHERE p.is_published = TRUE
+       AND p.deleted_by_admin_at IS NULL
+     GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, owner.username,
+              f.section_scope, f.show_code_block_tools, f.is_core
+     ORDER BY p.created_at DESC
+     LIMIT 90`,
+    [userId]
+  );
+
+  const mappedPosts = candidateResult.rows.map(mapPostRow);
+  const viewCountMap = await getPostViewCounts(mappedPosts.map((post) => post.id));
+  const rankedPosts = mappedPosts
+    .map((post) => {
+      const interestTags = getInterestTags({ tags: post.tags || [], section: post.section || '' });
+      const interestScore = interestTags.reduce((total, tag) => total + Number(interestScoreMap.get(tag) || 0), 0);
+      const viewCount = Number(viewCountMap.get(post.id) || 0);
+      const commentCount = Number(post.commentCount || 0);
+      const likeCount = Number(post.likeCount || 0);
+      const bookmarkCount = Number(post.bookmarkCount || 0);
+      const ageHours = Math.max(1, (Date.now() - Number(post.updatedAt || post.createdAt || 0)) / 36e5);
+      const recencyBoost = Math.max(0, 72 - Math.min(ageHours, 72)) * 0.18;
+      const engagementBoost = Math.log2(viewCount + 1) * 1.4
+        + Math.log2(commentCount + 1) * 2.2
+        + likeCount * 0.65
+        + bookmarkCount * 0.8;
+      const seenPenalty = Number(seenCountMap.get(post.id) || 0) * 1.15;
+      const recommendationScore = interestScore * 1.45 + engagementBoost + recencyBoost - seenPenalty;
+
+      return {
+        ...post,
+        viewCount,
+        interestScore: recommendationScore
+      };
+    })
+    .filter((post) => Number(post.interestScore || 0) > 0.4)
+    .sort((left, right) => Number(right.interestScore || 0) - Number(left.interestScore || 0));
+
+  return {
+    posts: rankedPosts.slice(0, Math.max(1, Math.min(Math.trunc(Number(limit) || 8), 24))),
+    topInterests,
+    fallback: false
+  };
 }
 
 function duckQuery(sql) {
@@ -3685,6 +4200,12 @@ function mapPostRow(row) {
     updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
     viewCount: Number(row.view_count || 0),
     commentCount: Number(row.comment_count || 0),
+    likeCount: Number(row.like_count || 0),
+    bookmarkCount: Number(row.bookmark_count || 0),
+    isLiked: Boolean(row.viewer_has_liked),
+    isBookmarked: Boolean(row.viewer_has_bookmarked),
+    savedAt: row.saved_at ? new Date(row.saved_at).getTime() : null,
+    interestScore: row.recommendation_score == null ? null : Number(row.recommendation_score),
     authorId: row.author_id,
     authorName: row.author_name,
     authorEmail: row.author_email,
@@ -3814,7 +4335,23 @@ async function attachTags(client, postId, tags) {
   }
 }
 
-async function getPostsByAuthor(client, userId) {
+async function getPostsByAuthor(client, userId, viewerId = '') {
+  const params = [userId];
+  let interactionSelect = `
+            COALESCE((SELECT COUNT(*)::int FROM post_like pl WHERE pl.post_id = p.id), 0) AS like_count,
+            COALESCE((SELECT COUNT(*)::int FROM post_bookmark pb WHERE pb.post_id = p.id), 0) AS bookmark_count,
+            FALSE AS viewer_has_liked,
+            FALSE AS viewer_has_bookmarked`;
+
+  if (viewerId) {
+    params.push(viewerId, viewerId);
+    interactionSelect = `
+            COALESCE((SELECT COUNT(*)::int FROM post_like pl WHERE pl.post_id = p.id), 0) AS like_count,
+            COALESCE((SELECT COUNT(*)::int FROM post_bookmark pb WHERE pb.post_id = p.id), 0) AS bookmark_count,
+            EXISTS (SELECT 1 FROM post_like viewer_like WHERE viewer_like.post_id = p.id AND viewer_like.user_id = $2) AS viewer_has_liked,
+            EXISTS (SELECT 1 FROM post_bookmark viewer_bookmark WHERE viewer_bookmark.post_id = p.id AND viewer_bookmark.user_id = $3) AS viewer_has_bookmarked`;
+  }
+
   const result = await client.query(
     `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
             p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
@@ -3822,6 +4359,7 @@ async function getPostsByAuthor(client, userId) {
             f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
             owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope,
             COALESCE(f.show_code_block_tools, TRUE) AS forum_show_code_block_tools, f.is_core AS forum_is_core,
+            ${interactionSelect},
             COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
      FROM post p
      JOIN app_user u ON u.id = p.author_id
@@ -3833,7 +4371,7 @@ async function getPostsByAuthor(client, userId) {
      GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, owner.username,
               f.section_scope, f.show_code_block_tools, f.is_core
      ORDER BY p.created_at DESC`,
-    [userId]
+    params
   );
   return result.rows.map(mapPostRow);
 }
@@ -4362,18 +4900,46 @@ app.get('/api/media/:assetId', async (req, res) => {
       return res.status(404).send('Not found');
     }
 
-    const assetUrl = mediaStorage.buildAssetUrl({
-      objectKey: asset.object_key,
-      bucket: asset.bucket,
-      region: asset.region
-    });
+    if (!mediaStorage.isConfigured()) {
+      const assetUrl = mediaStorage.buildAssetUrl({
+        objectKey: asset.object_key,
+        bucket: asset.bucket,
+        region: asset.region
+      });
+      return res.redirect(assetUrl);
+    }
 
-    return res.redirect(assetUrl);
+    await sendStorageObject(res, {
+      objectKey: asset.object_key,
+      bucket: asset.bucket
+    });
+    return undefined;
   } catch (error) {
     console.error('Failed to resolve public media asset.', error);
     return res.status(500).send('Failed to load media.');
   } finally {
     client.release();
+  }
+});
+
+app.get('/api/site-media/:siteMediaKey', async (req, res) => {
+  try {
+    const siteMedia = getSiteMediaConfig(req.params.siteMediaKey);
+    if (!siteMedia) {
+      return res.status(404).send('Not found');
+    }
+
+    if (siteMedia.objectKey && mediaStorage.isConfigured()) {
+      await sendStorageObject(res, {
+        objectKey: siteMedia.objectKey
+      });
+      return undefined;
+    }
+
+    return await sendRemoteMedia(res, siteMedia.fallbackUrl);
+  } catch (error) {
+    console.error('Failed to load site media asset.', error);
+    return res.status(500).send('Failed to load media.');
   }
 });
 
@@ -5640,25 +6206,7 @@ app.post('/api/forums/requests/:requestId/appeal', authRequired, async (req, res
 app.get('/api/account/posts', authRequired, async (req, res) => {
   const client = await pool.connect();
   try {
-    const result = await client.query(
-      `SELECT p.id, p.author_id, p.forum_id, p.section, p.title, p.content_markdown, p.created_at, p.updated_at,
-              p.deleted_by_admin_at, p.deleted_by_admin_id, p.deleted_reason, p.appeal_requested_at, p.appeal_note, p.restored_at,
-              u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url,
-              f.slug AS forum_slug, f.name AS forum_name, f.description AS forum_description, f.owner_id AS forum_owner_id,
-              owner.username AS forum_owner_name, COALESCE(f.section_scope, '{}') AS forum_section_scope, f.is_core AS forum_is_core,
-              COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
-       FROM post p
-       JOIN app_user u ON u.id = p.author_id
-       LEFT JOIN forum f ON f.id = p.forum_id
-       LEFT JOIN app_user owner ON owner.id = f.owner_id
-       LEFT JOIN post_tag pt ON pt.post_id = p.id
-       LEFT JOIN tag t ON t.id = pt.tag_id
-       WHERE p.author_id = $1
-       GROUP BY p.id, u.username, u.email, u.avatar_url, f.slug, f.name, f.description, f.owner_id, owner.username, f.section_scope, f.is_core
-       ORDER BY p.created_at DESC`,
-      [req.user.sub]
-    );
-    const posts = result.rows.map(mapPostRow);
+    const posts = await getPostsByAuthor(client, req.user.sub, req.user.sub);
     const appealLogMap = await getPostAppealLogMap(client, posts.map((post) => post.id));
     return res.json({ posts: attachAppealLogs(posts, appealLogMap) });
   } finally {
@@ -5702,11 +6250,7 @@ app.patch('/api/account/profile', authRequired, async (req, res) => {
       if (!String(media.mime_type || '').startsWith('image/')) {
         return res.status(400).json({ message: 'Avatar must be an image.' });
       }
-      nextAvatarUrl = mediaStorage.buildAssetUrl({
-        objectKey: media.object_key,
-        bucket: media.bucket,
-        region: media.region
-      });
+      nextAvatarUrl = buildPublicMediaPath(media.id);
     }
 
     const result = await client.query(
@@ -6004,7 +6548,7 @@ app.get('/api/users/:userId', async (req, res) => {
   }
 
   const [posts, followerCount, followingCount, followState] = await Promise.all([
-    getPostsByAuthor(pool, req.params.userId),
+    getPostsByAuthor(pool, req.params.userId, viewerId || ''),
     pool.query(`SELECT COUNT(*)::int AS count FROM user_follow WHERE following_id = $1`, [req.params.userId]),
     pool.query(`SELECT COUNT(*)::int AS count FROM user_follow WHERE follower_id = $1`, [req.params.userId]),
     viewerId
@@ -6567,9 +7111,42 @@ app.post('/api/forums/:forumId/posts/:postId/restore', authRequired, async (req,
   }
 });
 
-app.get('/api/posts', async (req, res) => {
+app.get('/api/account/saved-posts', authRequired, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const data = await listPublicPosts(pool, mapPostRow, req.query);
+    const posts = await getSavedPostsByUser(client, req.user.sub);
+    const viewCountMap = await getPostViewCounts(posts.map((post) => post.id));
+    return res.json({
+      posts: posts.map((post) => ({
+        ...post,
+        viewCount: viewCountMap.get(post.id) || 0
+      }))
+    });
+  } catch (error) {
+    console.error('Failed to load saved posts.', error);
+    return res.status(500).json({ message: 'Failed to load saved posts.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/account/interests', authRequired, async (req, res) => {
+  try {
+    const requestedLimit = normalizePositiveInteger(req.query?.limit);
+    const topTags = await getUserTopInterestTags(pool, req.user.sub, requestedLimit || 24);
+    return res.json({
+      tags: topTags,
+      weights: INTEREST_SIGNAL_WEIGHTS
+    });
+  } catch (error) {
+    console.error('Failed to load user interests.', error);
+    return res.status(500).json({ message: 'Failed to load interest summary.' });
+  }
+});
+
+app.get('/api/posts', optionalAuth, async (req, res) => {
+  try {
+    const data = await listPublicPosts(pool, mapPostRow, req.query, req.user?.sub || '');
     const viewCountMap = await getPostViewCounts((data.posts || []).map((post) => post.id));
     return res.json({
       ...data,
@@ -6584,9 +7161,29 @@ app.get('/api/posts', async (req, res) => {
   }
 });
 
-app.get('/api/posts/:postId', async (req, res) => {
+app.get('/api/posts/recommended', authRequired, async (req, res) => {
+  const requestedLimit = normalizePositiveInteger(req.query?.limit);
+  const limit = Math.min(requestedLimit || 8, 24);
+  const client = await pool.connect();
   try {
-    const post = await getPublicPostById(pool, mapPostRow, req.params.postId);
+    const recommendation = await getRecommendedPostsForUser(client, req.user.sub, limit);
+    return res.json({
+      posts: recommendation.posts,
+      topTags: recommendation.topInterests,
+      fallback: recommendation.fallback,
+      weights: INTEREST_SIGNAL_WEIGHTS
+    });
+  } catch (error) {
+    console.error('Failed to load recommended posts.', error);
+    return res.status(500).json({ message: 'Failed to load recommended posts.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/posts/:postId', optionalAuth, async (req, res) => {
+  try {
+    const post = await getPublicPostById(pool, mapPostRow, req.params.postId, req.user?.sub || '');
     if (!post) {
       return res.status(404).json({ message: 'Post not found.' });
     }
@@ -6604,15 +7201,185 @@ app.get('/api/posts/:postId', async (req, res) => {
   }
 });
 
-app.post('/api/posts/:postId/view', async (req, res) => {
+app.post('/api/posts/:postId/like', authRequired, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const post = await getPublicPostById(pool, mapPostRow, req.params.postId);
+    await client.query('BEGIN');
+    const postMeta = await getPostInterestMetadata(client, req.params.postId);
+    if (!postMeta) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO post_like (post_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING
+       RETURNING post_id`,
+      [req.params.postId, req.user.sub]
+    );
+
+    if (inserted.rows[0]) {
+      await applyInterestSignal(client, req.user.sub, postMeta, { likeDelta: 1 });
+      await recordActivity('post.liked', {
+        userId: req.user.sub,
+        postId: req.params.postId,
+        tags: postMeta.tags || []
+      });
+    }
+
+    const interaction = await getPostInteractionState(client, req.params.postId, req.user.sub);
+    await client.query('COMMIT');
+    return res.json({ ok: true, ...interaction });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to like post.', error);
+    return res.status(500).json({ message: 'Failed to like post.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/posts/:postId/like', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const postMeta = await getPostInterestMetadata(client, req.params.postId);
+    if (!postMeta) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    const deleted = await client.query(
+      `DELETE FROM post_like
+       WHERE post_id = $1 AND user_id = $2
+       RETURNING post_id`,
+      [req.params.postId, req.user.sub]
+    );
+
+    if (deleted.rows[0]) {
+      await applyInterestSignal(client, req.user.sub, postMeta, { likeDelta: -1 });
+      await recordActivity('post.unliked', {
+        userId: req.user.sub,
+        postId: req.params.postId
+      });
+    }
+
+    const interaction = await getPostInteractionState(client, req.params.postId, req.user.sub);
+    await client.query('COMMIT');
+    return res.json({ ok: true, ...interaction });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to unlike post.', error);
+    return res.status(500).json({ message: 'Failed to unlike post.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/posts/:postId/bookmark', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const postMeta = await getPostInterestMetadata(client, req.params.postId);
+    if (!postMeta) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO post_bookmark (post_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING
+       RETURNING post_id`,
+      [req.params.postId, req.user.sub]
+    );
+
+    if (inserted.rows[0]) {
+      await applyInterestSignal(client, req.user.sub, postMeta, { bookmarkDelta: 1 });
+      await recordActivity('post.bookmarked', {
+        userId: req.user.sub,
+        postId: req.params.postId,
+        tags: postMeta.tags || []
+      });
+    }
+
+    const interaction = await getPostInteractionState(client, req.params.postId, req.user.sub);
+    await client.query('COMMIT');
+    return res.json({ ok: true, ...interaction });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to bookmark post.', error);
+    return res.status(500).json({ message: 'Failed to save post.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/posts/:postId/bookmark', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const postMeta = await getPostInterestMetadata(client, req.params.postId);
+    if (!postMeta) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    const deleted = await client.query(
+      `DELETE FROM post_bookmark
+       WHERE post_id = $1 AND user_id = $2
+       RETURNING post_id`,
+      [req.params.postId, req.user.sub]
+    );
+
+    if (deleted.rows[0]) {
+      await applyInterestSignal(client, req.user.sub, postMeta, { bookmarkDelta: -1 });
+      await recordActivity('post.unbookmarked', {
+        userId: req.user.sub,
+        postId: req.params.postId
+      });
+    }
+
+    const interaction = await getPostInteractionState(client, req.params.postId, req.user.sub);
+    await client.query('COMMIT');
+    return res.json({ ok: true, ...interaction });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to remove saved post.', error);
+    return res.status(500).json({ message: 'Failed to remove saved post.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/posts/:postId/view', optionalAuth, async (req, res) => {
+  try {
+    const post = await getPublicPostById(pool, mapPostRow, req.params.postId, req.user?.sub || '');
     if (!post) {
       return res.status(404).json({ message: 'Post not found.' });
     }
 
+    if (req.user?.sub) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const postMeta = await getPostInterestMetadata(client, req.params.postId);
+        if (postMeta) {
+          await trackPostViewInterest(client, req.user.sub, postMeta);
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('Failed to update personalized view state.', error);
+      } finally {
+        client.release();
+      }
+    }
+
     await recordActivity('post.viewed', {
-      postId: req.params.postId
+      postId: req.params.postId,
+      userId: req.user?.sub || null
     });
 
     const viewCountMap = await getPostViewCounts([post.id]);
@@ -6623,6 +7390,45 @@ app.post('/api/posts/:postId/view', async (req, res) => {
   } catch (error) {
     console.error('Failed to record post view.', error);
     return res.status(500).json({ message: 'Failed to record post view.' });
+  }
+});
+
+app.post('/api/posts/:postId/engagement', authRequired, async (req, res) => {
+  const dwellTimeMs = Math.trunc(Number(req.body?.dwellTimeMs || 0));
+  const source = String(req.body?.source || 'post_detail').trim().slice(0, 40);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const postMeta = await getPostInterestMetadata(client, req.params.postId);
+    if (!postMeta) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    const tracked = await trackPostDwellInterest(client, req.user.sub, postMeta, dwellTimeMs);
+    await client.query('COMMIT');
+
+    if (tracked) {
+      await recordActivity('post.engagement_recorded', {
+        userId: req.user.sub,
+        postId: req.params.postId,
+        dwellTimeMs: tracked.dwellTimeMs,
+        source
+      });
+    }
+
+    return res.json({
+      ok: true,
+      tracked: Boolean(tracked),
+      dwellTimeMs: tracked?.dwellTimeMs || 0
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to record post engagement.', error);
+    return res.status(500).json({ message: 'Failed to record post engagement.' });
+  } finally {
+    client.release();
   }
 });
 

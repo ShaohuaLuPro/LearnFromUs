@@ -145,10 +145,10 @@ const SECTION_CONTENT = {
 const SECTION_ROUTES = {
   story: '/about',
   whyWeExist: '/about/why-we-exist',
-  leadership: '/about/leadership',
-  founder: '/about/leadership/founder',
-  teamMembers: '/about/leadership/team-members',
-  sallyHuang: '/about/leadership/sally-huang'
+  leadership: '/about/team',
+  founder: '/about/founder',
+  teamMembers: '/about/ben-he',
+  sallyHuang: '/about/sally-huang'
 };
 const DIRECTION_CARDS = [
   {

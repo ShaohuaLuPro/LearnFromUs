@@ -37,9 +37,8 @@ export const landingFooterGroups = [
   {
     title: 'Company',
     links: [
-      { key: 'story', href: '/about/why-we-exist', label: 'Why we exist' },
-      { key: 'founder', href: '/about/leadership/founder', label: 'Founder' },
-      { key: 'team', href: '/about/leadership/team-members', label: 'Team' }
+      { key: 'story', href: '/origin-purpose', label: 'Why we exist' },
+      { key: 'team', href: '/about/team', label: 'Team' }
     ]
   }
 ] as const;

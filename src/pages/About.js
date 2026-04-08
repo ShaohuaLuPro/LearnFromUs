@@ -30,22 +30,29 @@ const SECTION_CONTENT = {
         key: 'founder',
         name: 'Shaohua Lu',
         role: 'Founder',
-        image: `${process.env.PUBLIC_URL}/images/founder-portrait.jpg`,
+        image: `${process.env.PUBLIC_URL}/images/team-tom.jpg`,
         imageAlt: 'Shaohua Lu'
       },
       {
         key: 'teamMembers',
         name: 'Ben He',
         role: 'Software Developer',
-        image: `${process.env.PUBLIC_URL}/images/33.jpg`,
+        image: `${process.env.PUBLIC_URL}/images/team-ben.jpg`,
         imageAlt: 'Ben He'
       },
       {
         key: 'sallyHuang',
         name: 'Sally Huang',
         role: 'Digital Designer',
-        image: `${process.env.PUBLIC_URL}/images/111.png`,
+        image: `${process.env.PUBLIC_URL}/images/team-sally.png`,
         imageAlt: 'Sally Huang'
+      },
+      {
+        key: 'guotianKan',
+        name: 'Guotian Kan',
+        role: 'Data Scientist',
+        image: `${process.env.PUBLIC_URL}/images/guotian-kan.png`,
+        imageAlt: 'Guotian Kan'
       }
     ]
   },
@@ -61,7 +68,7 @@ const SECTION_CONTENT = {
         'Building a technical community where people learn by shipping, explaining, and sharing what actually works.',
       location: 'Boston, MA',
       email: 'tomlu1234567@gmail.com',
-      image: `${process.env.PUBLIC_URL}/images/founder-portrait.jpg`,
+      image: `${process.env.PUBLIC_URL}/images/team-tom.jpg`,
       imageAlt: 'Shaohua Lu',
       links: [
         {
@@ -95,7 +102,7 @@ const SECTION_CONTENT = {
         'Experienced across different domains, building cross-disciplinary coordination and collaboration to move products forward.',
       location: 'Boston, MA',
       email: 'bigbenokk@gmail.com',
-      image: `${process.env.PUBLIC_URL}/images/33.jpg`,
+      image: `${process.env.PUBLIC_URL}/images/team-ben.jpg`,
       imageAlt: 'Ben He',
       links: [
         {
@@ -122,7 +129,7 @@ const SECTION_CONTENT = {
         'Shaping how the world sees, feels,\nand interacts with ideas through\nthe craft of visual design.',
       location: 'Boston, MA',
       email: 'sally.huang1999@gmail.com',
-      image: `${process.env.PUBLIC_URL}/images/111.png`,
+      image: `${process.env.PUBLIC_URL}/images/team-sally.png`,
       imageAlt: 'Sally Huang',
       links: [
         {
@@ -139,6 +146,39 @@ const SECTION_CONTENT = {
           "Professional in Digital Media with a focus on User Experience Design and Research. Holding a Bachelor of Science in Fashion Design with a Fine Arts minor, this uncommon blend of disciplines has shaped a distinctly creative lens — one that bridges artistic intuition with technical rigor to explore the full spectrum of possibilities in digital media.\n\nFluent in web technologies including HTML, CSS, and JavaScript, and deeply versed in Adobe's creative suite, I bring both the craft and the code. My experience as a Digital Product Creator at L.L. Bean honed a sharp instinct for problem-solving, a commitment to creativity, and the discipline of delivering under pressure."
       }
     ]
+  },
+  guotianKan: {
+    heroTitle: 'Team Members',
+    heroCopy:
+      'Meet Guotian Kan, a data scientist contributing machine learning and research depth to tsumit.',
+    profile: {
+      eyebrow: '',
+      name: 'Guotian Kan',
+      role: 'Data Scientist',
+      summary:
+        'Data Scientist and Machine Learning Ph.D. candidate in Information Systems and Data Science.',
+      location: 'Boston, MA',
+      image: `${process.env.PUBLIC_URL}/images/guotian-kan.png`,
+      imageAlt: 'Guotian Kan',
+      links: [
+        {
+          label: 'LinkedIn',
+          href: 'https://linkedin.com/in/guotian-kan-20b98910b'
+        },
+        {
+          label: 'GitHub',
+          href: 'https://github.com/guotiankan'
+        }
+      ]
+    },
+    blocks: [
+      {
+        kicker: 'What I Bring',
+        title: '',
+        copy:
+          'Support user search and relevance recommendation model building and deployment tasks end to end.\n\nContributing to improving user search experience and query understanding by developing and deploying related ML and LLM-based solutions.\n\nConduct research, experiments, and A/B test in designing and applying SOTA ML and LLM based solutions to search experience, query understanding, and other business goals.\n\nOwn end-to-end model project and deploy production level model, serving logic, latency optimization, ETL, and automated-maintenance projects and tasks.'
+      }
+    ]
   }
 };
 
@@ -148,7 +188,8 @@ const SECTION_ROUTES = {
   leadership: '/about/team',
   founder: '/about/founder',
   teamMembers: '/about/ben-he',
-  sallyHuang: '/about/sally-huang'
+  sallyHuang: '/about/sally-huang',
+  guotianKan: '/about/guotian-kan'
 };
 const DIRECTION_CARDS = [
   {
@@ -324,6 +365,9 @@ export default function About() {
     if (normalizedPath === SECTION_ROUTES.sallyHuang) {
       return 'sallyHuang';
     }
+    if (normalizedPath === SECTION_ROUTES.guotianKan) {
+      return 'guotianKan';
+    }
     return 'story';
   }, [normalizedPath]);
 
@@ -475,7 +519,10 @@ export default function About() {
   const profile = section.profile;
   const isFounderShowcase = activeSection === 'founder';
   const useInlineProfileLayout =
-    activeSection === 'founder' || activeSection === 'teamMembers' || activeSection === 'sallyHuang';
+    activeSection === 'founder' ||
+    activeSection === 'teamMembers' ||
+    activeSection === 'sallyHuang' ||
+    activeSection === 'guotianKan';
   const isProfileShowcase = useInlineProfileLayout;
   const usesFounderDetailStyles = activeSection === 'founder' || activeSection === 'sallyHuang';
   const highlightedLabels = new Set([

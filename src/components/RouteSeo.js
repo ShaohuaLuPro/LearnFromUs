@@ -90,6 +90,15 @@ function routeConfig(pathname) {
     };
   }
 
+  if (pathname === '/about/guotian-kan') {
+    return {
+      title: buildPageTitle('Guotian Kan'),
+      description: 'Learn more about Guotian Kan, Data Scientist at tsumit.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
   if (pathname === '/terms') {
     return {
       title: buildPageTitle('Terms of Use'),

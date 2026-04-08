@@ -54,16 +54,16 @@ function routeConfig(pathname) {
     };
   }
 
-  if (pathname === '/about/leadership') {
+  if (pathname === '/about/team') {
     return {
-      title: buildPageTitle('Leadership'),
-      description: 'Meet the leadership team behind tsumit and learn who is building the platform.',
+      title: buildPageTitle('Team'),
+      description: 'Meet the team behind tsumit and learn who is building the platform.',
       robots: 'index,follow',
       canonical: buildCanonical(pathname)
     };
   }
 
-  if (pathname === '/about/leadership/founder') {
+  if (pathname === '/about/founder') {
     return {
       title: buildPageTitle('Founder'),
       description: 'Learn more about Shaohua Lu, founder of tsumit.',
@@ -72,16 +72,16 @@ function routeConfig(pathname) {
     };
   }
 
-  if (pathname === '/about/leadership/team-members') {
+  if (pathname === '/about/ben-he') {
     return {
-      title: buildPageTitle('Team Member'),
-      description: 'Learn more about the tsumit team and the people helping build the product.',
+      title: buildPageTitle('Ben He'),
+      description: 'Learn more about Ben He and the people helping build tsumit.',
       robots: 'index,follow',
       canonical: buildCanonical(pathname)
     };
   }
 
-  if (pathname === '/about/leadership/sally-huang') {
+  if (pathname === '/about/sally-huang') {
     return {
       title: buildPageTitle('Sally Huang'),
       description: 'Learn more about Sally Huang, Digital Designer at tsumit.',

@@ -194,11 +194,15 @@ export default function AppRoutes() {
             )}
           />
           <Route path="/about" element={<About />} />
-          <Route path="/about/why-we-exist" element={<About />} />
-          <Route path="/about/leadership" element={<About />} />
-          <Route path="/about/leadership/founder" element={<About />} />
-          <Route path="/about/leadership/team-members" element={<About />} />
-          <Route path="/about/leadership/sally-huang" element={<About />} />
+          <Route path="/about/team" element={<About />} />
+          <Route path="/about/founder" element={<About />} />
+          <Route path="/about/ben-he" element={<About />} />
+          <Route path="/about/sally-huang" element={<About />} />
+          <Route path="/about/why-we-exist" element={<Navigate to="/origin-purpose" replace />} />
+          <Route path="/about/leadership" element={<Navigate to="/about/team" replace />} />
+          <Route path="/about/leadership/founder" element={<Navigate to="/about/founder" replace />} />
+          <Route path="/about/leadership/team-members" element={<Navigate to="/about/ben-he" replace />} />
+          <Route path="/about/leadership/sally-huang" element={<Navigate to="/about/sally-huang" replace />} />
           <Route path="/origin-purpose" element={<OriginPurpose />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />

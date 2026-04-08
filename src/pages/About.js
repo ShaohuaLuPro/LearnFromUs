@@ -119,7 +119,7 @@ const SECTION_CONTENT = {
       name: 'Sally Huang',
       role: 'Digital Designer',
       summary:
-        'Shaping how the world sees, feels, and interacts with ideas through the craft of visual design.',
+        'Shaping how the world sees, feels,\nand interacts with ideas through\nthe craft of visual design.',
       location: 'Boston, MA',
       email: 'sally.huang1999@gmail.com',
       image: `${process.env.PUBLIC_URL}/images/111.png`,
@@ -586,40 +586,50 @@ export default function About() {
                   <h3 className="about-bento-scroll-title mb-2">Long-Term Direction</h3>
                 </header>
 
-                <div className="about-longterm-cards">
-                  {DIRECTION_CARDS.map((card) => (
-                    <article key={card.key} className={`about-longterm-card about-longterm-card-${card.key}`}>
-                      <span className="about-longterm-icon-shell" aria-hidden="true">
-                        {card.icon === 'lightning' ? (
-                          <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                            <path d="M13.5 2 5 13h6l-1 9 9-12h-6l.5-8z" />
-                          </svg>
+                <div className="about-longterm-stage">
+                  <div className="about-longterm-cards">
+                    {DIRECTION_CARDS.map((card) => (
+                      <article key={card.key} className={`about-longterm-card about-longterm-card-${card.key}`}>
+                        <span className="about-longterm-icon-shell" aria-hidden="true">
+                          {card.icon === 'lightning' ? (
+                            <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                              <path d="M13.5 2 5 13h6l-1 9 9-12h-6l.5-8z" />
+                            </svg>
+                          ) : null}
+                          {card.icon === 'check' ? (
+                            <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                              <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
+                              <path d="m8 12 2.6 2.6L16 9.2" />
+                            </svg>
+                          ) : null}
+                          {card.icon === 'folder' ? (
+                            <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                              <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l1.7 2h6.8A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
+                            </svg>
+                          ) : null}
+                        </span>
+                        <h4 className="about-longterm-card-title">{card.title}</h4>
+                        <p className="about-longterm-card-copy mb-0">{card.copy}</p>
+                        {card.tags.length ? (
+                          <div className="about-longterm-tags">
+                            {card.tags.map((tag) => (
+                              <span key={tag} className="about-longterm-tag">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
                         ) : null}
-                        {card.icon === 'check' ? (
-                          <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                            <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
-                            <path d="m8 12 2.6 2.6L16 9.2" />
-                          </svg>
-                        ) : null}
-                        {card.icon === 'folder' ? (
-                          <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                            <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l1.7 2h6.8A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
-                          </svg>
-                        ) : null}
-                      </span>
-                      <h4 className="about-longterm-card-title">{card.title}</h4>
-                      <p className="about-longterm-card-copy mb-0">{card.copy}</p>
-                      {card.tags.length ? (
-                        <div className="about-longterm-tags">
-                          {card.tags.map((tag) => (
-                            <span key={tag} className="about-longterm-tag">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </article>
-                  ))}
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="about-longterm-ground" aria-hidden="true">
+                    <img
+                      src={`${process.env.PUBLIC_URL}/images/11111.png`}
+                      alt=""
+                      className="about-longterm-ground-image"
+                    />
+                  </div>
                 </div>
               </section>
             </section>
@@ -790,7 +800,10 @@ export default function About() {
                     } ${usesFounderDetailStyles ? 'about-story-copy-story-match' : ''} ${
                       activeSection === 'teamMembers' ? 'about-story-copy-plain' : ''
                     } ${usesFounderDetailStyles ? 'about-founder-summary-offset' : ''
-                    } ${activeSection === 'founder' ? 'about-founder-summary-fixed-lines' : ''
+                    } ${activeSection === 'founder' || activeSection === 'teamMembers' || activeSection === 'sallyHuang'
+                      ? 'about-founder-summary-fixed-lines'
+                      : ''
+                    } ${activeSection === 'sallyHuang' ? 'about-sally-summary-fixed-lines' : ''
                     }`}
                   >
                     {activeSection === 'founder'
@@ -801,11 +814,23 @@ export default function About() {
                           <span className="about-founder-summary-line">and sharing what actually works.</span>
                         </span>
                       )
-                      : activeSection === 'sallyHuang'
-                        ? animatedSallySummary
                       : activeSection === 'teamMembers'
-                        ? animatedTeamSummary
-                        : profile.summary}
+                        ? (
+                          <span className="about-founder-summary-lines">
+                            <span className="about-founder-summary-line">Experienced across different domains,</span>
+                            <span className="about-founder-summary-line">building cross-disciplinary coordination</span>
+                            <span className="about-founder-summary-line">and collaboration to move products forward.</span>
+                          </span>
+                        )
+                      : activeSection === 'sallyHuang'
+                        ? (
+                          <span className="about-founder-summary-lines">
+                            <span className="about-founder-summary-line">Shaping how the world sees, feels,</span>
+                            <span className="about-founder-summary-line">and interacts with ideas through</span>
+                            <span className="about-founder-summary-line">the craft of visual design.</span>
+                          </span>
+                        )
+                      : profile.summary}
                   </p>
                 </div>
 

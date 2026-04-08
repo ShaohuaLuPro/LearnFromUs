@@ -2024,7 +2024,7 @@ button:disabled,
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
   align-items: start;
-  gap: clamp(1.1rem, 2vw, 1.75rem);
+  gap: clamp(0.75rem, 1.4vw, 1.1rem);
   padding-top: clamp(2.5rem, 6vw, 4.5rem);
   justify-items: stretch;
   width: min(100%, 78rem);
@@ -2050,6 +2050,7 @@ button:disabled,
   align-self: start;
   grid-column: 2;
   grid-row: 1 / span 2;
+  transform: translateX(-50px);
 }
 
 [data-page="about"] .about-detail-col-profile-showcase .about-inline-portrait-image {
@@ -2062,19 +2063,64 @@ button:disabled,
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-profile-name {
+  display: grid;
+  gap: 0.45rem;
   order: 1;
   grid-column: 1;
   justify-self: start;
   margin: 0;
+  color: #111111;
+  font-size: clamp(1.46rem, 2.81vw, 2.59rem);
+  font-weight: 600;
+  line-height: 0.96;
+  letter-spacing: -0.06em;
+  transform: translateX(-50px);
   text-align: left;
+}
+
+[data-page="about"] .about-detail-panel-profile-showcase .about-profile-role-inline {
+  display: block;
+  color: rgba(17, 17, 17, 0.76);
+  font-size: clamp(1.15rem, 2vw, 1.8rem);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-story-copy {
   order: 2;
   grid-column: 1;
   justify-self: start;
-  max-width: 34rem;
+  color: #111111 !important;
+  max-width: 24ch;
+  font-size: clamp(1.16rem, 1.99vw, 2.03rem);
+  font-weight: 400;
+  line-height: 1.48;
+  letter-spacing: -0.03em;
+  transform: translateX(-50px);
   text-align: left;
+}
+
+[data-page="about"] .about-detail-panel-profile-showcase .about-founder-summary-fixed-lines {
+  max-width: 34rem;
+  white-space: normal;
+}
+
+[data-page="about"] .about-detail-panel-profile-showcase .about-founder-summary-lines {
+  display: grid;
+  gap: 0;
+  justify-items: start;
+  width: 100%;
+  max-width: 100%;
+}
+
+[data-page="about"] .about-detail-panel-profile-showcase .about-founder-summary-line {
+  display: block;
+  white-space: nowrap;
+}
+
+[data-page="about"] .about-detail-panel-profile-showcase .about-sally-summary-fixed-lines {
+  white-space: pre-line;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-story-block {
@@ -2103,6 +2149,30 @@ button:disabled,
   width: min(100%, 78rem);
   max-width: 78rem;
   text-align: left;
+  transform: translateX(30px);
+  font-size: clamp(0.87rem, 1.49vw, 1.52rem);
+}
+
+[data-page="about"] .about-detail-panel-profile-showcase .about-story-kicker-highlight,
+[data-page="about"] .about-detail-panel-profile-showcase .about-connect-label {
+  color: #111111 !important;
+  font-size: clamp(1.25rem, 2vw, 1.9rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  justify-self: start;
+  text-align: left;
+}
+
+[data-page="about"] .about-detail-panel-profile-showcase .about-story-title-story-match,
+[data-page="about"] .about-detail-panel-profile-showcase .about-connect-value {
+  color: #111111;
+  font-size: clamp(0.98rem, 1.58vw, 1.46rem);
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: -0.025em;
+  text-align: left;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-connect-list,
@@ -2114,17 +2184,24 @@ button:disabled,
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-connect-list {
   gap: 0.6rem;
+  margin-top: 50px;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-connect-row {
   gap: 0.45rem;
 }
 
+[data-page="about"] .about-detail-panel-profile-showcase .about-connect-value {
+  transform: translate(30px, 12px);
+}
+
 [data-page="about"] .about-detail-panel-profile-showcase .founder-link-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.9rem;
+  margin-top: 0.25rem !important;
   justify-content: flex-start;
+  transform: translateY(15px);
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .founder-link-pill {
@@ -2644,10 +2721,39 @@ button:disabled,
 }
 
 [data-page="about"] .about-direction-section {
+  position: relative;
+  isolation: isolate;
   margin-top: clamp(16rem, 36vw, 28rem);
 }
 
+[data-page="about"] .about-direction-section .about-section-head {
+  position: relative;
+  z-index: 2;
+}
+
+[data-page="about"] .about-direction-section .about-bento-scroll-title,
+[data-page="about"] .about-direction-section .about-longterm-card-title,
+[data-page="about"] .about-direction-section .about-longterm-card-copy,
+[data-page="about"] .about-direction-section .about-longterm-tag {
+  color: #ffffff !important;
+}
+
+[data-page="about"] .about-direction-section .about-longterm-icon-shell,
+[data-page="about"] .about-direction-section .about-longterm-icon-svg {
+  color: #ffffff !important;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+[data-page="about"] .about-longterm-stage {
+  position: relative;
+  padding-bottom: clamp(14rem, 28vw, 20rem);
+  z-index: 1;
+}
+
 [data-page="about"] .about-longterm-cards {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: clamp(2rem, 4vw, 3rem);
   justify-items: center;
@@ -2666,7 +2772,42 @@ button:disabled,
   justify-content: center;
 }
 
+[data-page="about"] .about-longterm-ground {
+  position: absolute;
+  left: 50%;
+  top: calc(clamp(2rem, 6vw, 4.5rem) - 250px);
+  width: 100vw;
+  transform: translateX(-50%);
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+[data-page="about"] .about-longterm-ground-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 1.5rem;
+  object-fit: cover;
+}
+
+[data-page="about"] .about-longterm-ground::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
 @media (max-width: 767.98px) {
+  [data-page="about"] .about-longterm-stage {
+    padding-bottom: clamp(8rem, 28vw, 12rem);
+  }
+
+  [data-page="about"] .about-longterm-ground {
+    top: calc(clamp(4rem, 14vw, 6.5rem) - 250px);
+    width: 100vw;
+  }
+
   .about-story-hero-v2 {
     min-height: min(56vh, 620px);
     padding: clamp(1.5rem, 5vw, 2.5rem) 1.25rem clamp(3rem, 9vw, 4.5rem);

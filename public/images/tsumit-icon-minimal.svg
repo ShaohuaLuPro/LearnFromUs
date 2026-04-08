@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="tsumit icon">
-  <rect width="256" height="256" rx="56" fill="#FFFFFF" />
-  <rect x="20" y="20" width="216" height="216" rx="48" fill="#FFFFFF" stroke="#111111" stroke-width="10" />
-  <path d="M70 72h42c27 0 45 18 45 44 0 18-10 31-26 39l39 36h-38l-33-31H70v31H49v-91c0-18 8-28 21-28Zm0 67h38c18 0 29-10 29-26 0-17-11-27-29-27H70Z" fill="#111111" />
-  <path d="M171 72h17c12 0 19 7 19 19v73h19v20h-38c-12 0-19-7-19-19V72Z" fill="#8B5CF6" />
-  <circle cx="190" cy="56" r="9" fill="#8B5CF6" />
-</svg>

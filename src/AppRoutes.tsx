@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import AgentChatbox from './components/AgentChatbox';
 import Footer from './components/Footer';
 import Header from './components/Header';
@@ -29,6 +29,7 @@ import Moderation from './pages/Moderation';
 import MyForums from './pages/MyForums';
 import MyForumInvitations from './pages/MyForumInvitations';
 import MyForumManagers from './pages/MyForumManagers';
+import MySpaceManage from './pages/MySpaceManage';
 import MyPostEditPage from './pages/MyPostEditPage';
 import MyPosts from './pages/MyPosts';
 import PostAppealRecordPage from './pages/PostAppealRecordPage';
@@ -65,7 +66,6 @@ function LoadingShell() {
 }
 
 export default function AppRoutes() {
-  const location = useLocation();
   const auth = useAuth();
   const posts = usePosts();
   const canManageAdminAccess = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.canManageAdminAccess);
@@ -73,16 +73,14 @@ export default function AppRoutes() {
   const canViewAnalytics = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('analytics'));
   const canReviewForumRequests = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('forum_requests'));
   const canResetPasswords = Boolean(auth.currentUser?.isAdmin || auth.currentUser?.adminPermissions?.includes('password_reset'));
-  const showGlobalFooter = location.pathname !== '/';
-
   if (auth.authLoading || (!posts.initialized && posts.loadingPosts)) {
     return <LoadingShell />;
   }
 
   const updateProfile = async (
-    { name, avatarAssetId, removeAvatar }: { name: string; avatarAssetId?: string; removeAvatar?: boolean }
+    { name, bio, avatarAssetId, removeAvatar }: { name: string; bio?: string; avatarAssetId?: string; removeAvatar?: boolean }
   ) => {
-    const result = await auth.updateProfile({ name, avatarAssetId, removeAvatar });
+    const result = await auth.updateProfile({ name, bio, avatarAssetId, removeAvatar });
     if (result.ok && result.user) {
       posts.syncAuthorName(result.user.id, result.user.name, result.user.avatarUrl || '');
     }
@@ -99,12 +97,13 @@ export default function AppRoutes() {
   };
 
   return (
-    <div className="app-wrapper d-flex flex-column min-vh-100">
+    <div className="app-wrapper app-platform">
       <RouteSeo />
       <ScrollToTop />
       <Header currentUser={auth.currentUser} forums={posts.forums} posts={posts.posts} onLogout={auth.logout} />
-      <main className="app-main">
-        <Routes>
+      <div className="app-platform-main-column">
+        <main className="app-main app-main-platform">
+          <Routes>
           <Route
             path="/"
             element={(
@@ -122,6 +121,7 @@ export default function AppRoutes() {
                 forums={posts.forums}
                 posts={posts.posts}
                 currentUser={auth.currentUser}
+                onLoadForums={posts.loadForums}
               />
             )}
           />
@@ -204,10 +204,19 @@ export default function AppRoutes() {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/legal" element={<Legal />} />
           <Route path="/goodbye" element={<Goodbye />} />
-          <Route path="/users/:userId" element={<UserProfile currentUser={auth.currentUser} />} />
+          <Route
+            path="/users/:userId"
+            element={<UserProfile currentUser={auth.currentUser} forums={posts.forums} />}
+          />
           <Route
             path="/following"
-            element={auth.currentUser ? <Following forums={posts.forums} /> : <Navigate to="/login" replace />}
+            element={auth.currentUser ? (
+              <Following
+                forums={posts.forums}
+                currentUser={auth.currentUser}
+                onLoadForums={posts.loadForums}
+              />
+            ) : <Navigate to="/login" replace />}
           />
           <Route
             path="/forums/request"
@@ -274,6 +283,7 @@ export default function AppRoutes() {
               <MyPosts
                 currentUser={auth.currentUser}
                 onGetMyPosts={posts.getMyPosts}
+                onDeletePost={posts.deletePost}
               />
             ) : (
               <Navigate to="/login" replace />
@@ -309,7 +319,7 @@ export default function AppRoutes() {
             )}
           />
           <Route
-            path="/my-forums"
+            path="/my-spaces"
             element={auth.currentUser ? (
               <MyForums
                 currentUser={auth.currentUser}
@@ -321,9 +331,12 @@ export default function AppRoutes() {
             )}
           />
           <Route
-            path="/my-forums/invitations"
+            path="/my-spaces/invitations"
             element={auth.currentUser ? (
               <MyForumInvitations
+                currentUser={auth.currentUser}
+                forums={posts.forums}
+                posts={posts.posts}
                 onLoadForums={posts.loadForums}
               />
             ) : (
@@ -331,9 +344,47 @@ export default function AppRoutes() {
             )}
           />
           <Route
+            path="/my-spaces/:forumId/managers/:managerId"
+            element={auth.currentUser ? (
+              <MyForumManagers
+                currentUser={auth.currentUser}
+                forums={posts.forums}
+                onLoadForums={posts.loadForums}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
+            path="/my-spaces/:spaceId/manage"
+            element={auth.currentUser ? (
+              <MySpaceManage
+                currentUser={auth.currentUser}
+                forums={posts.forums}
+                onLoadForums={posts.loadForums}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route path="/my-forums" element={<Navigate to="/my-spaces" replace />} />
+          <Route path="/my-forums/invitations" element={<Navigate to="/my-spaces/invitations" replace />} />
+          <Route
             path="/my-forums/:forumId/managers/:managerId"
             element={auth.currentUser ? (
               <MyForumManagers
+                currentUser={auth.currentUser}
+                forums={posts.forums}
+                onLoadForums={posts.loadForums}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )}
+          />
+          <Route
+            path="/my-forums/:forumId/manage"
+            element={auth.currentUser ? (
+              <MySpaceManage
                 currentUser={auth.currentUser}
                 forums={posts.forums}
                 onLoadForums={posts.loadForums}
@@ -431,9 +482,10 @@ export default function AppRoutes() {
               />
             )}
           />
-        </Routes>
-      </main>
-      {showGlobalFooter ? <Footer /> : null}
+          </Routes>
+        </main>
+        <Footer />
+      </div>
       <AgentChatbox
         currentUser={auth.currentUser}
         onAgentChat={posts.agentChat}

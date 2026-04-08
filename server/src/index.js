@@ -276,6 +276,7 @@ function buildAuthenticatedUser(user, grantedPermissions = []) {
     sub: user.id,
     email: user.email,
     name: user.username,
+    bio: user.bio || '',
     avatarUrl: user.avatar_url || '',
     isAdmin: isAdminUser(user),
     adminPermissions,
@@ -290,6 +291,7 @@ function buildClientUser(user, grantedPermissions = []) {
     id: user.id,
     email: user.email,
     name: user.username,
+    bio: user.bio || '',
     avatarUrl: user.avatar_url || '',
     isAdmin: isAdminUser(user),
     adminPermissions,
@@ -359,7 +361,7 @@ async function attachAuthenticatedUser(decodedToken) {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, email, username, avatar_url
+      `SELECT id, email, username, bio, avatar_url
        FROM app_user
        WHERE id = $1`,
       [decodedToken.sub]
@@ -3789,6 +3791,7 @@ function mapCommentRow(row) {
     authorId: row.author_id,
     authorName: row.author_name,
     authorEmail: row.author_email,
+    authorAvatarUrl: row.author_avatar_url || '',
     content: row.content_markdown,
     createdAt: new Date(row.created_at).getTime(),
     updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null
@@ -3838,7 +3841,7 @@ async function getPostsByAuthor(client, userId) {
 async function getCommentsByPost(client, postId) {
   const result = await client.query(
     `SELECT c.id, c.post_id, c.author_id, c.content_markdown, c.created_at, c.updated_at,
-            u.username AS author_name, u.email AS author_email
+            u.username AS author_name, u.email AS author_email, u.avatar_url AS author_avatar_url
      FROM comment c
      JOIN app_user u ON u.id = c.author_id
      WHERE c.post_id = $1
@@ -3925,7 +3928,7 @@ app.post('/api/auth/register', authRateLimit, async (req, res) => {
     const result = await client.query(
       `INSERT INTO app_user (email, username, password_hash)
        VALUES ($1, $2, $3)
-       RETURNING id, email, username, avatar_url`,
+       RETURNING id, email, username, bio, avatar_url`,
       [normalizedEmail, username, hashed]
     );
     const user = result.rows[0];
@@ -3964,7 +3967,7 @@ app.post('/api/auth/login', authRateLimit, async (req, res) => {
   try {
     const normalizedEmail = cleanEmail;
     const result = await client.query(
-      `SELECT id, email, username, password_hash, avatar_url FROM app_user WHERE email = $1`,
+      `SELECT id, email, username, bio, password_hash, avatar_url FROM app_user WHERE email = $1`,
       [normalizedEmail]
     );
     if (!result.rows[0]) {
@@ -4100,7 +4103,7 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, email, username, avatar_url FROM app_user WHERE id = $1`,
+      `SELECT id, email, username, bio, avatar_url FROM app_user WHERE id = $1`,
       [req.user.sub]
     );
     if (!result.rows[0]) {
@@ -4290,13 +4293,15 @@ app.delete('/api/media/:assetId', authRequired, async (req, res) => {
     });
 
     const mediaToken = `media:${asset.id}`;
+    const mediaApiPath = `/api/media/${asset.id}`;
     const postUsage = await client.query(
       `SELECT 1
        FROM post
        WHERE content_markdown LIKE '%' || $1 || '%'
           OR content_markdown LIKE '%' || $2 || '%'
+          OR content_markdown LIKE '%' || $3 || '%'
        LIMIT 1`,
-      [assetUrl, mediaToken]
+      [assetUrl, mediaToken, mediaApiPath]
     );
     if (postUsage.rows[0]) {
       return res.status(409).json({ message: 'This image is already used in a published post.' });
@@ -5072,6 +5077,66 @@ app.post('/api/forums/:forumId/transfer-ownership', authRequired, async (req, re
   }
 });
 
+app.delete('/api/forums/:forumId', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const forum = await getForumById(client, req.params.forumId);
+    if (!forum) {
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    if (!canManageForum(req.user, forum.ownerId)) {
+      return res.status(403).json({ message: 'Only the forum owner or a site admin can delete this forum.' });
+    }
+    if (forum.isCore) {
+      return res.status(400).json({ message: 'Core forums cannot be deleted.' });
+    }
+
+    const postCountResult = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM post
+       WHERE forum_id = $1`,
+      [req.params.forumId]
+    );
+    const detachedPostCount = Number(postCountResult.rows[0]?.count || 0);
+
+    await client.query('BEGIN');
+    const removed = await client.query(
+      `DELETE FROM forum
+       WHERE id = $1
+       RETURNING id, slug, name`,
+      [req.params.forumId]
+    );
+    if (!removed.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Forum not found.' });
+    }
+    await client.query('COMMIT');
+
+    await recordActivity('forum.deleted', {
+      userId: req.user.sub,
+      forumId: removed.rows[0].id,
+      forumSlug: removed.rows[0].slug,
+      forumName: removed.rows[0].name,
+      detachedPostCount
+    });
+
+    const detachedPostSuffix = detachedPostCount > 0
+      ? ` ${detachedPostCount} post${detachedPostCount === 1 ? '' : 's'} remain available without this space.`
+      : '';
+
+    return res.json({
+      ok: true,
+      message: `Forum deleted.${detachedPostSuffix}`
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to delete forum.', error);
+    return res.status(500).json({ message: 'Failed to delete forum.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.patch('/api/forums/:forumId/details', authRequired, async (req, res) => {
   const cleanDescription = normalizeForumDescription(req.body?.description || req.body?.overview);
 
@@ -5602,11 +5667,15 @@ app.get('/api/account/posts', authRequired, async (req, res) => {
 });
 
 app.patch('/api/account/profile', authRequired, async (req, res) => {
-  const { name, avatarAssetId, removeAvatar } = req.body || {};
+  const { name, bio, avatarAssetId, removeAvatar } = req.body || {};
   const cleanName = String(name || '').trim();
+  const cleanBio = String(bio || '').trim();
   const cleanAvatarAssetId = String(avatarAssetId || '').trim();
   if (!cleanName) {
     return res.status(400).json({ message: 'Display name is required.' });
+  }
+  if (cleanBio.length > 280) {
+    return res.status(400).json({ message: 'Bio must be 280 characters or fewer.' });
   }
 
   const client = await pool.connect();
@@ -5643,15 +5712,16 @@ app.patch('/api/account/profile', authRequired, async (req, res) => {
     const result = await client.query(
       `UPDATE app_user
        SET username = $1,
+           bio = NULLIF($4::text, ''),
            avatar_url = CASE
              WHEN $3::boolean THEN NULL
              WHEN $2::text <> '' THEN $2
              ELSE avatar_url
            END,
            updated_at = NOW()
-       WHERE id = $4
-       RETURNING id, email, username, avatar_url`,
-      [cleanName, nextAvatarUrl, Boolean(removeAvatar), req.user.sub]
+       WHERE id = $5
+       RETURNING id, email, username, bio, avatar_url`,
+      [cleanName, nextAvatarUrl, Boolean(removeAvatar), cleanBio, req.user.sub]
     );
     if (!result.rows[0]) {
       return res.status(404).json({ message: 'User not found.' });
@@ -5662,6 +5732,7 @@ app.patch('/api/account/profile', authRequired, async (req, res) => {
     await recordActivity('account.profile_updated', {
       userId: user.id,
       username: user.username,
+      bioLength: cleanBio.length,
       avatarUpdated: Boolean(cleanAvatarAssetId) || Boolean(removeAvatar)
     });
     return res.json({
@@ -5856,6 +5927,61 @@ app.get('/api/account/following', authRequired, async (req, res) => {
     followers,
     posts
   });
+});
+
+app.get('/api/users/search', async (req, res) => {
+  const cleanQuery = String(req.query?.q || '').trim();
+  if (cleanQuery.length < 1) {
+    return res.json({ users: [] });
+  }
+
+  const rawLimit = Number(req.query?.limit);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 10)
+    : 6;
+  const containsPattern = `%${cleanQuery}%`;
+  const startsWithPattern = `${cleanQuery}%`;
+
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.bio, u.avatar_url,
+              COALESCE(followers.count, 0) AS follower_count,
+              COALESCE(following.count, 0) AS following_count,
+              FALSE AS is_following,
+              FALSE AS is_followed_by
+       FROM app_user u
+       LEFT JOIN (
+         SELECT following_id, COUNT(*)::int AS count
+         FROM user_follow
+         GROUP BY following_id
+       ) followers ON followers.following_id = u.id
+       LEFT JOIN (
+         SELECT follower_id, COUNT(*)::int AS count
+         FROM user_follow
+         GROUP BY follower_id
+       ) following ON following.follower_id = u.id
+       WHERE u.username ILIKE $1
+          OR COALESCE(u.bio, '') ILIKE $1
+       ORDER BY
+         CASE
+           WHEN LOWER(u.username) = LOWER($2) THEN 0
+           WHEN LOWER(u.username) LIKE LOWER($3) THEN 1
+           WHEN LOWER(COALESCE(u.bio, '')) LIKE LOWER($3) THEN 2
+           ELSE 3
+         END,
+         COALESCE(followers.count, 0) DESC,
+         u.username ASC
+       LIMIT $4`,
+      [containsPattern, cleanQuery, startsWithPattern, limit]
+    );
+
+    return res.json({
+      users: result.rows.map(mapNetworkUserRow)
+    });
+  } catch (error) {
+    console.error('Failed to search users.', error);
+    return res.status(500).json({ message: 'Failed to search users.' });
+  }
 });
 
 app.get('/api/users/:userId', async (req, res) => {
@@ -6542,7 +6668,7 @@ app.post('/api/posts/:postId/comments', authRequired, async (req, res) => {
     );
 
     const author = await client.query(
-      `SELECT username, email
+      `SELECT username, email, avatar_url
        FROM app_user
        WHERE id = $1`,
       [req.user.sub]
@@ -6558,7 +6684,8 @@ app.post('/api/posts/:postId/comments', authRequired, async (req, res) => {
       comment: mapCommentRow({
         ...created.rows[0],
         author_name: author.rows[0]?.username || req.user.name,
-        author_email: author.rows[0]?.email || req.user.email
+        author_email: author.rows[0]?.email || req.user.email,
+        author_avatar_url: author.rows[0]?.avatar_url || req.user.avatarUrl || ''
       })
     });
   } catch (error) {

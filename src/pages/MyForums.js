@@ -1,214 +1,98 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  apiGetForumAccess,
-  apiGetForumManagerInvites,
-  apiUpdateForumDetails,
-  apiUpdateForumSections,
-  apiTransferForumOwnership,
-  apiUpsertForumManager
-} from '../api';
-import Select from '../components/Select';
+import { apiGetForumManagerInvites } from '../api';
 import { authStorage } from '../lib/authStorage';
 import { getSectionLabel } from '../lib/sections';
 
-function formatTimestamp(timestamp) {
-  if (!timestamp) {
-    return 'Just now';
-  }
+const ROLE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All roles' },
+  { value: 'owner', label: 'Owner' },
+  { value: 'admin', label: 'Admin' }
+];
 
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+const SORT_OPTIONS = [
+  { value: 'activity', label: 'Most active' },
+  { value: 'followers', label: 'Most followers' },
+  { value: 'name', label: 'Name A-Z' }
+];
+
+function renderNativeSelectOptions(options) {
+  return options.map((item) => (
+    <option key={item.value} value={item.value}>
+      {item.label}
+    </option>
+  ));
+}
+
+function isOwnerSpace(forum, userId) {
+  return Boolean(forum.isOwner || (forum.ownerId && forum.ownerId === userId));
+}
+
+function sortSpaces(items, sortMode) {
+  return [...items].sort((left, right) => {
+    if (sortMode === 'name') {
+      return String(left.name || '').localeCompare(String(right.name || ''));
+    }
+
+    if (sortMode === 'followers') {
+      return Number(right.followerCount || 0) - Number(left.followerCount || 0)
+        || String(left.name || '').localeCompare(String(right.name || ''));
+    }
+
+    return Number(right.livePostCount || right.postCount || 0) - Number(left.livePostCount || left.postCount || 0)
+      || Number(right.followerCount || 0) - Number(left.followerCount || 0)
+      || String(left.name || '').localeCompare(String(right.name || ''));
   });
 }
 
-function sortForums(items = []) {
-  return [...items].sort((a, b) =>
-    Number(b.followerCount ?? 0) - Number(a.followerCount ?? 0)
-    || String(a.name || '').localeCompare(String(b.name || ''))
-  );
-}
-
-function normalizeSectionInput(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
-}
-
-function mergeSectionIntoScope(currentScope = [], nextSection = '') {
-  if (!nextSection) {
-    return currentScope;
+function buildRoleLabel(forum, currentUser) {
+  if (isOwnerSpace(forum, currentUser?.id)) {
+    return 'Owner';
   }
-
-  return [...new Set([...currentScope, nextSection])];
-}
-
-function scopesMatch(left = [], right = []) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return 'Admin';
 }
 
 export default function MyForums({ currentUser, forums = [], onLoadForums }) {
-  const [selectedForumId, setSelectedForumId] = useState('');
-  const [forumSearchQuery, setForumSearchQuery] = useState('');
-  const [accessByForumId, setAccessByForumId] = useState({});
-  const [accessLoading, setAccessLoading] = useState(false);
-  const [accessMessage, setAccessMessage] = useState('');
-  const [actionMessage, setActionMessage] = useState('');
-  const [actionError, setActionError] = useState('');
-  const [actionKey, setActionKey] = useState('');
-  const [inviteIdentifier, setInviteIdentifier] = useState('');
-  const [invitePermissions, setInvitePermissions] = useState([]);
-  const [transferIdentifier, setTransferIdentifier] = useState('');
-  const [overviewDraft, setOverviewDraft] = useState('');
-  const [sectionScopeDraft, setSectionScopeDraft] = useState([]);
-  const [showCodeBlockToolsDraft, setShowCodeBlockToolsDraft] = useState(true);
-  const [sectionDraft, setSectionDraft] = useState('');
-  const [incomingInvites, setIncomingInvites] = useState([]);
-  const [inviteInboxLoading, setInviteInboxLoading] = useState(false);
-
-  const manageableForums = useMemo(() => {
-    if (!currentUser) {
-      return [];
-    }
-
-    if (currentUser.isAdmin) {
-      return sortForums(forums);
-    }
-
-    return sortForums(
-      forums.filter((forum) => forum.ownerId === currentUser.id || forum.canManage)
-    );
-  }, [currentUser, forums]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [sortMode, setSortMode] = useState('activity');
+  const [inviteCount, setInviteCount] = useState(0);
+  const [inviteLoading, setInviteLoading] = useState(false);
 
   useEffect(() => {
-    if (manageableForums.length === 0) {
-      setSelectedForumId('');
-      return;
+    if (typeof onLoadForums === 'function') {
+      void onLoadForums();
     }
-
-    if (!selectedForumId || !manageableForums.some((forum) => forum.id === selectedForumId)) {
-      setSelectedForumId(manageableForums[0].id);
-    }
-  }, [manageableForums, selectedForumId]);
-
-  const selectedForum = useMemo(
-    () => manageableForums.find((forum) => forum.id === selectedForumId) || null,
-    [manageableForums, selectedForumId]
-  );
-
-  const filteredManageableForums = useMemo(() => {
-    const query = forumSearchQuery.trim().toLowerCase();
-    if (!query) {
-      return manageableForums;
-    }
-
-    return manageableForums.filter((forum) => {
-      const sectionText = (forum.sectionScope || []).map((section) => getSectionLabel(section)).join(' ');
-      return [
-        forum.name,
-        forum.description,
-        forum.isOwner ? 'owner' : 'manager',
-        sectionText
-      ].some((value) => String(value || '').toLowerCase().includes(query));
-    });
-  }, [forumSearchQuery, manageableForums]);
-
-  const forumSelectOptions = useMemo(() => {
-    const options = filteredManageableForums.map((forum) => ({
-      value: forum.id,
-      label: forum.name
-    }));
-
-    if (selectedForum && !options.some((option) => option.value === selectedForum.id)) {
-      options.unshift({
-        value: selectedForum.id,
-        label: selectedForum.name
-      });
-    }
-
-    return options;
-  }, [filteredManageableForums, selectedForum]);
-
-  const selectedAccess = selectedForumId ? accessByForumId[selectedForumId] || null : null;
-  const activeForum = selectedAccess?.forum || selectedForum;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadAccess() {
-      if (!selectedForumId) {
-        return;
-      }
-
-      const token = authStorage.getToken();
-      if (!token) {
-        setAccessMessage('Please login first.');
-        return;
-      }
-
-      setAccessLoading(true);
-      setAccessMessage('');
-      try {
-        const data = await apiGetForumAccess(selectedForumId, token);
-        if (cancelled) {
-          return;
-        }
-
-        setAccessByForumId((current) => ({
-          ...current,
-          [selectedForumId]: data
-        }));
-      } catch (error) {
-        if (!cancelled) {
-          setAccessMessage(error instanceof Error ? error.message : 'Failed to load space permissions.');
-        }
-      } finally {
-        if (!cancelled) {
-          setAccessLoading(false);
-        }
-      }
-    }
-
-    loadAccess();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedForumId]);
+  }, [onLoadForums]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadInvites() {
       if (!currentUser) {
-        setIncomingInvites([]);
+        setInviteCount(0);
         return;
       }
 
       const token = authStorage.getToken();
       if (!token) {
+        setInviteCount(0);
         return;
       }
 
-      setInviteInboxLoading(true);
+      setInviteLoading(true);
       try {
         const data = await apiGetForumManagerInvites(token);
         if (!cancelled) {
-          setIncomingInvites(data.invites || []);
+          setInviteCount((data.invites || []).length);
         }
-      } catch (error) {
+      } catch (_) {
         if (!cancelled) {
-          setActionError(error instanceof Error ? error.message : 'Failed to load space manager invites.');
+          setInviteCount(0);
         }
       } finally {
         if (!cancelled) {
-          setInviteInboxLoading(false);
+          setInviteLoading(false);
         }
       }
     }
@@ -219,681 +103,213 @@ export default function MyForums({ currentUser, forums = [], onLoadForums }) {
     };
   }, [currentUser]);
 
-  useEffect(() => {
-    setInviteIdentifier('');
-    setInvitePermissions([]);
-    setTransferIdentifier('');
-    setActionMessage('');
-    setActionError('');
-  }, [selectedForumId]);
-
-  useEffect(() => {
-    setOverviewDraft(activeForum?.description || '');
-    setSectionScopeDraft(activeForum?.sectionScope || []);
-    setShowCodeBlockToolsDraft(activeForum?.showCodeBlockTools ?? true);
-    setSectionDraft('');
-  }, [activeForum?.description, activeForum?.id, activeForum?.sectionScope, activeForum?.showCodeBlockTools]);
-
-  const selectedPermissionKeys = selectedAccess?.viewerPermissions || selectedForum?.currentUserPermissions || [];
-  const canManageAdmins = Boolean(selectedAccess?.canManageAdmins);
-  const canTransferOwnership = Boolean(selectedAccess?.canTransferOwnership);
-  const canManageForumDetails = Boolean(
-    currentUser?.isAdmin
-    || (activeForum?.ownerId && currentUser?.id === activeForum.ownerId)
-    || selectedPermissionKeys.includes('manage_sections')
-  );
-  const canViewFollowers = Boolean(
-    currentUser?.isAdmin
-    || activeForum?.ownerId === currentUser?.id
-    || selectedPermissionKeys.includes('view_followers')
-  );
-
-  const refreshSelectedForum = async () => {
-    if (!selectedForumId) {
-      return null;
+  const manageableSpaces = useMemo(() => {
+    if (!currentUser) {
+      return [];
     }
 
-    const token = authStorage.getToken();
-    if (!token) {
-      throw new Error('Please login first.');
+    if (currentUser.isAdmin) {
+      return forums;
     }
 
-    const data = await apiGetForumAccess(selectedForumId, token);
-    setAccessByForumId((current) => ({
-      ...current,
-      [selectedForumId]: data
-    }));
-    return data;
-  };
+    return forums.filter((forum) => forum.ownerId === currentUser.id || forum.canManage);
+  }, [currentUser, forums]);
 
-  const handleInviteManager = async (event) => {
-    event.preventDefault();
-    if (!selectedForumId) {
-      return;
-    }
-
-    setActionKey('invite-manager');
-    setActionMessage('');
-    setActionError('');
-    try {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
+  const filteredSpaces = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = manageableSpaces.filter((forum) => {
+      const matchesRole = roleFilter === 'all'
+        || (roleFilter === 'owner' && isOwnerSpace(forum, currentUser?.id))
+        || (roleFilter === 'admin' && !isOwnerSpace(forum, currentUser?.id));
+      if (!matchesRole) {
+        return false;
       }
 
-      const response = await apiUpsertForumManager(selectedForumId, {
-        identifier: inviteIdentifier,
-        permissions: invitePermissions
-      }, token);
-      await refreshSelectedForum();
-      await onLoadForums?.();
-      setInviteIdentifier('');
-      setInvitePermissions([]);
-      setActionMessage(response.message || 'Space manager invite sent.');
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Action failed.');
-    } finally {
-      setActionKey('');
-    }
-  };
-
-  const handleTransferOwnership = async (event) => {
-    event.preventDefault();
-    if (!selectedForumId) {
-      return;
-    }
-    if (!window.confirm('Transfer ownership? The new owner will become the primary space owner immediately.')) {
-      return;
-    }
-
-    setActionKey('transfer-ownership');
-    setActionMessage('');
-    setActionError('');
-    try {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
+      if (!query) {
+        return true;
       }
 
-      const response = await apiTransferForumOwnership(selectedForumId, { identifier: transferIdentifier }, token);
-      await onLoadForums?.();
-      await refreshSelectedForum();
-      setTransferIdentifier('');
-      setActionMessage(response.message || 'Space ownership transferred.');
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Action failed.');
-    } finally {
-      setActionKey('');
-    }
-  };
+      const sectionText = (forum.sectionScope || []).map((section) => getSectionLabel(section)).join(' ');
+      return [
+        forum.name,
+        forum.description,
+        sectionText,
+        buildRoleLabel(forum, currentUser)
+      ].some((value) => String(value || '').toLowerCase().includes(query));
+    });
 
-  const handleSaveOverview = async (event) => {
-    event.preventDefault();
-    if (!selectedForumId) {
-      return;
-    }
+    return sortSpaces(filtered, sortMode);
+  }, [currentUser, manageableSpaces, roleFilter, searchQuery, sortMode]);
 
-    if (
-      (overviewDraft || '').trim() === String(activeForum?.description || '').trim()
-      && showCodeBlockToolsDraft === Boolean(activeForum?.showCodeBlockTools ?? true)
-    ) {
-      setActionMessage('Space details are already up to date.');
-      setActionError('');
-      return;
-    }
-
-    setActionKey('save-overview');
-    setActionMessage('');
-    setActionError('');
-    try {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
-      }
-
-      const response = await apiUpdateForumDetails(selectedForumId, {
-        description: overviewDraft,
-        showCodeBlockTools: showCodeBlockToolsDraft
-      }, token);
-      await onLoadForums?.();
-      await refreshSelectedForum();
-      setActionMessage(response.message || 'Space details updated.');
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Failed to update space details.');
-    } finally {
-      setActionKey('');
-    }
-  };
-
-  const addSectionDraftValue = () => {
-    const normalizedSection = normalizeSectionInput(sectionDraft);
-    if (!normalizedSection) {
-      setActionError('Enter a valid section name first.');
-      setActionMessage('');
-      return;
-    }
-    if (sectionScopeDraft.includes(normalizedSection)) {
-      setActionError('That section already exists in this space.');
-      setActionMessage('');
-      return;
-    }
-
-    setSectionScopeDraft((current) => mergeSectionIntoScope(current, normalizedSection));
-    setSectionDraft('');
-    setActionError('');
-  };
-
-  const removeSectionDraftValue = (sectionValue) => {
-    if (sectionScopeDraft.length <= 1) {
-      setActionError('A space must keep at least one section.');
-      setActionMessage('');
-      return;
-    }
-
-    setSectionScopeDraft((current) => current.filter((value) => value !== sectionValue));
-    setActionError('');
-  };
-
-  const cancelSectionChanges = () => {
-    setSectionScopeDraft(activeForum?.sectionScope || []);
-    setSectionDraft('');
-    setActionError('');
-  };
-
-  const handleSaveSections = async () => {
-    if (!selectedForumId) {
-      return;
-    }
-
-    const pendingSection = normalizeSectionInput(sectionDraft);
-    if (sectionDraft.trim() && !pendingSection) {
-      setActionError('Enter letters or numbers for the section name.');
-      setActionMessage('');
-      return;
-    }
-
-    const nextScope = pendingSection
-      ? mergeSectionIntoScope(sectionScopeDraft, pendingSection)
-      : sectionScopeDraft;
-
-    if (nextScope.length === 0) {
-      setActionError('A space must keep at least one section.');
-      setActionMessage('');
-      return;
-    }
-
-    if (scopesMatch(nextScope, activeForum?.sectionScope || [])) {
-      setSectionDraft('');
-      setActionError('');
-      return;
-    }
-
-    setActionKey('save-sections');
-    setActionMessage('');
-    setActionError('');
-    try {
-      const token = authStorage.getToken();
-      if (!token) {
-        throw new Error('Please login first.');
-      }
-
-      const response = await apiUpdateForumSections(selectedForumId, { sectionScope: nextScope }, token);
-      await onLoadForums?.();
-      await refreshSelectedForum();
-      setSectionScopeDraft(nextScope);
-      setSectionDraft('');
-      setActionMessage(response.message || 'Space sections updated.');
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Failed to update space sections.');
-    } finally {
-      setActionKey('');
-    }
-  };
+  if (!currentUser) {
+    return (
+      <div className="container page-shell">
+        <section className="panel my-spaces-panel">
+          <h2 className="mb-2 type-title-md">My Spaces</h2>
+          <p className="muted mb-3">Login to view spaces you own or help manage.</p>
+          <Link to="/login" className="forum-primary-btn text-decoration-none">Login</Link>
+        </section>
+      </div>
+    );
+  }
 
   return (
-    <div className="container page-shell my-forums-page">
-      <section className="panel my-forums-panel">
-        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div className="container page-shell">
+      <section className="my-spaces-panel" aria-label="My spaces">
+        <header className="my-spaces-header">
           <div>
-            <p className="type-kicker mb-1">Workspace</p>
-            <h2 className="mb-1 type-title-md">My Spaces</h2>
-            <p className="muted mb-0">
-              Manage the spaces you own or help run. You can assign focused permissions instead of giving everyone full control.
-            </p>
+            <h1 className="community-feed-title mb-1">My Spaces</h1>
+            <p className="my-posts-subtext mb-0">Browse your owned and managed communities, then open a dedicated workspace to configure each one.</p>
           </div>
-          <div className="forum-actions my-forums-header-actions">
-            <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
-              Request a Space
-            </Link>
-            <Link to="/forums/request/history" className="forum-secondary-btn text-decoration-none">
-              Request History
-            </Link>
-            <Link to="/forum" className="forum-secondary-btn text-decoration-none">
-              Back to Feed
-            </Link>
-          </div>
+          <span className="community-feed-count">
+            {filteredSpaces.length}
+            {manageableSpaces.length !== filteredSpaces.length ? ` of ${manageableSpaces.length}` : ''} spaces
+          </span>
+        </header>
+
+        <div className="my-spaces-toolbar-row">
+          <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
+            Request a Space
+          </Link>
+          <Link to="/forums/request/history" className="forum-secondary-btn text-decoration-none">
+            Request History
+          </Link>
+          <Link
+            to="/my-spaces/invitations"
+            className={`forum-secondary-btn text-decoration-none ${inviteCount > 0 ? 'is-highlighted' : ''}`.trim()}
+          >
+            {inviteLoading ? 'Inbox' : `Inbox${inviteCount > 0 ? ` (${inviteCount})` : ''}`}
+          </Link>
         </div>
 
-        {actionError && <div className="settings-alert is-error mb-3">{actionError}</div>}
-        {actionMessage && <div className="settings-alert is-success mb-3">{actionMessage}</div>}
+        <section className="community-feed-control-bar my-spaces-control-bar" aria-label="My spaces controls">
+          <label className="community-feed-control">
+            <span className="community-feed-control-label">Role</span>
+            <div className="forum-native-select-wrap">
+              <select
+                className="forum-native-select"
+                value={roleFilter}
+                onChange={(event) => setRoleFilter(event.target.value)}
+              >
+                {renderNativeSelectOptions(ROLE_FILTER_OPTIONS)}
+              </select>
+            </div>
+          </label>
 
-        {manageableForums.length === 0 ? (
-          <section className="settings-card">
-            <h4 className="mb-2">No manageable spaces yet</h4>
-            <p className="muted mb-3">
-              Once you own a space or accept a manager invite, it will show up here.
+          <label className="community-feed-control">
+            <span className="community-feed-control-label">Sort</span>
+            <div className="forum-native-select-wrap">
+              <select
+                className="forum-native-select"
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value)}
+              >
+                {renderNativeSelectOptions(SORT_OPTIONS)}
+              </select>
+            </div>
+          </label>
+
+          <div className="community-feed-search">
+            <input
+              className="form-control forum-input tag-search-input"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Refine spaces"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="community-feed-search-clear"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear refine spaces input"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </section>
+
+        {manageableSpaces.length === 0 ? (
+          <section className="settings-card my-spaces-empty-state">
+            <h2 className="my-posts-empty-title mb-0">No spaces yet</h2>
+            <p className="my-posts-empty-copy mb-0">
+              Create or join a space and it will appear here for quick access.
             </p>
-            <div className="d-flex flex-wrap gap-2">
-              <Link to="/my-forums/invitations" className="forum-secondary-btn text-decoration-none">
-                {inviteInboxLoading ? 'Manager Invitations' : `Manager Invitations${incomingInvites.length > 0 ? ` (${incomingInvites.length})` : ''}`}
-              </Link>
+            <div className="my-posts-empty-actions">
               <Link to="/forums/request" className="forum-primary-btn text-decoration-none">
-                Request a Space
-              </Link>
-              <Link to="/forums/request/history" className="forum-secondary-btn text-decoration-none">
-                Request History
+                Request your first space
               </Link>
             </div>
           </section>
         ) : (
-          <div className="forum-admin-layout">
-            <aside className="forum-admin-sidebar">
+          <>
+            <div className="my-spaces-results-head">
+              <p className="muted mb-0">
+                Listing and selection only. Open a space workspace to edit details, sections, managers, and permissions.
+              </p>
               <Link
-                to="/my-forums/invitations"
-                className={`forum-admin-forum-card forum-admin-invite-link ${incomingInvites.length > 0 ? 'has-pending' : ''} text-decoration-none`.trim()}
+                to="/my-spaces/invitations"
+                className={`my-spaces-invite-link ${inviteCount > 0 ? 'has-pending' : ''}`.trim()}
               >
-                <div className="forum-follow-card-topline">
-                  <span className="forum-tag">Requests</span>
-                  {incomingInvites.length > 0 && (
-                    <span className="forum-admin-invite-badge">{incomingInvites.length}</span>
-                  )}
-                </div>
-                <strong>Manager Invitations</strong>
-                <p className="muted mb-0">
-                  {inviteInboxLoading ? 'Loading pending invitations...' : 'Open a dedicated page to review pending space manager invites.'}
-                </p>
-                <span className="forum-follow-meta">
-                  {incomingInvites.length > 0 ? `${incomingInvites.length} pending review` : 'No pending invites'}
-                </span>
+                {inviteCount > 0 ? `${inviteCount} pending actions` : 'Open inbox'}
               </Link>
+            </div>
 
-              <section className="forum-admin-panel forum-admin-selector-card">
-                <div className="forum-admin-panel-head">
-                  <div>
-                    <h5 className="mb-1">Owned or Managed Spaces</h5>
-                    <p className="muted mb-0">Search first, then choose a space from the dropdown.</p>
-                  </div>
-                </div>
-
-                <div className="forum-admin-selector-tools">
-                  <label className="w-100">
-                    <span className="form-label">Search</span>
-                    <input
-                      className="form-control forum-input"
-                      value={forumSearchQuery}
-                      onChange={(event) => setForumSearchQuery(event.target.value)}
-                      placeholder="Search by space name, role, or section"
-                    />
-                  </label>
-
-                  <label className="w-100">
-                    <span className="form-label">Space</span>
-                    <Select
-                      options={forumSelectOptions}
-                      value={selectedForumId}
-                      onChange={setSelectedForumId}
-                      placeholder={forumSelectOptions.length ? 'Choose a space' : 'No matching spaces'}
-                      disabled={forumSelectOptions.length === 0}
-                    />
-                  </label>
-                </div>
-
-                <div className="forum-admin-selector-status">
-                  <span className="muted">
-                    {filteredManageableForums.length} match{filteredManageableForums.length === 1 ? '' : 'es'}
-                  </span>
-                  {forumSearchQuery.trim() && (
-                    <button
-                      type="button"
-                      className="forum-secondary-btn"
-                      onClick={() => setForumSearchQuery('')}
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {selectedForum && (
-                  <div className="forum-admin-current-card">
-                    <div className="forum-follow-card-topline">
-                      <span className="forum-tag">{selectedForum.isOwner ? 'Owner' : 'Manager'}</span>
-                      <span className="muted">{selectedForum.followerCount ?? 0} followers</span>
-                    </div>
-                    <strong>{selectedForum.name}</strong>
-                    <p className="muted mb-0">{selectedForum.description || 'Manage this space from here.'}</p>
-                    <span className="forum-follow-meta">
-                      {(selectedForum.sectionScope || []).slice(0, 4).map((section) => getSectionLabel(section)).join(' / ') || 'No sections'}
-                    </span>
-                    <span className="forum-follow-meta">
-                      {selectedForum.isOwner
-                        ? 'Owner'
-                        : currentUser?.isAdmin
-                          ? 'Site admin'
-                          : `${(selectedForum.currentUserPermissions || []).length} permissions`}
-                    </span>
-                  </div>
-                )}
-              </section>
-
-              {false && manageableForums.map((forum) => {
-                const isActive = forum.id === selectedForumId;
-                const forumPermissionSummary = forum.isOwner
-                  ? 'Owner'
-                  : currentUser?.isAdmin
-                    ? 'Site admin'
-                    : `${(forum.currentUserPermissions || []).length} permissions`;
+            <div className="my-spaces-grid">
+              {filteredSpaces.map((forum) => {
+                const sectionLabels = (forum.sectionScope || []).map((section) => getSectionLabel(section));
+                const roleLabel = buildRoleLabel(forum, currentUser);
+                const postVolume = Number(forum.livePostCount || forum.postCount || 0);
+                const followerVolume = Number(forum.followerCount || 0);
 
                 return (
-                  <button
-                    key={forum.id}
-                    type="button"
-                    className={`forum-admin-forum-card ${isActive ? 'is-active' : ''}`.trim()}
-                    onClick={() => setSelectedForumId(forum.id)}
-                  >
-                    <div className="forum-follow-card-topline">
-                      <span className="forum-tag">{forum.isOwner ? 'Owner' : 'Manager'}</span>
-                      <span className="muted">{forum.followerCount ?? 0} followers</span>
+                  <article key={forum.id} className="my-space-card">
+                    <div className="my-space-card-head">
+                      <span className="my-space-avatar" aria-hidden="true">
+                        {String(forum.name || '').trim().charAt(0).toUpperCase() || 'S'}
+                      </span>
+                      <div className="my-space-card-head-copy">
+                        <strong title={forum.name}>{forum.name}</strong>
+                      </div>
+                      <span className="my-space-role-pill">{roleLabel}</span>
                     </div>
-                    <strong>{forum.name}</strong>
-                    <p className="muted mb-0">{forum.description || 'Manage this space from here.'}</p>
-                    <span className="forum-follow-meta">
-                      {(forum.sectionScope || []).slice(0, 4).map((section) => getSectionLabel(section)).join(' · ') || 'No sections'}
-                    </span>
-                    <span className="forum-follow-meta">{forumPermissionSummary}</span>
-                  </button>
+
+                    <p className="my-space-card-description mb-0">
+                      {forum.description || 'No description yet.'}
+                    </p>
+
+                    <div className="my-space-card-meta">
+                      <span className="my-space-meta-pill">{followerVolume} followers</span>
+                      <span className="my-space-meta-pill">{postVolume} posts</span>
+                      <span className="my-space-meta-pill">{sectionLabels.length} sections</span>
+                    </div>
+
+                    <p className="my-space-card-description mb-0" title={sectionLabels.join(' | ')}>
+                      {sectionLabels.slice(0, 3).join(' | ') || 'No sections configured'}
+                    </p>
+
+                    <div className="my-space-card-actions">
+                      <Link to={`/forum/${forum.slug}`} className="forum-secondary-btn text-decoration-none">
+                        View Space
+                      </Link>
+                      <Link to={`/my-spaces/${forum.id}/manage`} className="forum-primary-btn text-decoration-none">
+                        Manage
+                      </Link>
+                    </div>
+                  </article>
                 );
               })}
-            </aside>
-
-            <div className="forum-admin-main">
-              {selectedForum && (
-                <section className="settings-card forum-admin-shell">
-                  <div className="forum-admin-shell-head">
-                    <div>
-                      <div className="forum-follow-card-topline">
-                        <span className="forum-tag">{activeForum?.isOwner ? 'Owner Access' : 'Space Manager'}</span>
-                        <span className="muted">{activeForum?.livePostCount ?? activeForum?.postCount ?? 0} posts</span>
-                      </div>
-                      <h4 className="mb-1">{activeForum?.name}</h4>
-                      <p className="muted mb-2">
-                        {activeForum?.description || 'Manage your team access and space responsibilities here.'}
-                      </p>
-                    </div>
-                    <div className="forum-actions">
-                      <Link to={`/forum/${activeForum?.slug}`} className="forum-primary-btn text-decoration-none">
-                        Open Space
-                      </Link>
-                      {canViewFollowers && (
-                        <Link to={`/forum/${activeForum?.slug}/followers`} className="forum-secondary-btn text-decoration-none">
-                          View Followers
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-
-                  {accessMessage && <div className="settings-alert is-error mb-3">{accessMessage}</div>}
-
-                  {accessLoading && !selectedAccess ? (
-                    <p className="muted mb-0">Loading space access...</p>
-                  ) : selectedAccess ? (
-                    <div className="forum-admin-sections">
-                      <section className="forum-admin-panel">
-                        <div className="forum-admin-panel-head">
-                          <div>
-                            <h5 className="mb-1">Space Details</h5>
-                            <p className="muted mb-0">
-                              {canManageForumDetails
-                                ? 'Edit the space overview and keep the accepted section scope up to date here.'
-                                : 'You can review the current overview and section scope here.'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <form className="forum-admin-create-form" onSubmit={handleSaveOverview}>
-                          <label className="w-100">
-                            <span className="form-label">Overview</span>
-                            <textarea
-                              className="form-control forum-input forum-admin-textarea"
-                              value={overviewDraft}
-                              onChange={(event) => setOverviewDraft(event.target.value)}
-                              placeholder="Write a short overview for this space."
-                              rows={4}
-                              disabled={!canManageForumDetails || actionKey === 'save-overview'}
-                            />
-                          </label>
-                          <label className="forum-admin-checkbox forum-admin-single-toggle">
-                            <input
-                              type="checkbox"
-                              checked={showCodeBlockToolsDraft}
-                              onChange={(event) => setShowCodeBlockToolsDraft(event.target.checked)}
-                              disabled={!canManageForumDetails || actionKey === 'save-overview'}
-                            />
-                            <span>
-                              <strong>Show code block shortcut in composer</strong>
-                              <small>Turn this off for spaces that do not need the language picker and quick code insert tool.</small>
-                            </span>
-                          </label>
-                          {canManageForumDetails && (
-                            <button
-                              type="submit"
-                              className="forum-primary-btn"
-                              disabled={actionKey === 'save-overview'}
-                            >
-                              {actionKey === 'save-overview' ? 'Saving...' : 'Save Details'}
-                            </button>
-                          )}
-                        </form>
-
-                        <div className="forum-admin-panel-head mt-3">
-                          <div>
-                            <h5 className="mb-1">Edit Sections</h5>
-                            <p className="muted mb-0">
-                              {canManageForumDetails
-                                ? 'Add new sections or remove ones the space no longer needs.'
-                                : 'Current sections accepted by this space.'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {canManageForumDetails && (
-                          <div className="forum-section-admin mb-3">
-                            <div className="forum-section-admin-controls">
-                              <input
-                                className="form-control forum-input forum-section-input"
-                                value={sectionDraft}
-                                onChange={(event) => setSectionDraft(event.target.value)}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    addSectionDraftValue();
-                                  }
-                                }}
-                                placeholder="Type a section name"
-                                disabled={actionKey === 'save-sections'}
-                              />
-                              <button
-                                type="button"
-                                className="forum-primary-btn"
-                                onClick={addSectionDraftValue}
-                                disabled={actionKey === 'save-sections'}
-                              >
-                                Add Section
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="section-chip-wrap">
-                          {(canManageForumDetails ? sectionScopeDraft : (activeForum?.sectionScope || [])).map((section) => (
-                            <div key={section} className={`section-chip-row ${canManageForumDetails ? 'is-editing' : ''}`.trim()}>
-                              <span className="section-chip is-active">
-                                <span>{getSectionLabel(section)}</span>
-                              </span>
-                              {canManageForumDetails && (
-                                <button
-                                  type="button"
-                                  className="section-chip-remove"
-                                  onClick={() => removeSectionDraftValue(section)}
-                                  disabled={actionKey === 'save-sections'}
-                                  aria-label={`Remove ${getSectionLabel(section)}`}
-                                >
-                                  x
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-
-                        {canManageForumDetails && (
-                          <div className="forum-section-admin-actions mt-3">
-                            <button
-                              type="button"
-                              className="forum-primary-btn"
-                              onClick={handleSaveSections}
-                              disabled={actionKey === 'save-sections'}
-                            >
-                              {actionKey === 'save-sections' ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              type="button"
-                              className="forum-secondary-btn"
-                              onClick={cancelSectionChanges}
-                              disabled={actionKey === 'save-sections'}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
-                      </section>
-
-                      <section className="forum-admin-panel">
-                        <div className="forum-admin-panel-head">
-                          <div>
-                            <h5 className="mb-1">Current Owner</h5>
-                            <p className="muted mb-0">The owner has full space access automatically.</p>
-                          </div>
-                        </div>
-                        <div className="forum-admin-owner-card">
-                          <strong>{selectedAccess.owner?.name || 'No owner assigned'}</strong>
-                          <span className="muted">{selectedAccess.owner?.id || 'Owner record unavailable'}</span>
-                        </div>
-                        {canTransferOwnership && (
-                          <form className="forum-admin-inline-form" onSubmit={handleTransferOwnership}>
-                            <label className="w-100">
-                              <span className="form-label">Transfer ownership to</span>
-                              <input
-                                className="form-control forum-input"
-                                value={transferIdentifier}
-                                onChange={(event) => setTransferIdentifier(event.target.value)}
-                                placeholder="username, email, or user id"
-                                disabled={actionKey === 'transfer-ownership'}
-                              />
-                            </label>
-                            <button
-                              type="submit"
-                              className="forum-secondary-btn"
-                              disabled={!transferIdentifier.trim() || actionKey === 'transfer-ownership'}
-                            >
-                              {actionKey === 'transfer-ownership' ? 'Transferring...' : 'Transfer Ownership'}
-                            </button>
-                          </form>
-                        )}
-                      </section>
-
-                      <section className="forum-admin-panel">
-                        <div className="forum-admin-panel-head">
-                          <div>
-                            <h5 className="mb-1">Space Managers</h5>
-                            <p className="muted mb-0">
-                              {canManageAdmins
-                                ? 'Add managers here, then open a manager profile to update detailed permissions.'
-                                : 'You can view the team here, but only someone with admin-management permission can change it.'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {canManageAdmins && (
-                          <form className="forum-admin-create-form" onSubmit={handleInviteManager}>
-                            <label className="w-100">
-                              <span className="form-label">Invite a space manager</span>
-                              <input
-                                className="form-control forum-input"
-                                value={inviteIdentifier}
-                                onChange={(event) => setInviteIdentifier(event.target.value)}
-                                placeholder="username, email, or user id"
-                                disabled={actionKey === 'invite-manager'}
-                              />
-                            </label>
-                            <div className="forum-admin-checkbox-grid">
-                              {(selectedAccess.availablePermissions || []).map((permission) => (
-                                <label key={permission.key} className="forum-admin-checkbox">
-                                  <input
-                                    type="checkbox"
-                                    checked={invitePermissions.includes(permission.key)}
-                                    onChange={() => setInvitePermissions((current) => current.includes(permission.key)
-                                      ? current.filter((item) => item !== permission.key)
-                                      : [...current, permission.key])}
-                                    disabled={actionKey === 'invite-manager'}
-                                  />
-                                  <span>
-                                    <strong>{permission.label}</strong>
-                                    <small>{permission.description}</small>
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                            <button
-                              type="submit"
-                              className="forum-primary-btn"
-                              disabled={!inviteIdentifier.trim() || invitePermissions.length === 0 || actionKey === 'invite-manager'}
-                            >
-                              {actionKey === 'invite-manager' ? 'Sending...' : 'Send Manager Invite'}
-                            </button>
-                          </form>
-                        )}
-
-                        {(selectedAccess.managers || []).length === 0 ? (
-                          <p className="muted mb-0">No delegated space managers yet.</p>
-                        ) : (
-                          <div className="forum-admin-manager-list">
-                            {selectedAccess.managers.map((manager) => (
-                              <article key={manager.id} className="forum-admin-manager-card">
-                                <div className="forum-admin-manager-head">
-                                  <div>
-                                    <strong>{manager.name || manager.id}</strong>
-                                    <p className="muted mb-0">
-                                      Last updated {formatTimestamp(manager.updatedAt)}
-                                      {manager.grantedByName ? ` by ${manager.grantedByName}` : ''}
-                                    </p>
-                                  </div>
-                                  {canManageAdmins && (
-                                    <Link to={`/my-forums/${selectedForum.id}/managers/${manager.id}`} className="forum-secondary-btn text-decoration-none">
-                                      Manage
-                                    </Link>
-                                  )}
-                                </div>
-                                <p className="muted mb-0">{(manager.permissions || []).length} permissions assigned.</p>
-                              </article>
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    </div>
-                  ) : null}
-                </section>
-              )}
             </div>
-          </div>
+
+            {filteredSpaces.length === 0 ? (
+              <section className="settings-card my-spaces-empty-state">
+                <h2 className="my-posts-empty-title mb-0">No spaces match this view</h2>
+                <p className="my-posts-empty-copy mb-0">
+                  Adjust your filters or clear refine results to see the full list.
+                </p>
+              </section>
+            ) : null}
+          </>
         )}
       </section>
     </div>

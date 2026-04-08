@@ -226,7 +226,7 @@ export default function ForumRequestPage({
             </p>
           </div>
           <div className="forum-actions">
-            <Link to="/my-forums" className="forum-secondary-btn text-decoration-none">
+            <Link to="/my-spaces" className="forum-secondary-btn text-decoration-none">
               Back to My Spaces
             </Link>
           </div>

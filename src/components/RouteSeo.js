@@ -38,8 +38,8 @@ function routeConfig(pathname) {
 
   if (pathname === '/explore') {
     return {
-      title: buildPageTitle('Explore Spaces'),
-      description: 'Explore all spaces on tsumit and discover which communities are active, popular, and worth following.',
+      title: buildPageTitle('Discover'),
+      description: 'Discover new creators and spaces on tsumit with recommendation-driven suggestions beyond who you already follow.',
       robots: 'index,follow',
       canonical: buildCanonical(pathname)
     };
@@ -128,8 +128,13 @@ function routeConfig(pathname) {
 
   if (
     pathname === '/settings' ||
+    pathname === '/my-spaces' ||
+    pathname === '/my-spaces/invitations' ||
+    matchPath('/my-spaces/:spaceId/manage', pathname) ||
+    matchPath('/my-spaces/:forumId/managers/:managerId', pathname) ||
     pathname === '/my-forums' ||
     pathname === '/my-forums/invitations' ||
+    matchPath('/my-forums/:forumId/manage', pathname) ||
     matchPath('/my-forums/:forumId/managers/:managerId', pathname) ||
     pathname === '/my-posts' ||
     matchPath('/my-posts/:postId/edit', pathname) ||

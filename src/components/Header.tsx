@@ -1,20 +1,21 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Container, Nav, Navbar, Offcanvas } from 'react-bootstrap';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { apiGetPosts } from '../api';
-import type { Forum, Post } from '../types';
+import { Offcanvas } from 'react-bootstrap';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { apiGetPosts, apiSearchUsers } from '../api';
+import type { Forum, NetworkUser, Post } from '../types';
+import Avatar from './Avatar';
+import SidebarToggleButton from './SidebarToggleButton';
 import {
   GLOBAL_SEARCH_PLACEHOLDER,
   GLOBAL_SEARCH_QUICK_LINKS,
-  GLOBAL_SEARCH_SUGGESTIONS,
-  SITE_LOGO_SRC,
-  globalNavItems
+  GLOBAL_SEARCH_SUGGESTIONS
 } from './siteChromeConfig';
 
 type CurrentUser = {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string;
   isAdmin?: boolean;
   adminPermissions?: string[];
   hasAdminAccess?: boolean;
@@ -28,19 +29,28 @@ type HeaderProps = {
   onLogout: () => void;
 };
 
-type SearchPostSuggestion = Pick<Post, 'id' | 'title' | 'content' | 'forum' | 'section' | 'tags'>;
 type DropdownItem = {
   key: string;
   label: string;
   to?: string;
   onSelect?: () => void;
-  dividerBefore?: boolean;
 };
+
+type SearchPostSuggestion = Pick<Post, 'id' | 'title' | 'content' | 'forum' | 'section' | 'tags'>;
+type SearchUserSuggestion = Pick<NetworkUser, 'id' | 'name' | 'bio' | 'avatarUrl' | 'followerCount'>;
 type SearchActionItem =
+  | { key: string; label: string; meta?: string; description?: string; type: 'user'; onSelect: () => void }
   | { key: string; label: string; meta?: string; type: 'forum'; onSelect: () => void }
   | { key: string; label: string; meta?: string; description?: string; type: 'post'; onSelect: () => void }
   | { key: string; label: string; meta?: string; type: 'query'; onSelect: () => void }
   | { key: string; label: string; meta?: string; type: 'link'; onSelect: () => void };
+
+type SidebarItem = {
+  key: string;
+  label: string;
+  to: string;
+  icon: string;
+};
 
 function getSearchScore(value: string, query: string) {
   if (!value) {
@@ -71,6 +81,17 @@ function buildPostPreview(content: string) {
     .slice(0, 110);
 }
 
+function formatCompactCount(value: number) {
+  const count = Number(value || 0);
+  if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  }
+  return String(count);
+}
+
 function mergePostMatches(...groups: SearchPostSuggestion[][]) {
   const seen = new Set<string>();
   const merged: SearchPostSuggestion[] = [];
@@ -88,6 +109,24 @@ function mergePostMatches(...groups: SearchPostSuggestion[][]) {
   return merged.slice(0, 8);
 }
 
+function mergeUserMatches(...groups: SearchUserSuggestion[][]) {
+  const seen = new Set<string>();
+  const merged: SearchUserSuggestion[] = [];
+
+  groups.forEach((group) => {
+    group.forEach((user) => {
+      const userId = String(user?.id || '').trim();
+      if (!userId || seen.has(userId)) {
+        return;
+      }
+      seen.add(userId);
+      merged.push(user);
+    });
+  });
+
+  return merged.slice(0, 6);
+}
+
 function SearchIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
@@ -99,25 +138,94 @@ function SearchIcon() {
   );
 }
 
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path d="M3 5h14v2H3V5Zm0 4h14v2H3V9Zm0 4h14v2H3v-2Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SparkIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path d="m10 2 1.8 4.2L16 8l-4.2 1.8L10 14l-1.8-4.2L4 8l4.2-1.8L10 2Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export default function Header({ currentUser, forums, posts, onLogout }: HeaderProps) {
   const navigate = useNavigate();
-  const [navExpanded, setNavExpanded] = useState(false);
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const location = useLocation();
   const [isDesktop, setIsDesktop] = useState(() => (
     typeof window === 'undefined' ? true : window.matchMedia('(min-width: 992px)').matches
   ));
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem('tsumit.sidebarCollapsed') === '1';
+    } catch (_) {
+      return false;
+    }
+  });
+  const [adminMode, setAdminMode] = useState(false);
   const [forumQuery, setForumQuery] = useState('');
   const [remotePostMatches, setRemotePostMatches] = useState<SearchPostSuggestion[]>([]);
+  const [remoteUserMatches, setRemoteUserMatches] = useState<SearchUserSuggestion[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [highlightedResultIndex, setHighlightedResultIndex] = useState(-1);
   const searchRequestIdRef = useRef(0);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const searchLayerRef = useRef<HTMLDivElement | null>(null);
   const deferredForumQuery = useDeferredValue(forumQuery);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const desktopSearchRef = useRef<HTMLDivElement | null>(null);
+  const mobileSearchRef = useRef<HTMLDivElement | null>(null);
+  const desktopSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const isAdminUser = Boolean(
+    currentUser
+    && (
+      currentUser.isAdmin
+      || currentUser.hasAdminAccess
+      || currentUser.canManageAdminAccess
+      || (currentUser.adminPermissions?.length || 0) > 0
+    )
+  );
+  const userDisplayName = String(currentUser?.name || currentUser?.email || 'User').trim() || 'User';
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 992px)');
+    const syncViewportMode = (event?: MediaQueryListEvent) => {
+      const desktop = event?.matches ?? mediaQuery.matches;
+      setIsDesktop(desktop);
+      setIsDrawerOpen(false);
+      setUserMenuOpen(false);
+      setHighlightedResultIndex(-1);
+      if (desktop) {
+        setIsMobileSearchOpen(false);
+      } else {
+        setIsSearchOpen(false);
+      }
+    };
+
+    syncViewportMode();
+    mediaQuery.addEventListener('change', syncViewportMode);
+    return () => mediaQuery.removeEventListener('change', syncViewportMode);
+  }, []);
+
+  useEffect(() => {
+    setUserMenuOpen(false);
+    setIsDrawerOpen(false);
+    setIsSearchOpen(false);
+    setIsMobileSearchOpen(false);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -132,124 +240,96 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
           setRecentSearches(parsed.filter((value) => typeof value === 'string').slice(0, 4));
         }
       }
-    } catch (error) {
-      // Ignore malformed local storage so search still works normally.
+    } catch (_) {
+      // Ignore malformed local storage.
     }
   }, []);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(min-width: 992px)');
-    const syncViewportMode = (event?: MediaQueryListEvent) => {
-      const desktop = event?.matches ?? mediaQuery.matches;
-      setIsDesktop(desktop);
-      setAdminOpen(false);
-      setAccountOpen(false);
-      setNavExpanded(false);
-    };
-
-    syncViewportMode();
-    mediaQuery.addEventListener('change', syncViewportMode);
-    return () => mediaQuery.removeEventListener('change', syncViewportMode);
-  }, []);
-
-  useEffect(() => {
-    const syncScrollState = () => {
-      setIsScrolled((window.scrollY || 0) > 18);
-    };
-
-    syncScrollState();
-    window.addEventListener('scroll', syncScrollState, { passive: true });
-    return () => window.removeEventListener('scroll', syncScrollState);
-  }, []);
-
-  useEffect(() => {
-    if (!isSearchOpen) {
-      return undefined;
+    if (typeof window === 'undefined') {
+      return;
     }
-
-    searchInputRef.current?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsSearchOpen(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSearchOpen]);
+    try {
+      window.localStorage.setItem('tsumit.sidebarCollapsed', isSidebarCollapsed ? '1' : '0');
+    } catch (_) {
+      // Ignore storage errors.
+    }
+  }, [isSidebarCollapsed]);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
       return undefined;
     }
 
-    document.body.classList.toggle('search-mode-active', isSearchOpen);
-
-    return () => {
-      document.body.classList.remove('search-mode-active');
-    };
-  }, [isSearchOpen]);
+    const collapsed = Boolean(isDesktop && isSidebarCollapsed);
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    return () => document.body.classList.remove('sidebar-collapsed');
+  }, [isDesktop, isSidebarCollapsed]);
 
   useEffect(() => {
-    if (!isSearchOpen) {
-      return undefined;
+    if (!currentUser || !isAdminUser) {
+      setAdminMode(false);
+      return;
     }
 
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target;
-      if (searchLayerRef.current && target instanceof Node && !searchLayerRef.current.contains(target)) {
-        setIsSearchOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
-    };
-  }, [isSearchOpen]);
+    try {
+      const stored = window.sessionStorage.getItem(`tsumit.adminMode.${currentUser.id}`);
+      setAdminMode(stored === '1');
+    } catch (_) {
+      setAdminMode(false);
+    }
+  }, [currentUser, isAdminUser]);
 
   useEffect(() => {
-    if (!isSearchOpen) {
-      setForumQuery('');
-      setRemotePostMatches([]);
-      setSearchLoading(false);
-      setHighlightedResultIndex(-1);
+    if (!currentUser || !isAdminUser) {
+      return;
     }
-  }, [isSearchOpen]);
+
+    try {
+      window.sessionStorage.setItem(`tsumit.adminMode.${currentUser.id}`, adminMode ? '1' : '0');
+      window.dispatchEvent(new CustomEvent('tsumit:admin-mode-changed', {
+        detail: {
+          userId: currentUser.id,
+          enabled: adminMode
+        }
+      }));
+    } catch (_) {
+      // Ignore storage errors so navigation still works.
+    }
+  }, [adminMode, currentUser, isAdminUser]);
 
   useEffect(() => {
-    if (!isSearchOpen) {
-      return undefined;
-    }
-
     const query = deferredForumQuery.trim();
-    if (query.length < 2) {
+    if (query.length < 2 || (!isSearchOpen && !isMobileSearchOpen)) {
       setRemotePostMatches([]);
+      setRemoteUserMatches([]);
       setSearchLoading(false);
       return undefined;
     }
 
     const requestId = searchRequestIdRef.current + 1;
     searchRequestIdRef.current = requestId;
-    const timer = setTimeout(async () => {
+
+    const timer = window.setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const response = await apiGetPosts({
-          q: query,
-          page: 1,
-          pageSize: 5
-        });
+        const [postResponse, userResponse] = await Promise.all([
+          apiGetPosts({
+            q: query,
+            page: 1,
+            pageSize: 5
+          }),
+          apiSearchUsers(query, 6)
+        ]);
 
         if (searchRequestIdRef.current === requestId) {
-          setRemotePostMatches(response.posts || []);
+          setRemotePostMatches(postResponse.posts || []);
+          setRemoteUserMatches(userResponse.users || []);
         }
-      } catch (error) {
+      } catch (_) {
         if (searchRequestIdRef.current === requestId) {
           setRemotePostMatches([]);
+          setRemoteUserMatches([]);
         }
       } finally {
         if (searchRequestIdRef.current === requestId) {
@@ -258,8 +338,79 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
       }
     }, 180);
 
-    return () => clearTimeout(timer);
-  }, [deferredForumQuery, isSearchOpen]);
+    return () => window.clearTimeout(timer);
+  }, [deferredForumQuery, isMobileSearchOpen, isSearchOpen]);
+
+  useEffect(() => {
+    if (!isSearchOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (
+        desktopSearchRef.current
+        && target instanceof Node
+        && !desktopSearchRef.current.contains(target)
+      ) {
+        setIsSearchOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [isSearchOpen]);
+
+  useEffect(() => {
+    if (!userMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (userMenuRef.current && target instanceof Node && !userMenuRef.current.contains(target)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [userMenuOpen]);
+
+  useEffect(() => {
+    if (isSearchOpen && isDesktop) {
+      desktopSearchInputRef.current?.focus();
+    }
+  }, [isDesktop, isSearchOpen]);
+
+  useEffect(() => {
+    if (isMobileSearchOpen && !isDesktop) {
+      window.setTimeout(() => mobileSearchInputRef.current?.focus(), 30);
+    }
+  }, [isDesktop, isMobileSearchOpen]);
+
+  const commitRecentSearch = useCallback((value: string) => {
+    const normalized = value.trim();
+    if (!normalized) {
+      return;
+    }
+
+    setRecentSearches((current) => {
+      const next = [normalized, ...current.filter((entry) => entry.toLowerCase() !== normalized.toLowerCase())].slice(0, 4);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('tsumit.recentSearches', JSON.stringify(next));
+      }
+      return next;
+    });
+  }, []);
 
   const matchingForums = useMemo(() => {
     const query = forumQuery.trim().toLowerCase();
@@ -310,90 +461,69 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     [localPostMatches, remotePostMatches]
   );
 
-  const adminDropdownItems = useMemo<DropdownItem[]>(() => {
-    if (!currentUser || !(currentUser.isAdmin || currentUser.hasAdminAccess)) {
+  const localUserMatches = useMemo(() => {
+    const query = forumQuery.trim().toLowerCase();
+    if (!query) {
       return [];
     }
 
-    return [
-      (currentUser.isAdmin || currentUser.adminPermissions?.includes('moderation'))
-        ? { key: 'moderation', label: 'Moderation', to: '/moderation' }
-        : null,
-      (currentUser.isAdmin || currentUser.adminPermissions?.includes('forum_requests'))
-        ? { key: 'space-requests', label: 'Space Requests', to: '/forums/request/review' }
-        : null,
-      (currentUser.isAdmin || currentUser.adminPermissions?.includes('analytics'))
-        ? { key: 'analytics', label: 'Analytics', to: '/analytics' }
-        : null,
-      (currentUser.isAdmin || currentUser.adminPermissions?.includes('password_reset'))
-        ? { key: 'password-reset', label: 'Password Reset', to: '/admin/password-reset' }
-        : null,
-      currentUser.canManageAdminAccess
-        ? { key: 'admin-management', label: 'Admin Management', to: '/admin/access' }
-        : null
-    ].filter(Boolean) as DropdownItem[];
-  }, [currentUser]);
-
-  const userDropdownItems = useMemo<DropdownItem[]>(
-    () => currentUser ? [
-      { key: 'profile', label: 'My Profile', to: `/users/${currentUser.id}` },
-      { key: 'posts', label: 'My Posts', to: '/my-posts' },
-      { key: 'spaces', label: 'My Spaces', to: '/my-forums' },
-      { key: 'following', label: 'Following', to: '/following' },
-      { key: 'settings', label: 'Settings', to: '/settings' },
-      {
-        key: 'logout',
-        label: 'Logout',
-        dividerBefore: true,
-        onSelect: () => onLogout()
+    const authorMap = new Map<string, SearchUserSuggestion & { postCount: number; score: number }>();
+    posts.forEach((post) => {
+      const authorId = String(post.authorId || '').trim();
+      if (!authorId) {
+        return;
       }
-    ] : [],
-    [currentUser, onLogout]
+      const authorName = String(post.authorName || '').trim();
+      const score = getSearchScore(authorName, query);
+      if (!Number.isFinite(score)) {
+        return;
+      }
+
+      const current = authorMap.get(authorId) || {
+        id: authorId,
+        name: authorName || 'User',
+        bio: '',
+        avatarUrl: post.authorAvatarUrl || '',
+        followerCount: 0,
+        postCount: 0,
+        score
+      };
+
+      current.name = authorName || current.name;
+      current.avatarUrl = String(post.authorAvatarUrl || current.avatarUrl || '');
+      current.postCount += 1;
+      current.score = Math.min(current.score, score);
+      authorMap.set(authorId, current);
+    });
+
+    return Array.from(authorMap.values())
+      .sort((left, right) => left.score - right.score || right.postCount - left.postCount || left.name.localeCompare(right.name))
+      .map(({ postCount: _count, score: _score, ...user }) => user)
+      .slice(0, 6);
+  }, [forumQuery, posts]);
+
+  const userMatches = useMemo(
+    () => mergeUserMatches(localUserMatches, remoteUserMatches),
+    [localUserMatches, remoteUserMatches]
   );
 
-  const showHintState = forumQuery.trim().length === 0;
-  const isAdminDropdownVisible = adminDropdownItems.length > 0;
+  const openAssistant = () => {
+    window.dispatchEvent(new Event('assistant:open'));
+  };
 
-  const commitRecentSearch = useCallback((value: string) => {
-    const normalized = value.trim();
-    if (!normalized) {
+  const openComposer = () => {
+    if (!currentUser) {
+      navigate('/login');
       return;
     }
-
-    setRecentSearches((current) => {
-      const next = [normalized, ...current.filter((entry) => entry.toLowerCase() !== normalized.toLowerCase())].slice(0, 4);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('tsumit.recentSearches', JSON.stringify(next));
-      }
-      return next;
-    });
-  }, []);
-
-  const closeNavOverlays = useCallback(() => {
-    setAdminOpen(false);
-    setAccountOpen(false);
-    setNavExpanded(false);
-  }, []);
-
-  const openSearch = () => {
-    closeNavOverlays();
-    setIsSearchOpen(true);
+    navigate('/forum?compose=1');
   };
 
-  const closeSearch = useCallback(() => {
+  const closeOverlays = () => {
+    setIsDrawerOpen(false);
     setIsSearchOpen(false);
-  }, []);
-
-  const handlePrimaryNavClick = () => {
-    closeNavOverlays();
-    closeSearch();
-  };
-
-  const handleDropdownKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, onClose: () => void) => {
-    if (event.key === 'Escape') {
-      onClose();
-      event.currentTarget.blur();
-    }
+    setIsMobileSearchOpen(false);
+    setUserMenuOpen(false);
   };
 
   const goToForum = useCallback((slug: string) => {
@@ -401,54 +531,57 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     if (forum?.name) {
       commitRecentSearch(forum.name);
     }
-    closeNavOverlays();
-    closeSearch();
+    closeOverlays();
     navigate(`/forum/${slug}`);
-  }, [closeNavOverlays, closeSearch, commitRecentSearch, forums, navigate]);
+  }, [commitRecentSearch, forums, navigate]);
 
   const goToPost = useCallback((postId: string) => {
     const post = postMatches.find((entry) => entry.id === postId) || posts.find((entry) => entry.id === postId);
     if (post?.title) {
       commitRecentSearch(post.title);
     }
-    closeNavOverlays();
-    closeSearch();
+    closeOverlays();
     navigate(`/forum/post/${postId}`);
-  }, [closeNavOverlays, closeSearch, commitRecentSearch, navigate, postMatches, posts]);
+  }, [commitRecentSearch, navigate, postMatches, posts]);
+
+  const goToUser = useCallback((userId: string, userName?: string) => {
+    const cleanUserId = String(userId || '').trim();
+    if (!cleanUserId) {
+      return;
+    }
+    if (userName) {
+      commitRecentSearch(userName);
+    }
+    closeOverlays();
+    navigate(`/users/${cleanUserId}`);
+  }, [commitRecentSearch, navigate]);
 
   const applyQuerySearch = useCallback((query: string) => {
     setForumQuery(query);
     commitRecentSearch(query);
-    searchInputRef.current?.focus();
-  }, [commitRecentSearch]);
-
-  const submitForumSearch = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (forumQuery.trim()) {
-      commitRecentSearch(forumQuery);
+    if (isDesktop) {
+      desktopSearchInputRef.current?.focus();
+    } else {
+      mobileSearchInputRef.current?.focus();
     }
-    const firstResult =
-      matchingForums[0]
-        ? { type: 'forum' as const, value: matchingForums[0] }
-        : postMatches[0]
-          ? { type: 'post' as const, value: postMatches[0] }
-          : null;
+  }, [commitRecentSearch, isDesktop]);
 
-    if (!firstResult) {
-      return;
-    }
-
-    if (firstResult.type === 'forum') {
-      goToForum(firstResult.value.slug);
-      return;
-    }
-
-    goToPost(firstResult.value.id);
-  };
-
+  const showHintState = forumQuery.trim().length === 0;
   const searchPanelSections = useMemo(() => {
     if (!showHintState) {
       return [
+        {
+          key: 'users',
+          title: 'Users',
+          items: userMatches.map<SearchActionItem>((user) => ({
+            key: `user-${user.id}`,
+            label: user.name || 'User',
+            meta: user.followerCount ? `${formatCompactCount(user.followerCount)} followers` : 'Creator',
+            description: user.bio || 'Open profile',
+            type: 'user',
+            onSelect: () => goToUser(user.id, user.name)
+          }))
+        },
         {
           key: 'spaces',
           title: 'Spaces',
@@ -478,22 +611,22 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     return [
       {
         key: 'recent',
-        title: 'Recent searches',
+        title: 'Recent',
         items: recentSearches.map<SearchActionItem>((query) => ({
           key: `recent-${query}`,
           label: query,
-          meta: 'Recent',
+          meta: 'Recent search',
           type: 'query',
           onSelect: () => applyQuerySearch(query)
         }))
       },
       {
         key: 'topics',
-        title: 'Suggested topics',
+        title: 'Suggested',
         items: GLOBAL_SEARCH_SUGGESTIONS.map<SearchActionItem>((item) => ({
           key: `suggested-${item.key}`,
           label: item.label,
-          meta: 'Suggested',
+          meta: 'Topic',
           type: 'query',
           onSelect: () => applyQuerySearch(item.label)
         }))
@@ -508,8 +641,7 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
           type: 'link',
           onSelect: () => {
             commitRecentSearch(item.label);
-            closeNavOverlays();
-            closeSearch();
+            closeOverlays();
             navigate(item.to);
           }
         }))
@@ -517,15 +649,15 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     ].filter((section) => section.items.length > 0);
   }, [
     applyQuerySearch,
-    closeSearch,
-    closeNavOverlays,
     commitRecentSearch,
     goToForum,
     goToPost,
+    goToUser,
     matchingForums,
     navigate,
     postMatches,
     recentSearches,
+    userMatches,
     showHintState
   ]);
 
@@ -533,6 +665,107 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     () => searchPanelSections.flatMap((section) => section.items),
     [searchPanelSections]
   );
+
+  const adminDropdownItems = useMemo<DropdownItem[]>(() => {
+    if (!currentUser || !isAdminUser) {
+      return [];
+    }
+
+    return [
+      (currentUser.isAdmin || currentUser.adminPermissions?.includes('moderation'))
+        ? { key: 'moderation', label: 'Moderation', to: '/moderation' }
+        : null,
+      (currentUser.isAdmin || currentUser.adminPermissions?.includes('forum_requests'))
+        ? { key: 'space-requests', label: 'Space Requests', to: '/forums/request/review' }
+        : null,
+      (currentUser.isAdmin || currentUser.adminPermissions?.includes('analytics'))
+        ? { key: 'analytics', label: 'Analytics', to: '/analytics' }
+        : null,
+      (currentUser.isAdmin || currentUser.adminPermissions?.includes('password_reset'))
+        ? { key: 'password-reset', label: 'Password Reset', to: '/admin/password-reset' }
+        : null,
+      currentUser.canManageAdminAccess
+        ? { key: 'admin-management', label: 'Admin Management', to: '/admin/access' }
+        : null
+    ].filter(Boolean) as DropdownItem[];
+  }, [currentUser, isAdminUser]);
+
+  const userDropdownItems = useMemo<DropdownItem[]>(
+    () => currentUser ? [
+      { key: 'profile', label: 'My Profile', to: `/users/${currentUser.id}` },
+      { key: 'posts', label: 'My Posts', to: '/my-posts' },
+      { key: 'spaces', label: 'My Spaces', to: '/my-spaces' },
+      { key: 'following', label: 'Following', to: '/following' },
+      { key: 'settings', label: 'Settings', to: '/settings' }
+    ] : [],
+    [currentUser]
+  );
+
+  const sidebarItems = useMemo<SidebarItem[]>(() => {
+    const base: SidebarItem[] = [
+      { key: 'discover', label: 'Discover', to: '/explore', icon: 'D' },
+      { key: 'feed', label: 'Feed', to: '/forum', icon: 'F' },
+      { key: 'inbox', label: 'Inbox', to: currentUser ? '/my-spaces/invitations' : '/login', icon: 'I' },
+      { key: 'profile', label: 'Profile', to: currentUser ? `/users/${currentUser.id}` : '/login', icon: 'P' }
+    ];
+
+    if (isAdminUser && adminMode && adminDropdownItems.length > 0) {
+      base.push({
+        key: 'admin',
+        label: 'Admin',
+        to: adminDropdownItems[0].to || '/forum',
+        icon: 'A'
+      });
+    }
+
+    return base;
+  }, [adminDropdownItems, adminMode, currentUser, isAdminUser]);
+
+  const forumLastActivityMap = useMemo(() => {
+    const nextMap = new Map<string, number>();
+    posts.forEach((post) => {
+      const forumId = post.forum?.id;
+      const forumSlug = post.forum?.slug;
+      const timestamp = Number(post.updatedAt || post.createdAt || 0);
+      if (!timestamp) {
+        return;
+      }
+
+      if (forumId) {
+        nextMap.set(forumId, Math.max(nextMap.get(forumId) || 0, timestamp));
+      }
+
+      if (forumSlug) {
+        nextMap.set(forumSlug, Math.max(nextMap.get(forumSlug) || 0, timestamp));
+      }
+    });
+    return nextMap;
+  }, [posts]);
+
+  const followedSpaces = useMemo(
+    () => forums.filter((forum) => Boolean(forum.isFollowing)),
+    [forums]
+  );
+
+  const recentFollowedSpaces = useMemo(() => {
+    return [...followedSpaces]
+      .sort((a, b) => {
+        const aActivity = Math.max(forumLastActivityMap.get(a.id) || 0, forumLastActivityMap.get(a.slug) || 0);
+        const bActivity = Math.max(forumLastActivityMap.get(b.id) || 0, forumLastActivityMap.get(b.slug) || 0);
+        if (bActivity !== aActivity) {
+          return bActivity - aActivity;
+        }
+
+        const aVolume = Number(a.livePostCount || a.postCount || 0);
+        const bVolume = Number(b.livePostCount || b.postCount || 0);
+        if (bVolume !== aVolume) {
+          return bVolume - aVolume;
+        }
+
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 5);
+  }, [followedSpaces, forumLastActivityMap]);
 
   const handleSearchInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (!flatSearchItems.length) {
@@ -548,40 +781,53 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
     } else if (event.key === 'Enter' && highlightedResultIndex >= 0) {
       event.preventDefault();
       flatSearchItems[highlightedResultIndex]?.onSelect();
+    } else if (event.key === 'Escape') {
+      setIsSearchOpen(false);
+      setIsMobileSearchOpen(false);
     }
   };
 
-  useEffect(() => {
-    if (!isSearchOpen) {
+  const submitForumSearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (forumQuery.trim()) {
+      commitRecentSearch(forumQuery);
+    }
+    const firstResult =
+      userMatches[0]
+        ? { type: 'user' as const, value: userMatches[0] }
+        : matchingForums[0]
+          ? { type: 'forum' as const, value: matchingForums[0] }
+        : postMatches[0]
+          ? { type: 'post' as const, value: postMatches[0] }
+          : null;
+
+    if (!firstResult) {
       return;
     }
 
-    if (highlightedResultIndex >= flatSearchItems.length) {
-      setHighlightedResultIndex(flatSearchItems.length ? 0 : -1);
+    if (firstResult.type === 'user') {
+      goToUser(firstResult.value.id, firstResult.value.name);
+      return;
     }
-  }, [flatSearchItems, highlightedResultIndex, isSearchOpen]);
+
+    if (firstResult.type === 'forum') {
+      goToForum(firstResult.value.slug);
+      return;
+    }
+
+    goToPost(firstResult.value.id);
+  };
 
   const renderSearchResults = () => (
-    <div className="forum-search-results site-navbar-search-results" role="dialog" aria-label="Global search panel">
-      <div className="site-navbar-search-panel-head">
-        <p className="site-navbar-search-kicker">Search</p>
-        <p className="site-navbar-search-support">
-          {showHintState
-            ? 'Start with a recent search, a suggested topic, or a quick path into the site.'
-            : 'Results stay quiet and structured so the right next step is easy to spot.'}
-        </p>
-      </div>
-
+    <div className="platform-search-panel" role="dialog" aria-label="Global search panel">
       {searchLoading ? (
-        <div className="forum-search-empty">Searching posts...</div>
+        <div className="platform-search-empty">Searching...</div>
       ) : searchPanelSections.length > 0 ? (
-        <div className="site-navbar-search-sections">
-          {/* The panel stays data-driven by section so we can add curated search modules
-              later without rewriting the search surface layout. */}
+        <div className="platform-search-sections">
           {searchPanelSections.map((section) => (
-            <section key={section.key} className="forum-search-section site-navbar-search-section">
-              <div className="forum-search-section-label">{section.title}</div>
-              <div className="site-navbar-search-section-body">
+            <section key={section.key} className="platform-search-section">
+              <div className="platform-search-section-label">{section.title}</div>
+              <div className="platform-search-section-body">
                 {section.items.map((item) => {
                   const itemIndex = flatSearchItems.findIndex((entry) => entry.key === item.key);
                   return (
@@ -589,15 +835,15 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
                       key={item.key}
                       id={item.key}
                       type="button"
-                      className={`forum-search-result site-navbar-search-result ${highlightedResultIndex === itemIndex ? 'is-highlighted' : ''}`.trim()}
+                      className={`platform-search-result ${highlightedResultIndex === itemIndex ? 'is-highlighted' : ''}`.trim()}
                       onMouseDown={(event) => event.preventDefault()}
                       onMouseEnter={() => setHighlightedResultIndex(itemIndex)}
                       onFocus={() => setHighlightedResultIndex(itemIndex)}
                       onClick={item.onSelect}
                     >
-                      <span className="site-navbar-search-result-main">
+                      <span className="platform-search-result-main">
                         <strong>{item.label}</strong>
-                        {item.meta ? <span className="forum-search-result-meta">{item.meta}</span> : null}
+                        {item.meta ? <span>{item.meta}</span> : null}
                       </span>
                       {'description' in item && item.description ? <span>{item.description}</span> : null}
                     </button>
@@ -608,272 +854,281 @@ export default function Header({ currentUser, forums, posts, onLogout }: HeaderP
           ))}
         </div>
       ) : (
-        <div className="forum-search-empty">No similar spaces or posts</div>
+        <div className="platform-search-empty">No similar users, spaces, or posts</div>
       )}
     </div>
   );
 
-  const renderDropdownMenu = ({
-    keyPrefix,
-    label,
-    isOpen,
-    setOpen,
-    items,
-    drawerMode = false
-  }: {
-    keyPrefix: string;
-    label: string;
-    isOpen: boolean;
-    setOpen: React.Dispatch<React.SetStateAction<boolean>>;
-    items: DropdownItem[];
-    drawerMode?: boolean;
-  }) => {
-    if (!items.length) {
+  const renderSidebarNav = (isDrawer = false) => (
+    <nav
+      className={`platform-sidebar-nav ${isDrawer ? 'is-drawer' : ''} ${isSidebarCollapsed && !isDrawer ? 'is-collapsed' : ''}`.trim()}
+      aria-label="Primary navigation"
+    >
+      {sidebarItems.map((item) => (
+        <NavLink
+          key={item.key}
+          to={item.to}
+          className={({ isActive }) => `platform-sidebar-link ${isActive ? 'is-active' : ''}`.trim()}
+          onClick={() => setIsDrawerOpen(false)}
+          title={isSidebarCollapsed && !isDrawer ? item.label : undefined}
+        >
+          <span className="platform-sidebar-link-icon" aria-hidden="true">{item.icon}</span>
+          <span className="platform-sidebar-link-label">{item.label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  );
+
+  const renderSidebarSpaces = (isDrawer = false) => {
+    if (isSidebarCollapsed && !isDrawer) {
       return null;
     }
 
-    const panelId = `${keyPrefix}-menu-panel`;
-
     return (
-      <div
-        className={`site-nav-dropdown ${drawerMode ? 'is-drawer' : 'is-desktop'}`.trim()}
-        onMouseEnter={!drawerMode ? () => setOpen(true) : undefined}
-        onMouseLeave={!drawerMode ? () => setOpen(false) : undefined}
-      >
-        <button
-          type="button"
-          className={`site-nav-dropdown-trigger ${keyPrefix === 'admin' ? 'admin-menu-trigger' : 'account-menu-trigger'} ${isOpen ? 'is-open' : ''}`.trim()}
-          onClick={() => {
-            setOpen((current) => !current);
-            if (keyPrefix === 'admin') {
-              setAccountOpen(false);
-            } else {
-              setAdminOpen(false);
-            }
-          }}
-          onFocus={() => !drawerMode && setOpen(true)}
-          onKeyDown={(event) => handleDropdownKeyDown(event, () => setOpen(false))}
-          aria-expanded={isOpen}
-          aria-controls={panelId}
-          aria-haspopup="menu"
-        >
-          <span>{label}</span>
-          <span className="site-nav-dropdown-chevron" aria-hidden="true">⌄</span>
-        </button>
-        <div
-          id={panelId}
-          className={`site-nav-dropdown-panel ${keyPrefix === 'admin' ? 'admin-menu-panel' : 'account-menu-panel'} ${isOpen ? 'is-open' : ''} ${drawerMode ? 'is-drawer' : 'is-desktop'}`.trim()}
-          role="menu"
-          aria-label={`${label} menu`}
-        >
-          {/* Add future dropdown items by extending the arrays above. The shared dropdown
-              renderer keeps desktop and mobile behavior aligned across the whole product. */}
-          {items.map((item) => (
-            <React.Fragment key={`${keyPrefix}-${item.key}`}>
-              {item.dividerBefore ? <div className="account-menu-divider" role="separator" /> : null}
-              {item.to ? (
-                <NavLink
-                  to={item.to}
-                  className={`${keyPrefix === 'admin' ? 'admin-menu-item' : 'account-menu-item'} site-nav-dropdown-item`.trim()}
-                  role="menuitem"
-                  onClick={handlePrimaryNavClick}
-                >
-                  {item.label}
-                </NavLink>
-              ) : (
-                <button
-                  type="button"
-                  className={`${keyPrefix === 'admin' ? 'admin-menu-item' : 'account-menu-item'} site-nav-dropdown-item is-button`.trim()}
-                  role="menuitem"
-                  onClick={() => {
-                    handlePrimaryNavClick();
-                    item.onSelect?.();
-                  }}
-                >
-                  {item.label}
-                </button>
-              )}
-            </React.Fragment>
-          ))}
+      <section className={`platform-sidebar-spaces ${isDrawer ? 'is-drawer' : ''}`.trim()} aria-label="Followed spaces">
+        <div className="platform-sidebar-spaces-head">
+          <span className="platform-sidebar-spaces-title">Spaces</span>
         </div>
-      </div>
+
+        {recentFollowedSpaces.length > 0 ? (
+          <div className="platform-sidebar-space-list">
+            {recentFollowedSpaces.map((forum) => (
+              <NavLink
+                key={`space-${forum.id}`}
+                to={`/forum/${forum.slug}`}
+                className={({ isActive }) => `platform-sidebar-space-link ${isActive ? 'is-active' : ''}`.trim()}
+                onClick={() => setIsDrawerOpen(false)}
+                title={forum.name}
+              >
+                <span className="platform-sidebar-space-avatar" aria-hidden="true">
+                  {String(forum.name || '').trim().charAt(0).toUpperCase() || 'S'}
+                </span>
+                <span className="platform-sidebar-space-name">{forum.name}</span>
+              </NavLink>
+            ))}
+          </div>
+        ) : (
+          <p className="platform-sidebar-space-empty">
+            {currentUser ? 'No followed spaces yet' : 'Follow spaces to see them here'}
+          </p>
+        )}
+
+        {followedSpaces.length > 5 ? (
+          <NavLink to="/my-spaces" className="platform-sidebar-space-more-link" onClick={() => setIsDrawerOpen(false)}>
+            ... See all
+          </NavLink>
+        ) : null}
+      </section>
     );
   };
 
-  const renderDefaultNavItems = (drawerMode = false) => (
-    <>
-      {globalNavItems.map((item) => (
-        <Nav.Link
-          key={item.to}
-          as={NavLink}
-          to={item.to}
-          className="site-nav-link"
-          onClick={handlePrimaryNavClick}
-        >
-          {item.label}
-        </Nav.Link>
-      ))}
-      <button
-        type="button"
-        className="site-navbar-search-trigger"
-        onClick={openSearch}
-        aria-label="Open search"
-        aria-expanded={isSearchOpen}
-      >
-        <SearchIcon />
-      </button>
-      {currentUser ? (
-        renderDropdownMenu({
-          keyPrefix: 'user',
-          label: 'User',
-          isOpen: accountOpen,
-          setOpen: setAccountOpen,
-          items: userDropdownItems,
-          drawerMode
-        })
-      ) : (
-        <Nav.Link
-          as={NavLink}
-          to="/login"
-          className="site-nav-link site-nav-cta"
-          onClick={handlePrimaryNavClick}
-        >
-          Join tsumit
-        </Nav.Link>
-      )}
-      {isAdminDropdownVisible ? renderDropdownMenu({
-        keyPrefix: 'admin',
-        label: 'Admin',
-        isOpen: adminOpen,
-        setOpen: setAdminOpen,
-        items: adminDropdownItems,
-        drawerMode
-      }) : null}
-    </>
-  );
-
-  const renderDesktopSearchMode = () => (
-    <div className="site-navbar-search-mode" ref={searchLayerRef}>
-      <div className="site-navbar-search-shell">
-        <form className="site-navbar-search-form" onSubmit={submitForumSearch}>
-          <SearchIcon />
-          <input
-            ref={searchInputRef}
-            className="forum-search-input site-navbar-search-input"
-            value={forumQuery}
-            onChange={(event) => setForumQuery(event.target.value)}
-            onKeyDown={handleSearchInputKeyDown}
-            placeholder={GLOBAL_SEARCH_PLACEHOLDER}
-            aria-label="Search spaces or posts"
-            aria-activedescendant={highlightedResultIndex >= 0 ? flatSearchItems[highlightedResultIndex]?.key : undefined}
-          />
-        </form>
-        {renderSearchResults()}
-      </div>
-      <button
-        type="button"
-        className="site-navbar-search-cancel"
-        onClick={closeSearch}
-      >
-        Cancel
-      </button>
-    </div>
-  );
-
   return (
     <>
-      <Navbar
-        expand="lg"
-        sticky="top"
-        className={`site-navbar site-navbar-global is-visible ${isScrolled ? 'is-scrolled' : ''} ${isSearchOpen ? 'is-search-mode' : ''}`.trim()}
-        expanded={navExpanded}
-        onToggle={(nextExpanded) => {
-          setNavExpanded(Boolean(nextExpanded));
-          if (nextExpanded) {
-            setIsSearchOpen(false);
-          }
-          if (!nextExpanded) {
-            closeNavOverlays();
-          }
-        }}
-      >
-        <Container className="site-navbar-inner">
-          <Navbar.Brand as={NavLink} to="/" className="site-brand" aria-label="tsumit home" onClick={handlePrimaryNavClick}>
-            <img src={SITE_LOGO_SRC} alt="tsumit" className="site-brand-logo" />
-          </Navbar.Brand>
-          <Navbar.Collapse className="site-navbar-desktop">
-            <Nav className="ms-auto site-nav-group">
-              {/* Search is one shared global mode. On desktop we transform the existing
-                  navbar in place instead of introducing a separate search UI. */}
-              {isSearchOpen && isDesktop ? renderDesktopSearchMode() : renderDefaultNavItems(false)}
-            </Nav>
-          </Navbar.Collapse>
-          <div className="site-navbar-mobile-actions">
-            <button
-              type="button"
-              className="site-navbar-search-trigger site-navbar-search-trigger-mobile"
-              onClick={openSearch}
-              aria-label="Open search"
-              aria-expanded={isSearchOpen}
-            >
-              <SearchIcon />
-            </button>
-            <Navbar.Toggle aria-controls="site-mobile-nav-drawer" className="site-navbar-toggle" />
-          </div>
-        </Container>
-      </Navbar>
+      <aside className={`platform-sidebar ${isSidebarCollapsed ? 'is-collapsed' : ''}`.trim()} aria-label="Primary navigation sidebar">
+        <div className="platform-sidebar-head">
+          <div className="platform-sidebar-caption">Navigation</div>
+          <SidebarToggleButton
+            collapsed={isSidebarCollapsed}
+            isMobile={false}
+            onToggle={() => setIsSidebarCollapsed((current) => !current)}
+          />
+        </div>
+        {renderSidebarNav(false)}
+        {renderSidebarSpaces(false)}
+      </aside>
 
-      {isSearchOpen && isDesktop ? (
-        <button
-          type="button"
-          className="site-search-focus-overlay"
-          aria-label="Close search"
-          onClick={closeSearch}
-        />
-      ) : null}
+      <header className="platform-topbar">
+        <div className="platform-topbar-left">
+          <div className="platform-topbar-leading">
+            <NavLink to="/" className="platform-topbar-brand" onClick={closeOverlays} aria-label="tsumit home">
+              tsumit
+            </NavLink>
+          </div>
+        </div>
+
+        <div className="platform-topbar-center">
+          <div className="platform-topbar-search" ref={desktopSearchRef}>
+            <form className="platform-search-form" onSubmit={submitForumSearch}>
+              <SearchIcon />
+              <input
+                ref={desktopSearchInputRef}
+                className="platform-search-input"
+                value={forumQuery}
+                onChange={(event) => setForumQuery(event.target.value)}
+                onFocus={() => {
+                  setIsSearchOpen(true);
+                  setHighlightedResultIndex(-1);
+                }}
+                onKeyDown={handleSearchInputKeyDown}
+                placeholder={GLOBAL_SEARCH_PLACEHOLDER}
+                aria-label="Search spaces or posts"
+                aria-activedescendant={highlightedResultIndex >= 0 ? flatSearchItems[highlightedResultIndex]?.key : undefined}
+              />
+            </form>
+            {isSearchOpen && isDesktop ? renderSearchResults() : null}
+          </div>
+        </div>
+
+        <div className="platform-topbar-actions">
+          <button
+            type="button"
+            className="platform-topbar-icon-btn platform-topbar-menu-btn"
+            onClick={() => setIsDrawerOpen(true)}
+            aria-label="Open navigation"
+          >
+            <MenuIcon />
+          </button>
+
+          <button
+            type="button"
+            className="platform-topbar-icon-btn platform-topbar-mobile-search-btn"
+            onClick={() => setIsMobileSearchOpen(true)}
+            aria-label="Search"
+          >
+            <SearchIcon />
+          </button>
+
+          <button
+            type="button"
+            className="platform-topbar-action"
+            onClick={openComposer}
+          >
+            Create post
+          </button>
+
+          <button
+            type="button"
+            className="platform-topbar-action is-ai"
+            onClick={openAssistant}
+          >
+            <SparkIcon />
+            <span>Ask AI</span>
+          </button>
+
+          {currentUser ? (
+            <div className="platform-user-menu" ref={userMenuRef}>
+              <button
+                type="button"
+                className={`platform-user-trigger ${userMenuOpen ? 'is-open' : ''}`.trim()}
+                onClick={() => setUserMenuOpen((current) => !current)}
+                aria-expanded={userMenuOpen}
+                aria-haspopup="menu"
+                aria-label={`${userMenuOpen ? 'Close' : 'Open'} user menu for ${userDisplayName}`}
+              >
+                <Avatar
+                  imageUrl={currentUser.avatarUrl}
+                  name={userDisplayName}
+                  size={32}
+                  className="platform-user-trigger-avatar"
+                />
+                <span className="platform-user-trigger-indicator" aria-hidden="true">
+                  ▾
+                </span>
+              </button>
+              <div className={`platform-user-panel ${userMenuOpen ? 'is-open' : ''}`.trim()} role="menu">
+                {userDropdownItems.map((item) => (
+                  <NavLink
+                    key={item.key}
+                    to={item.to || '/forum'}
+                    className="platform-user-item"
+                    role="menuitem"
+                    onClick={closeOverlays}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+
+                {isAdminUser ? (
+                  <>
+                    <div className="platform-user-divider" role="separator" />
+                    <button
+                      type="button"
+                      className="platform-user-item is-button"
+                      role="menuitemcheckbox"
+                      aria-checked={adminMode}
+                      onClick={() => setAdminMode((current) => !current)}
+                    >
+                      <span>Admin mode</span>
+                      <span className={`platform-user-toggle-state ${adminMode ? 'is-on' : 'is-off'}`.trim()}>
+                        {adminMode ? 'On' : 'Off'}
+                      </span>
+                    </button>
+                  </>
+                ) : null}
+
+                {isAdminUser && adminMode && adminDropdownItems.length > 0 ? (
+                  <>
+                    <div className="platform-user-divider" role="separator" />
+                    <div className="platform-user-section-label">Admin</div>
+                    {adminDropdownItems.map((item) => (
+                      <NavLink
+                        key={item.key}
+                        to={item.to || '/forum'}
+                        className="platform-user-item"
+                        role="menuitem"
+                        onClick={closeOverlays}
+                      >
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </>
+                ) : null}
+
+                <div className="platform-user-divider" role="separator" />
+                <button
+                  type="button"
+                  className="platform-user-item is-button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeOverlays();
+                    onLogout();
+                  }}
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          ) : (
+            <NavLink to="/login" className="platform-topbar-action is-join" onClick={closeOverlays}>
+              Join
+            </NavLink>
+          )}
+        </div>
+      </header>
 
       <Offcanvas
-        id="site-mobile-nav-drawer"
-        show={navExpanded}
-        onHide={() => {
-          closeNavOverlays();
-          setNavExpanded(false);
-        }}
-        placement="end"
-        className="site-mobile-drawer site-mobile-drawer-landing"
-        backdropClassName="site-mobile-drawer-backdrop site-mobile-drawer-backdrop-landing"
+        show={isDrawerOpen}
+        onHide={() => setIsDrawerOpen(false)}
+        placement="start"
+        className="platform-mobile-drawer"
+        backdropClassName="platform-mobile-drawer-backdrop"
       >
-        <Offcanvas.Header closeButton className="site-mobile-drawer-header">
-          <Offcanvas.Title className="site-mobile-drawer-title">
-            <img src={SITE_LOGO_SRC} alt="tsumit" className="site-mobile-brand-logo" />
-          </Offcanvas.Title>
+        <Offcanvas.Header closeButton className="platform-mobile-drawer-header">
+          <Offcanvas.Title className="platform-mobile-drawer-title">Navigation</Offcanvas.Title>
         </Offcanvas.Header>
-        <Offcanvas.Body className="site-mobile-drawer-body">
-          <Nav className="site-nav-group is-drawer">
-            {renderDefaultNavItems(true)}
-          </Nav>
+        <Offcanvas.Body className="platform-mobile-drawer-body">
+          {renderSidebarNav(true)}
+          {renderSidebarSpaces(true)}
         </Offcanvas.Body>
       </Offcanvas>
 
       <Offcanvas
-        show={isSearchOpen && !isDesktop}
-        onHide={closeSearch}
+        show={isMobileSearchOpen}
+        onHide={() => setIsMobileSearchOpen(false)}
         placement="top"
-        className="site-mobile-search-overlay"
-        backdropClassName="site-mobile-search-backdrop"
+        className="platform-mobile-search"
+        backdropClassName="platform-mobile-search-backdrop"
       >
-        <Offcanvas.Header closeButton className="site-mobile-search-header">
-          <Offcanvas.Title className="site-mobile-search-title">Search</Offcanvas.Title>
+        <Offcanvas.Header closeButton className="platform-mobile-search-header">
+          <Offcanvas.Title className="platform-mobile-search-title">Search</Offcanvas.Title>
         </Offcanvas.Header>
-        <Offcanvas.Body className="site-mobile-search-body">
-          <div className="site-mobile-search-shell" ref={searchLayerRef}>
-            {/* Search mode keeps the search layer sharp while the rest of the app
-                softens behind an overlay, so attention stays anchored here. */}
-            <form className="site-navbar-search-form" onSubmit={submitForumSearch}>
+        <Offcanvas.Body className="platform-mobile-search-body">
+          <div className="platform-mobile-search-shell" ref={mobileSearchRef}>
+            <form className="platform-search-form" onSubmit={submitForumSearch}>
               <SearchIcon />
               <input
-                ref={searchInputRef}
-                className="forum-search-input site-navbar-search-input"
+                ref={mobileSearchInputRef}
+                className="platform-search-input"
                 value={forumQuery}
                 onChange={(event) => setForumQuery(event.target.value)}
                 onKeyDown={handleSearchInputKeyDown}

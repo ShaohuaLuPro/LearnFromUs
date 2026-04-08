@@ -1,6 +1,3 @@
-export const SITE_LOGO_SRC = '/images/tsumit-lockup-minimal.svg';
-export const SITE_ICON_SRC = '/images/tsumit-icon-minimal.svg';
-
 export type SiteNavItem = {
   to: string;
   label: string;
@@ -29,23 +26,48 @@ export const GLOBAL_SEARCH_QUICK_LINKS = [
 
 export const landingFooterGroups = [
   {
-    title: 'Explore',
+    title: 'Navigate',
     links: [
-      { key: 'spaces', href: '/explore', label: 'Browse spaces' },
-      { key: 'feed', href: '/forum', label: 'See the feed' }
+      { key: 'explore', href: '/explore', label: 'Explore' },
+      { key: 'feed', href: '/forum', label: 'Feed' },
+      { key: 'create', href: '/login', label: 'Create' },
+      { key: 'about', href: '/about', label: 'About' }
     ]
   },
   {
-    title: 'Learn More',
+    title: 'Company',
     links: [
-      { key: 'about', href: '/about', label: 'About tsumit' },
-      { key: 'story', href: '/about/why-we-exist', label: 'Why we exist' }
+      { key: 'story', href: '/about/why-we-exist', label: 'Why we exist' },
+      { key: 'founder', href: '/about/leadership/founder', label: 'Founder' },
+      { key: 'team', href: '/about/leadership/team-members', label: 'Team' }
     ]
   }
 ] as const;
 
 export const footerLegalLinks = [
-  { key: 'terms', href: '/terms', label: 'Terms' },
   { key: 'privacy', href: '/privacy', label: 'Privacy' },
+  { key: 'terms', href: '/terms', label: 'Terms' },
   { key: 'legal', href: '/legal', label: 'Legal' }
 ] as const;
+
+export const footerConnectLinks = [] as const;
+
+export function buildFooterContent() {
+  return {
+    eyebrow: 'tsumit',
+    title: 'Where good thinking gets shared.',
+    description:
+      'An AI-native platform for discovering signal, publishing with clarity, and staying close to the work worth following.',
+    groups: landingFooterGroups.map((group) => ({
+      ...group,
+      links: [...group.links]
+    })),
+    connect: [...footerConnectLinks],
+    legal: [...footerLegalLinks],
+    brand: {
+      name: 'tsumit',
+      sentence: 'Built for creators, communities, and ideas that deserve more than noise.',
+      copyright: `© ${new Date().getFullYear()} tsumit. All rights reserved.`
+    }
+  };
+}

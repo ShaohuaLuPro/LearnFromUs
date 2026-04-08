@@ -1,53 +1,94 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getSectionLabel } from '../lib/sections';
+import './AgentChatbox.css';
+
+const BASE_SUGGESTIONS = [
+  {
+    key: 'ask-anything',
+    label: 'Ask anything',
+    prompt: 'Help me find the most useful discussions to start with today.'
+  },
+  {
+    key: 'summarize-page',
+    label: 'Summarize this page',
+    prompt: 'Summarize what is on this page and tell me what matters most.'
+  },
+  {
+    key: 'discover',
+    label: 'Help me find something',
+    prompt: 'Show me recent high-signal posts about analytics and product experiments.'
+  },
+  {
+    key: 'draft-post',
+    label: 'Draft a post',
+    prompt: 'Draft a practical post about PostgreSQL indexing trade-offs for production systems.'
+  }
+];
+
+const MEMBER_SUGGESTIONS = [
+  ...BASE_SUGGESTIONS,
+  {
+    key: 'my-content',
+    label: 'Improve my workflow',
+    prompt: 'Take me to my posts and suggest which one I should improve first.'
+  }
+];
+
+const QUICK_ACTION_PROMPTS = {
+  'search-posts': 'Find related posts for this topic and show the most relevant ones first.',
+  'show-trending': 'Show me the latest active discussions worth reading.',
+  'draft-post': 'Draft a new post with a practical, publish-ready structure.',
+  'publish-draft': 'Refine this draft and make it ready to publish.',
+  'login-to-publish': 'What can I do before logging in, and what unlocks after login?'
+};
+
+function createMessage({ role, text, payload = null }) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    text,
+    payload,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function formatTimestamp(isoValue) {
+  try {
+    return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(isoValue));
+  } catch (_) {
+    return '';
+  }
+}
+
+function resolveAssistantText(payload) {
+  return String(payload?.reply || payload?.message || 'Done.').trim();
+}
 
 export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost }) {
   const navigate = useNavigate();
   const threadRef = useRef(null);
   const inputRef = useRef(null);
   const abortControllerRef = useRef(null);
+
   const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => (
+    typeof window === 'undefined' ? false : window.matchMedia('(max-width: 991.98px)').matches
+  ));
   const [input, setInput] = useState('');
-  const [editingMessageId, setEditingMessageId] = useState(null);
-  const [showPrompts, setShowPrompts] = useState(false);
-  const basePrompts = [
-    'take me to the about page so i can understand what this community is for',
-    'show me the latest announcements and summarize what changed most recently',
-    'show me the newest posts so i can catch up on recent discussion',
-    'i want to learn mle, show me a few useful posts to start with',
-    'find posts about analytics dashboards, experiments, or product metrics',
-    'show top authors who post often and seem active in technical discussions',
-    'draft a space request for an mlops community with a clear name, description, and section scope'
-  ];
-  const starterPrompts = currentUser
-    ? [
-        ...basePrompts,
-        'i want to change my password and go to the right settings page',
-        'take me to my posts so i can review what i have already published',
-        'draft a post in my style about postgres indexing that feels ready to publish'
-      ]
-    : [
-        ...basePrompts,
-        'find posts about mongodb performance, indexing, or query tuning',
-        'draft a post about password reset best practices for users and admins'
-      ];
-  const buildWelcomeMessage = useCallback(() => ({
-    id: 'welcome',
-    role: 'agent',
-    reply: currentUser
-      ? 'Ask me to navigate the site, show the latest posts or announcements, find posts for a topic, surface active authors, draft a post in your style, or draft a new space request.'
-      : 'Ask me to navigate the site, show the latest posts or announcements, find posts for a topic, surface active authors, draft a post, or draft a new space request.',
-    quickActions: ['search-posts', 'show-trending', 'draft-post']
-  }), [currentUser]);
-  const [messages, setMessages] = useState([buildWelcomeMessage()]);
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const scrollThreadToBottom = useCallback(() => {
+  const suggestions = useMemo(
+    () => (currentUser ? MEMBER_SUGGESTIONS : BASE_SUGGESTIONS),
+    [currentUser]
+  );
+
+  const scrollToBottom = useCallback(() => {
     if (!threadRef.current) {
       return;
     }
-
     const thread = threadRef.current;
     window.requestAnimationFrame(() => {
       thread.scrollTop = thread.scrollHeight;
@@ -55,170 +96,58 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
   }, []);
 
   useEffect(() => {
-    setMessages((current) => {
-      if (current.length !== 1 || current[0]?.id !== 'welcome') {
-        return current;
+    const mediaQuery = window.matchMedia('(max-width: 991.98px)');
+    const sync = (event) => {
+      const nextMobile = event?.matches ?? mediaQuery.matches;
+      setIsMobile(nextMobile);
+      if (nextMobile) {
+        setIsExpanded(false);
       }
-      return [buildWelcomeMessage()];
-    });
-  }, [buildWelcomeMessage]);
+    };
+    sync();
+    mediaQuery.addEventListener('change', sync);
+    return () => mediaQuery.removeEventListener('change', sync);
+  }, []);
 
   useEffect(() => {
-    if (!isOpen || !threadRef.current) {
+    if (!isOpen || !isMobile) {
+      document.body.classList.remove('assistant-mobile-open');
       return;
     }
-    scrollThreadToBottom();
-  }, [isOpen, messages, loading, scrollThreadToBottom]);
+    document.body.classList.add('assistant-mobile-open');
+    return () => document.body.classList.remove('assistant-mobile-open');
+  }, [isMobile, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    scrollToBottom();
+  }, [isOpen, messages, loading, scrollToBottom]);
 
   useEffect(() => () => {
     abortControllerRef.current?.abort();
   }, []);
 
-  const fillInputFromPrompt = (prompt) => {
-    setInput(String(prompt || ''));
-    setEditingMessageId(null);
-    inputRef.current?.focus();
-    scrollThreadToBottom();
-  };
+  useEffect(() => {
+    const handleOpenRequest = () => setIsOpen(true);
+    window.addEventListener('assistant:open', handleOpenRequest);
+    return () => window.removeEventListener('assistant:open', handleOpenRequest);
+  }, []);
 
-  const startEditingMessage = (message) => {
-    if (!message?.id || message.role !== 'user' || loading) {
-      return;
-    }
-
-    setEditingMessageId(message.id);
-    setInput(String(message.text || ''));
-    inputRef.current?.focus();
-  };
-
-  const cancelEditingMessage = () => {
-    setEditingMessageId(null);
-    setInput('');
-  };
-
-  const stopThinking = () => {
+  const clearConversation = useCallback(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setLoading(false);
-  };
-
-  const clearConversation = () => {
-    if (loading) {
-      stopThinking();
-    }
-    setMessages([buildWelcomeMessage()]);
+    setMessages([]);
     setInput('');
-    setEditingMessageId(null);
-    setShowPrompts(false);
-    scrollThreadToBottom();
-  };
+    inputRef.current?.focus();
+  }, []);
 
-  const sendMessage = async (nextMessage) => {
-    const message = String(nextMessage || input).trim();
-    if (!message || loading) {
-      return;
-    }
-
-    const targetMessageId = editingMessageId;
-    const nextUserMessage = { id: targetMessageId || `${Date.now()}-user`, role: 'user', text: message };
-
-    setMessages((current) => {
-      if (!targetMessageId) {
-        return [...current, nextUserMessage];
-      }
-
-      const targetIndex = current.findIndex((entry) => entry.id === targetMessageId);
-      if (targetIndex === -1) {
-        return [...current, nextUserMessage];
-      }
-
-      return [
-        ...current.slice(0, targetIndex),
-        nextUserMessage
-      ];
-    });
-
-    setInput('');
-    setEditingMessageId(null);
-    setShowPrompts(false);
-    setLoading(true);
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    try {
-      const result = await onAgentChat(message, controller.signal);
-      abortControllerRef.current = null;
-      setLoading(false);
-
-      if (!result.ok) {
-        if (result.message === 'Request cancelled.') {
-          return;
-        }
-        setMessages((current) => [
-          ...current,
-          { id: `${Date.now()}-error`, role: 'agent', reply: result.message || 'Agent request failed.' }
-        ]);
-        return;
-      }
-
-      if (result.data?.navigateTo && result.data?.autoNavigate) {
-        navigate(result.data.navigateTo);
-      }
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: `${Date.now()}-agent`,
-          role: 'agent',
-          ...result.data
-        }
-      ]);
-    } catch (error) {
-      abortControllerRef.current = null;
-      setLoading(false);
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
-      }
-      setMessages((current) => [
-        ...current,
-        { id: `${Date.now()}-error`, role: 'agent', reply: error?.message || 'Agent request failed.' }
-      ]);
-    }
-  };
-
-  const publishDraft = async (draft) => {
-    const result = await onCreatePost(draft);
-    setMessages((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-publish`,
-        role: 'agent',
-        reply: result.ok
-          ? 'Draft published. I refreshed the latest feed state, and you can open it from My Posts or the feed.'
-          : result.message
-      }
-    ]);
-    if (result.ok) {
-      navigate('/forum');
-    }
-  };
-
-  const openDraftInComposerForForum = (draft, forumOption) => {
-    if (!draft || !forumOption?.id) {
-      return;
-    }
-
-    openDraftInComposer({
-      ...draft,
-      forumId: forumOption.id,
-      section: forumOption.suggestedSection || draft.section
-    });
-  };
-
-  const openDraftInComposer = (draft) => {
+  const openDraftInComposer = useCallback((draft) => {
     if (!draft) {
       return;
     }
-
     navigate('/forum?compose=1', {
       state: {
         composerDraft: {
@@ -230,9 +159,9 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
         }
       }
     });
-  };
+  }, [navigate]);
 
-  const openForumRequestDraft = (forumRequestDraft) => {
+  const openForumRequestDraft = useCallback((forumRequestDraft) => {
     if (!forumRequestDraft) {
       return;
     }
@@ -248,342 +177,333 @@ export default function AgentChatbox({ currentUser, onAgentChat, onCreatePost })
         }
       }
     });
+  }, [navigate]);
+
+  const publishDraft = useCallback(async (draft) => {
+    if (!draft || loading) {
+      return;
+    }
+
+    const result = await onCreatePost(draft);
+    setMessages((current) => [
+      ...current,
+      createMessage({
+        role: 'assistant',
+        text: result.ok
+          ? 'Draft published. Opening the feed now.'
+          : (result.message || 'Publishing failed.')
+      })
+    ]);
+
+    if (result.ok) {
+      navigate('/forum');
+    }
+  }, [loading, navigate, onCreatePost]);
+
+  const sendMessage = useCallback(async (nextValue) => {
+    const messageText = String(nextValue ?? input).trim();
+    if (!messageText || loading) {
+      return;
+    }
+
+    setInput('');
+    setMessages((current) => [...current, createMessage({ role: 'user', text: messageText })]);
+    setLoading(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const result = await onAgentChat(messageText, controller.signal);
+      abortControllerRef.current = null;
+      setLoading(false);
+
+      if (!result.ok) {
+        if (result.message === 'Request cancelled.') {
+          return;
+        }
+        setMessages((current) => [
+          ...current,
+          createMessage({ role: 'assistant', text: result.message || 'Agent request failed.' })
+        ]);
+        return;
+      }
+
+      const payload = result.data || {};
+      if (payload.navigateTo && payload.autoNavigate) {
+        navigate(payload.navigateTo);
+      }
+
+      setMessages((current) => [
+        ...current,
+        createMessage({
+          role: 'assistant',
+          text: resolveAssistantText(payload),
+          payload
+        })
+      ]);
+    } catch (error) {
+      abortControllerRef.current = null;
+      setLoading(false);
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      setMessages((current) => [
+        ...current,
+        createMessage({
+          role: 'assistant',
+          text: error?.message || 'Agent request failed.'
+        })
+      ]);
+    }
+  }, [input, loading, navigate, onAgentChat]);
+
+  const handlePromptClick = (prompt) => {
+    if (!isOpen) {
+      setIsOpen(true);
+    }
+    sendMessage(prompt);
+  };
+
+  const handleQuickAction = (actionKey) => {
+    const prompt = QUICK_ACTION_PROMPTS[actionKey];
+    if (!prompt) {
+      return;
+    }
+    sendMessage(prompt);
+  };
+
+  const stopThinking = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setLoading(false);
+  };
+
+  const renderAssistantExtras = (message) => {
+    const payload = message.payload || {};
+
+    return (
+      <>
+        {payload.actions?.length > 0 ? (
+          <div className="assistant-actions-row">
+            {payload.actions.map((action) => (
+              <Link key={`${message.id}-${action.to}-${action.label}`} to={action.to} className="assistant-action-link">
+                {action.label}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+
+        {payload.posts?.length > 0 ? (
+          <div className="assistant-card-grid">
+            {payload.posts.map((post) => (
+              <Link key={post.id} to={`/forum/post/${post.id}`} className="assistant-card-link">
+                <strong>{post.title}</strong>
+                <span>{post.authorName}</span>
+                <span>{getSectionLabel(post.section)}</span>
+              </Link>
+            ))}
+          </div>
+        ) : null}
+
+        {payload.authors?.length > 0 ? (
+          <div className="assistant-card-grid">
+            {payload.authors.map((author) => (
+              <div key={`${author.author_email}-${author.rank || author.author_name}`} className="assistant-card-link">
+                <strong>{author.author_name}</strong>
+                <span>{author.post_count} posts</span>
+                {author.score !== undefined ? <span>score {author.score}</span> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {payload.draft ? (
+          <div className="assistant-draft-block">
+            <strong>{payload.draft.title}</strong>
+            <span>{getSectionLabel(payload.draft.section)}</span>
+            <pre>{payload.draft.content}</pre>
+            <div className="assistant-actions-row">
+              <button type="button" className="assistant-action-link is-button" onClick={() => openDraftInComposer(payload.draft)}>
+                Edit in Composer
+              </button>
+              {currentUser ? (
+                <button type="button" className="assistant-action-link is-button is-primary" onClick={() => publishDraft(payload.draft)}>
+                  Publish Draft
+                </button>
+              ) : (
+                <Link to="/login" className="assistant-action-link is-primary">
+                  Login to Publish
+                </Link>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {payload.forumRequestDraft ? (
+          <div className="assistant-draft-block">
+            <strong>{payload.forumRequestDraft.name}</strong>
+            <p>{payload.forumRequestDraft.overview || payload.forumRequestDraft.description}</p>
+            <div className="assistant-actions-row">
+              {currentUser ? (
+                <button type="button" className="assistant-action-link is-button is-primary" onClick={() => openForumRequestDraft(payload.forumRequestDraft)}>
+                  Open Request Form
+                </button>
+              ) : (
+                <Link to="/login" className="assistant-action-link is-primary">
+                  Login to Request
+                </Link>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {payload.quickActions?.length > 0 ? (
+          <div className="assistant-chip-row">
+            {payload.quickActions.map((actionKey) => (
+              QUICK_ACTION_PROMPTS[actionKey] ? (
+                <button
+                  key={`${message.id}-${actionKey}`}
+                  type="button"
+                  className="assistant-chip"
+                  onClick={() => handleQuickAction(actionKey)}
+                >
+                  {actionKey.replaceAll('-', ' ')}
+                </button>
+              ) : null
+            ))}
+          </div>
+        ) : null}
+      </>
+    );
   };
 
   return (
-    <div className={`agent-chatbox ${isOpen ? 'is-open' : ''}`}>
-      {isOpen && (
-        <section className="agent-chatbox-panel">
-          <div className="agent-chatbox-header">
-            <div className="agent-chatbox-header-main">
-              <div className="agent-chatbox-eyebrow-row">
-                <span className="agent-chatbox-eyebrow">AI Agent</span>
-                <span className="agent-chatbox-status-pill">
-                  <span className="agent-chatbox-status-dot" aria-hidden="true" />
-                  Ready
-                </span>
+    <div className={`assistant-dock ${isOpen ? 'is-open' : ''} ${isMobile ? 'is-mobile' : ''}`.trim()}>
+      {isOpen ? (
+        <>
+          {isMobile ? <button type="button" className="assistant-overlay" onClick={() => setIsOpen(false)} aria-label="Close assistant" /> : null}
+          <aside className={`assistant-panel ${isExpanded ? 'is-expanded' : ''}`.trim()} aria-label="AI Assistant Panel">
+            <header className="assistant-header">
+              <div>
+                <p className="assistant-kicker">Assistant</p>
+                <h3>AI Assistant</h3>
+                <p className="assistant-subtitle">Discovery, drafting, and workflow help in one place.</p>
               </div>
-                <h3 className="mb-0">tsumit Assistant</h3>
-              <p className="agent-chatbox-subtitle mb-0">
-                Open pages, check recent posts or announcements, search topics, and draft content from one place.
-              </p>
-            </div>
-            <div className="agent-chatbox-header-actions">
-              <button type="button" className="forum-secondary-btn" onClick={clearConversation}>
-                Clear chat
-              </button>
-              <button type="button" className="forum-secondary-btn" onClick={() => setIsOpen(false)}>
-                Close
-              </button>
-            </div>
-          </div>
+              <div className="assistant-header-actions">
+                {!isMobile ? (
+                  <button
+                    type="button"
+                    className="assistant-icon-btn"
+                    onClick={() => setIsExpanded((current) => !current)}
+                    aria-label={isExpanded ? 'Compact panel' : 'Expand panel'}
+                  >
+                    {isExpanded ? 'Compact' : 'Expand'}
+                  </button>
+                ) : null}
+                <button type="button" className="assistant-icon-btn" onClick={clearConversation}>
+                  Clear
+                </button>
+                <button type="button" className="assistant-icon-btn" onClick={() => setIsOpen(false)}>
+                  Close
+                </button>
+              </div>
+            </header>
 
-          <div className="agent-chatbox-prompts-shell">
-            <button
-              type="button"
-              className="agent-chatbox-prompts-toggle"
-              onClick={() => setShowPrompts((current) => !current)}
-            >
-              {showPrompts ? 'Hide examples' : 'Show examples'}
-            </button>
-            <span className="agent-chatbox-prompts-hint">Use a prompt or type your own task.</span>
-          </div>
-
-          <div className={`agent-chatbox-prompts ${showPrompts ? 'is-expanded' : ''}`}>
-            {starterPrompts.map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                className="agent-chatbox-prompt-chip"
-                onClick={() => fillInputFromPrompt(prompt)}
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-
-          <div ref={threadRef} className="agent-chatbox-thread">
-            {messages.map((message) => (
-              <div key={message.id} className={`agent-chatbox-message is-${message.role}`}>
-                {message.role === 'user' ? (
-                  <>
-                    <div className="agent-chatbox-message-label">You</div>
-                    <div className="agent-chatbox-user-message-row">
-                      <p className="mb-0">{message.text}</p>
+            <div className="assistant-thread" ref={threadRef}>
+              {messages.length === 0 ? (
+                <div className="assistant-empty-state">
+                  <h4>Ask AI to help with discovery, drafts, or navigation.</h4>
+                  <p>Try one of these to get started quickly.</p>
+                  <div className="assistant-chip-row">
+                    {suggestions.map((suggestion) => (
                       <button
+                        key={suggestion.key}
                         type="button"
-                        className="agent-chatbox-inline-action"
-                        onClick={() => startEditingMessage(message)}
-                        disabled={loading}
+                        className="assistant-chip"
+                        onClick={() => handlePromptClick(suggestion.prompt)}
                       >
-                        Edit
+                        {suggestion.label}
                       </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                messages.map((message) => (
+                  <article key={message.id} className={`assistant-message is-${message.role}`.trim()}>
+                    <div className="assistant-message-meta">
+                      <span>{message.role === 'assistant' ? 'Assistant' : 'You'}</span>
+                      <time>{formatTimestamp(message.createdAt)}</time>
                     </div>
-                    {editingMessageId === message.id && (
-                      <span className="agent-chatbox-editing-note">Editing this message. Resend to replace the replies below it.</span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="agent-chatbox-message-label">Assistant</div>
-                    <p className="mb-2">{message.reply}</p>
+                    <div className="assistant-message-body">
+                      <p>{message.text}</p>
+                      {message.role === 'assistant' ? renderAssistantExtras(message) : null}
+                    </div>
+                  </article>
+                ))
+              )}
 
-                    {message.posts?.length > 0 && (
-                      <div className="agent-chatbox-card-grid">
-                        {message.posts.map((post) => (
-                          <Link key={post.id} to={`/forum/post/${post.id}`} className="agent-chatbox-card">
-                            <strong>{post.title}</strong>
-                            <span>{post.authorName}</span>
-                            <span>{getSectionLabel(post.section)}</span>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
+              {loading ? (
+                <article className="assistant-message is-assistant">
+                  <div className="assistant-message-meta">
+                    <span>Assistant</span>
+                    <time>Thinking</time>
+                  </div>
+                  <div className="assistant-message-body">
+                    <div className="assistant-thinking">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
+                </article>
+              ) : null}
+            </div>
 
-                    {message.authors?.length > 0 && (
-                      <div className="agent-chatbox-card-grid">
-                        {message.authors.map((author) => (
-                          <div key={`${author.author_email}-${author.rank || author.author_name}`} className="agent-chatbox-card">
-                            <strong>{author.author_name}</strong>
-                            <span>{author.post_count} posts</span>
-                            {author.score !== undefined && <span>score {author.score}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {message.styleProfile && (
-                      <div className="agent-chatbox-profile">
-                        <strong>Your Writing Profile</strong>
-                        <p className="mb-2">{message.styleProfile.summary}</p>
-                        <div className="agent-chatbox-meta-row">
-                          <span>{message.styleProfile.sampleSize} posts sampled</span>
-                          <span>~{message.styleProfile.avgWordCount} words/post</span>
-                          <span>{message.styleProfile.openerStyle} opener</span>
-                        </div>
-                        {message.styleProfile.tone?.length > 0 && (
-                          <div className="agent-chatbox-pill-row">
-                            {message.styleProfile.tone.map((tone) => (
-                              <span key={`tone-${tone}`} className="post-tag-pill">{tone}</span>
-                            ))}
-                          </div>
-                        )}
-                        {message.styleProfile.commonTags?.length > 0 && (
-                          <div className="agent-chatbox-pill-row">
-                            {message.styleProfile.commonTags.slice(0, 4).map((tag) => (
-                              <span key={`tag-${tag}`} className="post-tag-pill">#{tag}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {message.referencePosts?.length > 0 && (
-                      <div className="agent-chatbox-card-grid">
-                        {message.referencePosts.map((post) => (
-                          <Link key={`ref-${post.id}`} to={`/forum/post/${post.id}`} className="agent-chatbox-card">
-                            <strong>{post.title}</strong>
-                            <span>{post.authorName}</span>
-                            <span>{getSectionLabel(post.section)}</span>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-
-                    {message.workspacePosts?.length > 0 && (
-                      <div className="agent-chatbox-card-grid">
-                        {message.workspacePosts.map((post) => (
-                          <Link key={`workspace-${post.id}`} to={post.to} className="agent-chatbox-card">
-                            <strong>{post.title}</strong>
-                            <span>{getSectionLabel(post.section)}</span>
-                            <span>Open AI Rewrite</span>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-
-                    {message.actions?.length > 0 && (
-                      <div className="forum-actions">
-                        {message.actions.map((action) => (
-                          <Link key={`${message.id}-${action.to}-${action.label}`} to={action.to} className="forum-secondary-btn text-decoration-none">
-                            {action.label}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-
-                    {message.forumMatches?.length > 0 && (
-                      <div className="agent-chatbox-card-grid">
-                        {message.forumMatches.map((forum) => (
-                          <button
-                            key={`forum-match-${forum.id}`}
-                            type="button"
-                            className="agent-chatbox-card text-start"
-                            onClick={() => currentUser ? openDraftInComposerForForum(message.draft, forum) : navigate('/login')}
-                          >
-                            <strong>{forum.name}</strong>
-                            <span>{forum.isFollowing ? 'Following' : 'Space'}</span>
-                            <span>{getSectionLabel(forum.suggestedSection || forum.sectionScope?.[0] || '')}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {message.draft && (
-                      <div className="agent-chatbox-draft">
-                        <strong>{message.draft.title}</strong>
-                        <span>{getSectionLabel(message.draft.section)}</span>
-                        {message.draft.tags?.length > 0 && <span>#{message.draft.tags.join(' #')}</span>}
-                        {message.generation && (
-                          <span>
-                            {message.generation.provider === 'openai'
-                              ? `Generated with ${message.generation.model || 'OpenAI'}${message.generation.fallback ? ' (fallback used)' : ''}`
-                              : 'Generated with local template mode'}
-                          </span>
-                        )}
-                        <pre>{message.draft.content}</pre>
-                        <div className="forum-actions">
-                          <button type="button" className="forum-secondary-btn" onClick={() => setInput(`find posts about ${message.draft.title}`)}>
-                            Search Similar
-                          </button>
-                          {currentUser ? (
-                            <>
-                              {message.forumMatches?.length > 1 ? null : (
-                                <>
-                                  <button type="button" className="forum-secondary-btn" onClick={() => openDraftInComposer(message.draft)}>
-                                    Edit in Composer
-                                  </button>
-                                  <button type="button" className="forum-primary-btn" onClick={() => publishDraft(message.draft)}>
-                                    Publish Draft
-                                  </button>
-                                </>
-                              )}
-                            </>
-                          ) : (
-                            <Link to="/login" className="forum-primary-btn text-decoration-none">
-                              Login to Publish
-                            </Link>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {message.forumRequestDraft && (
-                      <div className="agent-chatbox-draft">
-                        <div className="agent-chatbox-field-block">
-                          <span className="agent-chatbox-field-label">Title</span>
-                          <strong>{message.forumRequestDraft.name}</strong>
-                        </div>
-                        {message.forumRequestDraft.overview && (
-                          <div className="agent-chatbox-field-block">
-                            <span className="agent-chatbox-field-label">Overview</span>
-                            <p className="mb-0">{message.forumRequestDraft.overview}</p>
-                          </div>
-                        )}
-                        {message.forumRequestDraft.sectionScope?.length > 0 && (
-                          <div className="agent-chatbox-field-block">
-                            <span className="agent-chatbox-field-label">Scope</span>
-                            <span>{message.forumRequestDraft.sectionScope.map(getSectionLabel).join(' · ')}</span>
-                          </div>
-                        )}
-                        {message.generation && (
-                          <span>
-                            {message.generation.provider === 'openai'
-                              ? `Generated with ${message.generation.model || 'OpenAI'}${message.generation.fallback ? ' (fallback used)' : ''}`
-                              : 'Generated with local template mode'}
-                          </span>
-                        )}
-                        <div className="agent-chatbox-field-block">
-                          <span className="agent-chatbox-field-label">Description</span>
-                          <p className="mb-0">{message.forumRequestDraft.description}</p>
-                        </div>
-                        <div className="agent-chatbox-field-block">
-                          <span className="agent-chatbox-field-label">Why This Space Should Exist</span>
-                          <p className="mb-0">{message.forumRequestDraft.rationale}</p>
-                        </div>
-                        <div className="forum-actions">
-                          {currentUser ? (
-                            <button type="button" className="forum-primary-btn" onClick={() => openForumRequestDraft(message.forumRequestDraft)}>
-                              Open Request Form
-                            </button>
-                          ) : (
-                            <Link to="/login" className="forum-primary-btn text-decoration-none">
-                              Login to Request
-                            </Link>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
-
-            {loading && (
-              <div className="agent-chatbox-message is-agent is-thinking">
-                <div className="agent-chatbox-message-label">Assistant</div>
-                <div className="agent-chatbox-thinking-row">
-                  <span className="agent-chatbox-thinking-dots" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                  <p className="muted mb-0">Agent is thinking...</p>
+            <form
+              className="assistant-compose"
+              onSubmit={(event) => {
+                event.preventDefault();
+                sendMessage(input);
+              }}
+            >
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendMessage(input);
+                  }
+                }}
+                rows={2}
+                placeholder="Ask AI to summarize, find posts, or draft something useful..."
+                disabled={loading}
+              />
+              <div className="assistant-compose-row">
+                <span>{loading ? 'AI is thinking...' : 'Enter to send, Shift+Enter for a new line.'}</span>
+                <div className="assistant-compose-actions">
+                  {loading ? (
+                    <button type="button" className="assistant-action-link is-button" onClick={stopThinking}>
+                      Stop
+                    </button>
+                  ) : null}
+                  <button type="submit" className="assistant-action-link is-button is-primary" disabled={loading || !input.trim()}>
+                    Send
+                  </button>
                 </div>
               </div>
-            )}
-          </div>
+            </form>
+          </aside>
+        </>
+      ) : null}
 
-          <form
-            className="agent-chatbox-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              sendMessage(input);
-            }}
-          >
-            <textarea
-              ref={inputRef}
-              className="form-control forum-input"
-              rows={3}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  sendMessage(input);
-                }
-              }}
-              placeholder={currentUser
-                ? 'Try "show me the latest announcements", "take me to my posts", or "draft a post in my style about postgres indexing".'
-                : 'Try "show me the latest announcements", "find posts about analytics", or "draft a space request for an MLOps community".'}
-            />
-            <div className="forum-actions">
-              <span className="muted">
-                {editingMessageId ? 'Editing a previous message. Enter to resend, Shift+Enter for a new line.' : 'Enter to send, Shift+Enter for a new line.'}
-              </span>
-              {editingMessageId && (
-                <button type="button" className="forum-secondary-btn" onClick={cancelEditingMessage} disabled={loading}>
-                  Cancel Edit
-                </button>
-              )}
-              {loading && (
-                <button type="button" className="forum-secondary-btn" onClick={stopThinking}>
-                  Stop
-                </button>
-              )}
-              <button type="submit" className="forum-primary-btn" disabled={loading}>
-                {editingMessageId ? 'Resend' : 'Send'}
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      <button type="button" className="agent-chatbox-trigger" onClick={() => setIsOpen((current) => !current)}>
-        <span className="agent-chatbox-trigger-badge" aria-hidden="true">AI</span>
-        <span className="agent-chatbox-trigger-copy">
-          <span className="agent-chatbox-trigger-label">Agent</span>
-          <span className="agent-chatbox-trigger-title">Open Assistant</span>
+      <button type="button" className="assistant-trigger" onClick={() => setIsOpen((current) => !current)}>
+        <span className="assistant-trigger-badge" aria-hidden="true">AI</span>
+        <span className="assistant-trigger-copy">
+          <span className="assistant-trigger-label">Ask AI</span>
+          <span className="assistant-trigger-title">Open Assistant</span>
         </span>
       </button>
     </div>

@@ -2050,6 +2050,10 @@ button:disabled,
   background: transparent !important;
 }
 
+[data-page="about"].about-page-shell {
+  overflow-x: clip;
+}
+
 [data-page="about"],
 [data-page="about"] h1,
 [data-page="about"] h2,
@@ -2316,12 +2320,14 @@ button:disabled,
   display: grid;
   gap: 2rem;
   padding: 0 !important;
+  min-width: 0;
 }
 
 [data-page="about"] .leadership-hero-showcase {
   display: grid;
   gap: 1rem;
   padding: 0;
+  min-width: 0;
 }
 
 [data-page="about"] .leadership-hero-showcase .about-breadcrumb-link,
@@ -2902,6 +2908,7 @@ button:disabled,
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.75rem;
   align-items: stretch;
+  min-width: 0;
 }
 
 [data-page="about"] .leadership-card-showcase {
@@ -2912,6 +2919,7 @@ button:disabled,
   border-radius: 2rem !important;
   overflow: hidden;
   background: #ffffff !important;
+  min-width: 0;
 }
 
 [data-page="about"] .leadership-card-main-showcase {
@@ -2920,11 +2928,13 @@ button:disabled,
   align-items: center;
   gap: 1.4rem;
   padding: 1.35rem 1.5rem 1.25rem;
+  min-width: 0;
 }
 
 [data-page="about"] .leadership-card-copy {
   display: grid;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 [data-page="about"] .leadership-card-name {
@@ -2941,6 +2951,8 @@ button:disabled,
   font-weight: 400;
   line-height: 1.25;
   letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 [data-page="about"] .leadership-card-image-shell {
@@ -3007,6 +3019,80 @@ button:disabled,
 
   [data-page="about"] .leadership-card-copy {
     justify-items: center;
+  }
+
+  [data-page="about"] .about-detail-panel-profile-showcase .about-story-block:not(.about-story-block-profile-hero),
+  [data-page="about"] .about-detail-panel-founder-showcase .about-story-block:not(.about-story-block-founder-hero) {
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: 100%;
+    transform: none;
+  }
+
+  [data-page="about"] .about-detail-panel-profile-showcase .about-story-block:not(.about-story-block-profile-hero) .about-story-copy,
+  [data-page="about"] .about-detail-panel-profile-showcase .about-story-block:not(.about-story-block-profile-hero) .about-story-copy-story-match,
+  [data-page="about"] .about-detail-panel-founder-showcase .about-story-block:not(.about-story-block-founder-hero) .about-story-copy,
+  [data-page="about"] .about-detail-panel-founder-showcase .about-story-block:not(.about-story-block-founder-hero) .about-story-copy-story-match,
+  [data-page="about"] .about-detail-panel-founder-showcase .about-connect-value,
+  [data-page="about"] .about-detail-panel-profile-showcase .about-connect-value {
+    width: 100%;
+    max-width: 100%;
+    transform: none;
+  }
+}
+
+@media (max-width: 767.98px) {
+  [data-page="about"] .leadership-panel-showcase {
+    gap: 1.25rem;
+  }
+
+  [data-page="about"] .leadership-hero-showcase .leadership-hero-title {
+    padding: 0.5rem 0 0.85rem;
+    font-size: clamp(1.9rem, 9vw, 2.6rem);
+    line-height: 0.98;
+  }
+
+  [data-page="about"] .leadership-grid-showcase {
+    gap: 1rem;
+  }
+
+  [data-page="about"] .leadership-card-showcase {
+    border-radius: 1.5rem !important;
+  }
+
+  [data-page="about"] .leadership-card-main-showcase {
+    gap: 1rem;
+    padding: 1.1rem 1.1rem 1rem;
+    justify-items: start;
+    text-align: left;
+  }
+
+  [data-page="about"] .leadership-card-copy {
+    width: 100%;
+    justify-items: start;
+  }
+
+  [data-page="about"] .leadership-card-name,
+  [data-page="about"] .leadership-card-role {
+    width: 100%;
+    text-align: left;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+  }
+
+  [data-page="about"] .leadership-card-image-shell {
+    width: clamp(5.5rem, 26vw, 7rem);
+    height: clamp(5.5rem, 26vw, 7rem);
+  }
+
+  [data-page="about"] .leadership-card-actions {
+    min-height: 0;
+    padding: 0.95rem 1.1rem 1.05rem;
+  }
+
+  [data-page="about"] .leadership-panel-showcase .leadership-action-btn {
+    font-size: 1rem;
+    letter-spacing: 0.04em;
   }
 }
 

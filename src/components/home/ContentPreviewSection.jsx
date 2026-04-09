@@ -17,11 +17,13 @@ function ContentPreviewSection({ content, sceneId, sceneRef, isActive }) {
 
   return (
     <HomeScene ariaLabel="Homepage content preview" motion="section" sceneId={sceneId} sceneRef={sceneRef} isActive={isActive}>
-      <div className={styles.previewHeader}>
-        <p className={styles.eyebrow}>{content.eyebrow}</p>
-        <h2 className={styles.sectionTitle}>{content.title}</h2>
-        <p className={styles.sectionText}>{content.description}</p>
-      </div>
+      {(content.eyebrow || content.title || content.description) ? (
+        <div className={styles.previewHeader}>
+          {content.eyebrow ? <p className={styles.eyebrow}>{content.eyebrow}</p> : null}
+          {content.title ? <h2 className={styles.sectionTitle}>{content.title}</h2> : null}
+          {content.description ? <p className={styles.sectionText}>{content.description}</p> : null}
+        </div>
+      ) : null}
 
       <div className={styles.contentFeature}>
         <div className={styles.contentFeatureMain}>

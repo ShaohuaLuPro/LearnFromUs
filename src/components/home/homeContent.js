@@ -126,41 +126,65 @@ export function buildHomeContent({ currentUser, forumCountDisplay, sectionCountD
       ].filter(Boolean)
     },
     intro: {
-      eyebrow: 'What This Homepage Optimizes For',
-      title: 'Calm structure. Fast perception. Minimal friction.',
+      title: 'Post in seconds\nnot minutes',
       paragraphs: [
-        'The homepage is intentionally light on decoration so sections feel open, readable, and easy to scan.',
-        'Content appears before users reach it, which keeps the experience visually complete even during rapid scrolling.'
+        'Turn ideas into posts — instantly.',
+        'No formatting. No friction. Just publish.',
+        'Start with a thought — we’ll structure the rest.',
+        'Share what matters, before it fades.'
       ]
     },
     features: {
-      eyebrow: 'Why It Works',
-      title: 'Designed for clarity, not clutter.',
-      description:
-        'The homepage is organized as a small set of reusable scenes with generous spacing, restrained motion, and data-driven content.',
+      title: 'Anything you want — text, images, ideas.',
+      description: '',
       cards: [
         {
-          key: 'execution',
-          title: 'Clear hierarchy',
-          copy: 'Each section has one focal point so users can scan without friction.'
+          key: 'ideas',
+          title: 'Stop thinking. Just post.',
+          copy: 'Capture the idea while it is still live. Structure comes next.',
+          image: `${process.env.PUBLIC_URL}/images/home2-1.png`,
+          imageAlt: 'Colorful AI-inspired composition',
+          tone: 'light',
+          imageScale: '0.9',
+          imageX: '-2%',
+          imageY: '1%'
         },
         {
-          key: 'systems',
-          title: 'Prop-driven sections',
-          copy: 'Content is separated from structure so future teams can change copy without rewriting components.'
+          key: 'images',
+          title: 'Images and stories, arranged with clarity.',
+          copy: 'Bring visuals, context, and narrative into one clean block.',
+          image: `${process.env.PUBLIC_URL}/images/home2-3.png`,
+          imageAlt: 'Lifestyle collage with camera photos',
+          tone: 'soft',
+          imageScale: '0.95',
+          imageX: '2%',
+          imageY: '0%'
         },
         {
-          key: 'motion',
-          title: 'Subtle motion',
-          copy: 'Reveal behavior is shared and restrained so the page feels polished, not busy.'
+          key: 'emotion',
+          title: 'Real moments deserve a warmer place to land.',
+          copy: 'Human moments feel stronger when the layout gives them room to breathe.',
+          image: `${process.env.PUBLIC_URL}/images/home2-4.png`,
+          imageAlt: 'Child holding paws with a dog outdoors',
+          tone: 'warm',
+          imageScale: '0.84',
+          imageX: '-6%',
+          imageY: '4%'
+        },
+        {
+          key: 'depth',
+          title: 'Depth, signal, and brand in one bold surface.',
+          copy: 'Premium structure makes even dense ideas feel deliberate and strong.',
+          image: `${process.env.PUBLIC_URL}/images/home2-2.png`,
+          imageAlt: 'Dark typography-based AI visual',
+          tone: 'dark',
+          imageScale: '0.88',
+          imageX: '5%',
+          imageY: '3%'
         }
       ]
     },
     preview: {
-      eyebrow: 'Content Preview',
-      title: 'A system that can present both ideas and product surfaces.',
-      description:
-        'The same structure can support editorial stories, community previews, and future CMS-fed collections.',
       principles: HOME_PRINCIPLES,
       collections: HOME_COLLECTIONS
     },

@@ -22,8 +22,8 @@
   --home-radius-xl: 32px;
   --home-radius-lg: 20px;
   --home-radius-md: 14px;
-  --home-font-display: "SF Pro Display", "Inter", "Segoe UI", sans-serif;
-  --home-font-body: "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+  --home-font-display: "Lexend", "SF Pro Display", "Inter", "Segoe UI", sans-serif;
+  --home-font-body: "Lexend", "SF Pro Text", "Inter", "Segoe UI", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {

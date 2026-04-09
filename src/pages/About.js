@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 
@@ -41,6 +41,20 @@ const SECTION_CONTENT = {
         imageAlt: 'Ben He'
       },
       {
+        key: 'guotianKan',
+        name: 'Guotian Kan',
+        role: 'Data Scientist',
+        image: `${process.env.PUBLIC_URL}/images/team-guotian.png`,
+        imageAlt: 'Guotian Kan'
+      },
+      {
+        key: 'xiaoyuXia',
+        name: 'Xiaoyu Xia',
+        role: 'Computer Scientist',
+        image: `${process.env.PUBLIC_URL}/images/team-xiaoyu.png`,
+        imageAlt: 'Xiaoyu Xia'
+      },
+      {
         key: 'sallyHuang',
         name: 'Sally Huang',
         role: 'Digital Designer',
@@ -48,11 +62,11 @@ const SECTION_CONTENT = {
         imageAlt: 'Sally Huang'
       },
       {
-        key: 'guotianKan',
-        name: 'Guotian Kan',
-        role: 'Data Scientist',
-        image: `${process.env.PUBLIC_URL}/images/guotian-kan.png`,
-        imageAlt: 'Guotian Kan'
+        key: 'garyHuang',
+        name: 'Gary Huang',
+        role: 'Marketing Director',
+        image: `${process.env.PUBLIC_URL}/images/team-Gary.png`,
+        imageAlt: 'Gary Huang'
       }
     ]
   },
@@ -84,9 +98,9 @@ const SECTION_CONTENT = {
     blocks: [
       {
         kicker: 'What I Bring',
-        title: 'My background spans product execution, software delivery, and data science.',
+        title: '',
         copy:
-          'I work across full-stack product development and applied AI, with experience in software engineering, analytics, machine learning, and team execution. That mix shapes how this platform is built: practical on the product side, structured on the engineering side, and rigorous about signal over noise.'
+          'My background spans product execution, software delivery, and data science. I work across full-stack product development and applied AI, with experience in software engineering, analytics, machine learning, and team execution. That mix shapes how this platform is built: practical on the product side, structured on the engineering side, and rigorous about signal over noise.'
       }
     ]
   },
@@ -115,7 +129,14 @@ const SECTION_CONTENT = {
         }
       ]
     },
-    blocks: []
+    blocks: [
+      {
+        kicker: 'What I Bring',
+        title: '',
+        copy:
+          "Shaped by years of working across industries and borders, I've learned that the most meaningful progress happens at the intersection of people, process, and technology. I bring that perspective into every team I join - bridging communication gaps, driving engineering execution, and translating complexity into clarity. At tsumit, I channel this into building products that are not just functional, but thoughtfully crafted and built to last."
+      }
+    ]
   },
   sallyHuang: {
     heroTitle: 'Team Members',
@@ -126,7 +147,7 @@ const SECTION_CONTENT = {
       name: 'Sally Huang',
       role: 'Digital Designer',
       summary:
-        'Shaping how the world sees, feels,\nand interacts with ideas through\nthe craft of visual design.',
+        'Shaping how the world sees, feels, and interacts with ideas through the craft of visual design.',
       location: 'Boston, MA',
       email: 'sally.huang1999@gmail.com',
       image: `${process.env.PUBLIC_URL}/images/team-sally.png`,
@@ -158,7 +179,7 @@ const SECTION_CONTENT = {
       summary:
         'Data Scientist and Machine Learning Ph.D. candidate in Information Systems and Data Science.',
       location: 'Boston, MA',
-      image: `${process.env.PUBLIC_URL}/images/guotian-kan.png`,
+      image: `${process.env.PUBLIC_URL}/images/team-guotian.png`,
       imageAlt: 'Guotian Kan',
       links: [
         {
@@ -179,6 +200,64 @@ const SECTION_CONTENT = {
           'Support user search and relevance recommendation model building and deployment tasks end to end.\n\nContributing to improving user search experience and query understanding by developing and deploying related ML and LLM-based solutions.\n\nConduct research, experiments, and A/B test in designing and applying SOTA ML and LLM based solutions to search experience, query understanding, and other business goals.\n\nOwn end-to-end model project and deploy production level model, serving logic, latency optimization, ETL, and automated-maintenance projects and tasks.'
       }
     ]
+  },
+  xiaoyuXia: {
+    heroTitle: 'Team Members',
+    heroCopy:
+      'Meet Xiaoyu Xia, a computer scientist contributing AI systems thinking and recommendation strategy to tsumit.',
+    profile: {
+      eyebrow: '',
+      name: 'Xiaoyu Xia',
+      role: 'Computer Scientist',
+      summary:
+        'Ph.D. in Computer Science.',
+      location: 'Boston, MA',
+      image: `${process.env.PUBLIC_URL}/images/team-xiaoyu.png`,
+      imageAlt: 'Xiaoyu Xia',
+      links: [
+        {
+          label: 'LinkedIn',
+          href: 'https://linkedin.com/in/xiaoyu-xia-mia'
+        }
+      ]
+    },
+    blocks: [
+      {
+        kicker: 'What I Bring',
+        title: '',
+        copy:
+          'Led the technical strategy and architectural development of the broader AI ecosystem, building the foundational framework and optimizing intelligent content and feature recommendations to create a seamless, efficient, and intuitive user experience.'
+      }
+    ]
+  },
+  garyHuang: {
+    heroTitle: 'Team Members',
+    heroCopy:
+      'Meet Gary Huang, a marketing director bringing strategic market perspective to tsumit.',
+    profile: {
+      eyebrow: '',
+      name: 'Gary Huang',
+      role: 'Marketing Director',
+      summary:
+        'Brings a sharp market perspective and strong strategic judgment.',
+      location: 'Boston, MA',
+      image: `${process.env.PUBLIC_URL}/images/team-Gary.png`,
+      imageAlt: 'Gary Huang',
+      links: [
+        {
+          label: 'LinkedIn',
+          href: 'https://linkedin.com/in/gary-huang-218597235'
+        }
+      ]
+    },
+    blocks: [
+      {
+        kicker: 'What I Bring',
+        title: '',
+        copy:
+          'Brings a strong market lens to product growth, helping new products gain faster and stronger market acceptance. By connecting user feedback, market signals, and strategic positioning, plays a key role in shaping go-to-market execution and influencing product development. Sees customer opinions and suggestions not just as feedback, but as a driving force behind innovation, continuous improvement, and long-term brand value.'
+      }
+    ]
   }
 };
 
@@ -189,7 +268,9 @@ const SECTION_ROUTES = {
   founder: '/about/founder',
   teamMembers: '/about/ben-he',
   sallyHuang: '/about/sally-huang',
-  guotianKan: '/about/guotian-kan'
+  guotianKan: '/about/guotian-kan',
+  xiaoyuXia: '/about/xiaoyu-xia',
+  garyHuang: '/about/gary-huang'
 };
 const DIRECTION_CARDS = [
   {
@@ -332,8 +413,6 @@ export default function About() {
   const bentoScrollRef = useRef(null);
   const leadershipHeaderRef = useRef(null);
   const leadershipGridRef = useRef(null);
-  const [animatedTeamSummary, setAnimatedTeamSummary] = useState('');
-  const [animatedSallySummary, setAnimatedSallySummary] = useState('');
   const normalizedPath = useMemo(() => {
     const pathname = location.pathname.replace(/\/+$/, '');
     return pathname || '/';
@@ -367,6 +446,12 @@ export default function About() {
     }
     if (normalizedPath === SECTION_ROUTES.guotianKan) {
       return 'guotianKan';
+    }
+    if (normalizedPath === SECTION_ROUTES.xiaoyuXia) {
+      return 'xiaoyuXia';
+    }
+    if (normalizedPath === SECTION_ROUTES.garyHuang) {
+      return 'garyHuang';
     }
     return 'story';
   }, [normalizedPath]);
@@ -462,69 +547,21 @@ export default function About() {
     return () => ctx.revert();
   }, [activeSection]);
 
-  useEffect(() => {
-    const teamSummary = SECTION_CONTENT.teamMembers.profile.summary;
-    const sallySummary = SECTION_CONTENT.sallyHuang.profile.summary;
-
-    if (activeSection !== 'founder' && activeSection !== 'teamMembers' && activeSection !== 'sallyHuang') {
-      setAnimatedTeamSummary(teamSummary);
-      setAnimatedSallySummary(sallySummary);
-      return;
-    }
-
-    let frameId;
-    const summaryMap = {
-      teamMembers: {
-        text: teamSummary,
-        setSummary: setAnimatedTeamSummary
-      },
-      sallyHuang: {
-        text: sallySummary,
-        setSummary: setAnimatedSallySummary
-      }
-    };
-    const activeSummary = summaryMap[activeSection];
-    if (!activeSummary) {
-      return;
-    }
-    const summaryText = activeSummary.text;
-    const setSummary = activeSummary.setSummary;
-    const durationMs = 2000;
-    const startTime = performance.now();
-
-    const tick = (now) => {
-      const progress = Math.min((now - startTime) / durationMs, 1);
-      const nextLength = Math.ceil(summaryText.length * progress);
-      setSummary(summaryText.slice(0, nextLength));
-
-      if (progress < 1) {
-        frameId = window.requestAnimationFrame(tick);
-      }
-    };
-
-    setSummary('');
-    frameId = window.requestAnimationFrame(tick);
-
-    return () => {
-      if (frameId) {
-        window.cancelAnimationFrame(frameId);
-      }
-    };
-  }, [activeSection]);
-
   const section = useMemo(() => SECTION_CONTENT[activeSection], [activeSection]);
   const setActiveSection = (nextSection) => {
     navigate(SECTION_ROUTES[nextSection] || SECTION_ROUTES.story);
   };
   const profile = section.profile;
-  const isFounderShowcase = activeSection === 'founder';
+  const isFounderShowcase = false;
   const useInlineProfileLayout =
     activeSection === 'founder' ||
     activeSection === 'teamMembers' ||
     activeSection === 'sallyHuang' ||
-    activeSection === 'guotianKan';
+    activeSection === 'guotianKan' ||
+    activeSection === 'xiaoyuXia' ||
+    activeSection === 'garyHuang';
   const isProfileShowcase = useInlineProfileLayout;
-  const usesFounderDetailStyles = activeSection === 'founder' || activeSection === 'sallyHuang';
+  const usesFounderDetailStyles = false;
   const highlightedLabels = new Set([
     'Why This Exists',
     'Long-Term Direction',
@@ -672,7 +709,7 @@ export default function About() {
 
                   <div className="about-longterm-ground" aria-hidden="true">
                     <img
-                      src={`${process.env.PUBLIC_URL}/images/11111.png`}
+                      src={`${process.env.PUBLIC_URL}/images/about-bottom.png`}
                       alt=""
                       className="about-longterm-ground-image"
                     />
@@ -845,39 +882,11 @@ export default function About() {
                     className={`about-story-copy mb-0 ${
                       usesFounderDetailStyles ? 'about-story-copy-highlight' : ''
                     } ${usesFounderDetailStyles ? 'about-story-copy-story-match' : ''} ${
-                      activeSection === 'teamMembers' ? 'about-story-copy-plain' : ''
+                      'about-profile-summary-text'
                     } ${usesFounderDetailStyles ? 'about-founder-summary-offset' : ''
-                    } ${activeSection === 'founder' || activeSection === 'teamMembers' || activeSection === 'sallyHuang'
-                      ? 'about-founder-summary-fixed-lines'
-                      : ''
-                    } ${activeSection === 'sallyHuang' ? 'about-sally-summary-fixed-lines' : ''
                     }`}
                   >
-                    {activeSection === 'founder'
-                      ? (
-                        <span className="about-founder-summary-lines">
-                          <span className="about-founder-summary-line">Building a technical community where</span>
-                          <span className="about-founder-summary-line">people learn by shipping, explaining,</span>
-                          <span className="about-founder-summary-line">and sharing what actually works.</span>
-                        </span>
-                      )
-                      : activeSection === 'teamMembers'
-                        ? (
-                          <span className="about-founder-summary-lines">
-                            <span className="about-founder-summary-line">Experienced across different domains,</span>
-                            <span className="about-founder-summary-line">building cross-disciplinary coordination</span>
-                            <span className="about-founder-summary-line">and collaboration to move products forward.</span>
-                          </span>
-                        )
-                      : activeSection === 'sallyHuang'
-                        ? (
-                          <span className="about-founder-summary-lines">
-                            <span className="about-founder-summary-line">Shaping how the world sees, feels,</span>
-                            <span className="about-founder-summary-line">and interacts with ideas through</span>
-                            <span className="about-founder-summary-line">the craft of visual design.</span>
-                          </span>
-                        )
-                      : profile.summary}
+                    {profile.summary}
                   </p>
                 </div>
 
@@ -920,19 +929,7 @@ export default function About() {
                       )}
                     </div>
                   ))
-                ) : (
-                  <div className="about-story-block">
-                    <p className="about-story-kicker about-story-kicker-highlight">What I Bring</p>
-                    <p className="about-story-copy about-story-copy-story-match about-team-summary-centered mb-0">
-                      Shaped by years of working across industries and borders, I've learned that the most
-                      meaningful progress happens at the intersection of people, process, and technology. I
-                      bring that perspective into every team I join - bridging communication gaps, driving
-                      engineering execution, and translating complexity into clarity. At tsumit, I channel
-                      this into building products that are not just functional, but thoughtfully crafted and
-                      built to last.
-                    </p>
-                  </div>
-                )}
+                ) : null}
 
                 <div className="about-story-block is-last">
                   {profile.location ? (

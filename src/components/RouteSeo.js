@@ -99,6 +99,24 @@ function routeConfig(pathname) {
     };
   }
 
+  if (pathname === '/about/xiaoyu-xia') {
+    return {
+      title: buildPageTitle('Xiaoyu Xia'),
+      description: 'Learn more about Xiaoyu Xia, Computer Scientist at tsumit.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
+  if (pathname === '/about/gary-huang') {
+    return {
+      title: buildPageTitle('Gary Huang'),
+      description: 'Learn more about Gary Huang, Marketing Director at tsumit.',
+      robots: 'index,follow',
+      canonical: buildCanonical(pathname)
+    };
+  }
+
   if (pathname === '/terms') {
     return {
       title: buildPageTitle('Terms of Use'),

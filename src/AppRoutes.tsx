@@ -226,12 +226,16 @@ export default function AppRoutes() {
           <Route path="/about/ben-he" element={<About />} />
           <Route path="/about/sally-huang" element={<About />} />
           <Route path="/about/guotian-kan" element={<About />} />
+          <Route path="/about/xiaoyu-xia" element={<About />} />
+          <Route path="/about/gary-huang" element={<About />} />
           <Route path="/about/why-we-exist" element={<Navigate to="/origin-purpose" replace />} />
           <Route path="/about/leadership" element={<Navigate to="/about/team" replace />} />
           <Route path="/about/leadership/founder" element={<Navigate to="/about/founder" replace />} />
           <Route path="/about/leadership/team-members" element={<Navigate to="/about/ben-he" replace />} />
           <Route path="/about/leadership/sally-huang" element={<Navigate to="/about/sally-huang" replace />} />
           <Route path="/about/leadership/guotian-kan" element={<Navigate to="/about/guotian-kan" replace />} />
+          <Route path="/about/leadership/xiaoyu-xia" element={<Navigate to="/about/xiaoyu-xia" replace />} />
+          <Route path="/about/leadership/gary-huang" element={<Navigate to="/about/gary-huang" replace />} />
           <Route path="/origin-purpose" element={<OriginPurpose />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />

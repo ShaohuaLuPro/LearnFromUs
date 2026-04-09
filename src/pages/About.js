@@ -529,15 +529,15 @@ export default function About() {
         gsap.fromTo(
           card,
           {
-            x: index === 0 ? -72 : 72,
+            y: 20,
             opacity: 0
           },
           {
-            x: 0,
+            y: 0,
             opacity: 1,
-            duration: 1.5,
+            duration: 0.9,
             ease: 'power3.out',
-            delay: index * 0.14,
+            delay: index * 0.1,
             clearProps: 'transform,opacity'
           }
         );

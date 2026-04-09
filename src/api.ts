@@ -177,6 +177,18 @@ export function resolveMediaSource(source?: string | null) {
     return '';
   }
 
+  if (/^https?:\/\//i.test(rawSource)) {
+    try {
+      const parsed = new URL(rawSource);
+      const normalizedPath = parsed.pathname || '';
+      if (LOCAL_API_HOSTS.has(parsed.hostname) && normalizedPath.startsWith('/api/media/')) {
+        return resolveApiUrl(`${normalizedPath}${parsed.search || ''}`);
+      }
+    } catch {
+      return rawSource;
+    }
+  }
+
   if (rawSource.startsWith('/api/media/')) {
     return resolveApiUrl(rawSource);
   }

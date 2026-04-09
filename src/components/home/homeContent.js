@@ -6,42 +6,42 @@ export const HOME_COLLECTIONS = [
     key: 'housing',
     title: 'Housing',
     subtitle: 'Home & Living',
-    blurb: 'Practical systems for better daily living and smarter decisions at home.',
+    blurb: 'Share real setups, routines, and decisions that made home life easier, cleaner, and more repeatable.',
     image: resolveHomeCollectionImage('housing')
   },
   {
     key: 'sports',
     title: 'Sports',
     subtitle: 'Fitness & Training',
-    blurb: 'Actionable training insights focused on consistency, progress, and execution.',
+    blurb: 'From tennis meetups to training plans, post what actually worked instead of generic motivation.',
     image: resolveHomeCollectionImage('sports')
   },
   {
     key: 'social',
     title: 'Social',
     subtitle: 'Community & Dating',
-    blurb: 'Real-world communication and relationship strategies that actually work.',
+    blurb: 'Use the platform to meet people, build friendships, and share practical social advice with real context.',
     image: resolveHomeCollectionImage('social')
   },
   {
     key: 'ai',
     title: 'AI',
     subtitle: 'Artificial Intelligence',
-    blurb: 'From prompts to production, learn AI workflows built around practical outcomes.',
+    blurb: 'AI is built into the product itself so you can draft, search, follow spaces, and get things done faster.',
     image: resolveHomeCollectionImage('ai')
   },
   {
     key: 'food',
     title: 'Food',
     subtitle: 'Cooking & Taste',
-    blurb: 'Simple food systems, better habits, and practical choices that fit real life.',
+    blurb: 'Post recipes, meal systems, and everyday food choices that are tested in real life, not just imagined.',
     image: resolveHomeCollectionImage('food')
   },
   {
     key: 'travel',
     title: 'Travel',
     subtitle: 'Movement & Experience',
-    blurb: 'Travel with more intention, less friction, and decisions that stay useful on the move.',
+    blurb: 'Travel, money, markets, outfits, and everything in between all fit here when the post is useful and proven.',
     image: resolveHomeCollectionImage('travel')
   }
 ];
@@ -50,38 +50,38 @@ export const HOME_PRINCIPLES = [
   {
     key: 'forum',
     eyebrow: 'Spaces',
-    title: 'Curated by topics',
-    summary: 'Explore ideas, systems, and real-world practices without the usual noise.',
+    title: 'Join spaces built around real interests',
+    summary: 'Follow the spaces you care about, from AI and stocks to dating, sports, food, outfits, and everyday life.',
     body: [
-      'Every space is organized with intention so people can move straight into the signal.',
-      'Sections are built to surface grounded experience, not endless chatter.'
+      'Spaces keep people close to the topics they actually care about instead of dumping everything into one noisy feed.',
+      'You can follow spaces directly, and AI can help you navigate to the right place faster.'
     ],
     accent: 'Structure',
-    meta: ['Topic-first navigation', 'Clear sections', 'Signal over noise']
+    meta: ['Follow spaces fast', 'Topic-first discovery', 'Signal over noise']
   },
   {
-    key: 'search',
-    eyebrow: 'Search',
-    title: 'Find posts by real relevance',
-    summary: 'Useful knowledge should stay discoverable as the platform grows.',
+    key: 'ai',
+    eyebrow: 'AI Actions',
+    title: 'Let AI do the work with you',
+    summary: 'The core product experience is AI-assisted, not AI-decorated.',
     body: [
-      'Search looks across titles, content, tags, authors, and topics with meaning in mind.',
-      'The goal is simple: bring forward what helps, not just what happens to be loud.'
+      'AI can help generate a post in one step, help you follow spaces, and support most of the actions people already take across the product.',
+      'Instead of making users click through everything manually, the assistant helps turn intent into action.'
     ],
-    accent: 'Precision',
-    meta: ['Meaning-ranked results', 'Cross-topic discovery', 'Built to scale']
+    accent: 'Speed',
+    meta: ['One-click posting', 'AI-assisted actions', 'Less friction']
   },
   {
-    key: 'community',
-    eyebrow: 'Community',
-    title: 'Built for proof, not fluff',
-    summary: 'Credibility comes from what people build, test, and refine in public.',
+    key: 'memory',
+    eyebrow: 'Memory',
+    title: 'Posts that sound like you',
+    summary: 'AI remembers your past posts so new writing can stay closer to your own tone, style, and point of view.',
     body: [
-      'Posts are shaped by implementation details, practical insight, and real outcomes.',
-      'That makes skill easier to see and knowledge easier to carry into real work.'
+      'The goal is not generic AI writing. The goal is faster publishing that still feels personal and recognizable.',
+      'That makes it easier to keep sharing proven solutions without rewriting your voice from scratch every time.'
     ],
-    accent: 'Proof',
-    meta: ['Real execution', 'Transferable knowledge', 'Visible skill']
+    accent: 'Voice',
+    meta: ['Style memory', 'Personal tone', 'Faster repeat posting']
   }
 ];
 
@@ -89,20 +89,20 @@ export const HOME_PRINCIPLES = [
 export function buildHomeContent({ currentUser, forumCountDisplay, sectionCountDisplay }) {
   return {
     hero: {
-      eyebrow: 'For People Who Build',
+      eyebrow: 'For People Who Actually Do',
       title: {
-        lead: 'Most platforms are full of opinions.',
-        support: 'Very few show',
-        emphasis: 'real execution.'
+        lead: 'Don’t just talk about it.',
+        support: 'Share the',
+        emphasis: 'proved solution.'
       },
       supporting:
-        'Real experience beats opinions. Execution is visible. Useful knowledge compounds across software, fitness, and everyday life.',
+        'Tsumit is for people who want to share what really worked, whether that is software, stocks, dating, tennis, travel, food, outfits, or everyday life.',
       aside:
-        'A calmer homepage system built to scale with product, story, and community.',
+        'The platform is built around useful action: AI can help you generate posts, follow spaces, and do most things on the site without extra friction.',
       metrics: [
         { label: 'Active spaces', value: forumCountDisplay },
         { label: 'Structured sections', value: sectionCountDisplay },
-        { label: 'Core standard', value: 'Real execution' }
+        { label: 'Core standard', value: 'Proved solutions' }
       ],
       actions: [
         {
@@ -126,63 +126,63 @@ export function buildHomeContent({ currentUser, forumCountDisplay, sectionCountD
       ].filter(Boolean)
     },
     intro: {
-      eyebrow: 'What This Homepage Optimizes For',
-      title: 'Calm structure. Fast perception. Minimal friction.',
+      eyebrow: 'Why Tsumit Exists',
+      title: 'Less empty opinion. More useful proof.',
       paragraphs: [
-        'The homepage is intentionally light on decoration so sections feel open, readable, and easy to scan.',
-        'Content appears before users reach it, which keeps the experience visually complete even during rapid scrolling.'
+        'A lot of platforms reward people for sounding smart. We want people to show what actually worked and let others build on it.',
+        'That can mean a machine learning workflow, a stock idea, a social lesson, a tennis meetup, a travel plan, or an outfit that genuinely works in real life.'
       ]
     },
     features: {
-      eyebrow: 'Why It Works',
-      title: 'Designed for clarity, not clutter.',
+      eyebrow: 'Core Product',
+      title: 'AI is not a side feature here.',
       description:
-        'The homepage is organized as a small set of reusable scenes with generous spacing, restrained motion, and data-driven content.',
+        'The most important product experience is that AI helps people post faster, take actions faster, and keep their writing consistent over time.',
       cards: [
         {
-          key: 'execution',
-          title: 'Clear hierarchy',
-          copy: 'Each section has one focal point so users can scan without friction.'
+          key: 'draft',
+          title: 'One-click AI post generation',
+          copy: 'Turn an idea into a publishable draft fast, so people can share useful experience before it disappears.'
         },
         {
-          key: 'systems',
-          title: 'Prop-driven sections',
-          copy: 'Content is separated from structure so future teams can change copy without rewriting components.'
+          key: 'actions',
+          title: 'AI can help with actions across the site',
+          copy: 'Following spaces, navigating content, and handling common product actions should feel lighter and more direct.'
         },
         {
-          key: 'motion',
-          title: 'Subtle motion',
-          copy: 'Reveal behavior is shared and restrained so the page feels polished, not busy.'
+          key: 'voice',
+          title: 'It remembers how you write',
+          copy: 'Because it can use your past posts as context, new drafts can stay closer to your own voice instead of sounding generic.'
         }
       ]
     },
     preview: {
-      eyebrow: 'Content Preview',
-      title: 'A system that can present both ideas and product surfaces.',
+      eyebrow: 'What People Share',
+      title: 'One place for useful solutions across real life.',
       description:
-        'The same structure can support editorial stories, community previews, and future CMS-fed collections.',
+        'People come here to share things that are actually usable, not just things that sound nice in theory.',
       principles: HOME_PRINCIPLES,
       collections: HOME_COLLECTIONS
     },
     cta: {
       eyebrow: 'Start Here',
-      title: 'Enter through the work, or through the story.',
+      title: 'Open the feed, or let AI help you begin.',
       description:
-        'Move straight into the feed or learn the thinking behind the platform first. The layout stays minimal while still supporting multiple user intents.',
+        'Go straight into the community, or learn the story behind the product first. Either way, the goal is the same: share what works.',
       actions: [
         {
           key: 'feed',
           href: '/forum',
           eyebrow: 'Feed',
           title: 'Go to Community Feed',
-          copy: 'Browse live discussions and topic spaces.'
+          copy: 'Browse spaces, follow topics you care about, and see proven solutions people are already sharing.'
         },
         {
           key: 'story',
           href: '/about',
           eyebrow: 'About',
           title: 'Read Our Story',
-          copy: 'See why tsumit exists and where it is headed.'
+          copy: 'See the thinking behind a platform built for action, memory, and useful sharing.'
         }
       ]
     },

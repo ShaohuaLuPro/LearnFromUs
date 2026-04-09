@@ -193,12 +193,11 @@ export default function CoverImageUploader({
     try {
       const asset = await apiUploadMediaFile(file, token);
       const mediaToken = buildMediaToken(asset.id);
-      const finalSource = resolveMediaSource(mediaToken);
-      applyContentChange((currentContent) => insertOrReplaceCoverImage(currentContent, finalSource, file.name));
+      applyContentChange((currentContent) => insertOrReplaceCoverImage(currentContent, mediaToken, file.name));
       onAssetUploaded?.({
         id: asset.id,
         token: mediaToken,
-        source: finalSource,
+        source: mediaToken,
         storageUrl: asset.url
       });
       setNotice('Cover image uploaded.');

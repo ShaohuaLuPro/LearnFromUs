@@ -28,26 +28,22 @@ function FeatureSection({ content, sceneId, sceneRef, isActive }) {
                   styles[`featureCardTone${card.tone.charAt(0).toUpperCase()}${card.tone.slice(1)}`] || ''
                 ].filter(Boolean).join(' ')}
               >
-                <div className={styles.featureCardHeader}>
-                  <h3 className={styles.featureCardTitle}>{card.title}</h3>
-                </div>
-                <div
-                  className={styles.featureCardMedia}
+                <img
+                  src={card.image}
+                  alt={card.imageAlt}
+                  className={styles.featureCardImage}
                   style={{
-                    '--feature-image-scale': card.imageScale || '1',
-                    '--feature-image-x': card.imageX || '0%',
-                    '--feature-image-y': card.imageY || '0%'
+                    objectPosition: card.imagePosition || 'center center'
                   }}
-                >
-                  <img
-                    src={card.image}
-                    alt={card.imageAlt}
-                    className={styles.featureCardImage}
-                    loading="lazy"
-                  />
-                </div>
-                <div className={styles.featureCardBody}>
-                  {card.copy ? <p className={styles.featureCardCopy}>{card.copy}</p> : null}
+                  loading="lazy"
+                />
+                <div className={styles.featureCardOverlay}>
+                  <div className={styles.featureCardHeader}>
+                    <h3 className={styles.featureCardTitle}>{card.title}</h3>
+                  </div>
+                  <div className={styles.featureCardBody}>
+                    {card.copy ? <p className={styles.featureCardCopy}>{card.copy}</p> : null}
+                  </div>
                 </div>
               </article>
             ))}

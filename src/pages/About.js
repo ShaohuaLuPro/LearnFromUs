@@ -666,45 +666,47 @@ export default function About() {
               </section>
 
               <section className="about-direction-section">
-                <header className="about-section-head text-center pt-2">
-                  <h3 className="about-bento-scroll-title mb-2">Long-Term Direction</h3>
-                </header>
-
                 <div className="about-longterm-stage">
-                  <div className="about-longterm-cards">
-                    {DIRECTION_CARDS.map((card) => (
-                      <article key={card.key} className={`about-longterm-card about-longterm-card-${card.key}`}>
-                        <span className="about-longterm-icon-shell" aria-hidden="true">
-                          {card.icon === 'lightning' ? (
-                            <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                              <path d="M13.5 2 5 13h6l-1 9 9-12h-6l.5-8z" />
-                            </svg>
+                  <div className="about-longterm-content">
+                    <header className="about-section-head about-longterm-head text-center pt-2">
+                      <h3 className="about-bento-scroll-title mb-2">Long-Term Direction</h3>
+                    </header>
+
+                    <div className="about-longterm-cards">
+                      {DIRECTION_CARDS.map((card) => (
+                        <article key={card.key} className={`about-longterm-card about-longterm-card-${card.key}`}>
+                          <span className="about-longterm-icon-shell" aria-hidden="true">
+                            {card.icon === 'lightning' ? (
+                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                                <path d="M13.5 2 5 13h6l-1 9 9-12h-6l.5-8z" />
+                              </svg>
+                            ) : null}
+                            {card.icon === 'check' ? (
+                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                                <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
+                                <path d="m8 12 2.6 2.6L16 9.2" />
+                              </svg>
+                            ) : null}
+                            {card.icon === 'folder' ? (
+                              <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
+                                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l1.7 2h6.8A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
+                              </svg>
+                            ) : null}
+                          </span>
+                          <h4 className="about-longterm-card-title">{card.title}</h4>
+                          <p className="about-longterm-card-copy mb-0">{card.copy}</p>
+                          {card.tags.length ? (
+                            <div className="about-longterm-tags">
+                              {card.tags.map((tag) => (
+                                <span key={tag} className="about-longterm-tag">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
                           ) : null}
-                          {card.icon === 'check' ? (
-                            <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                              <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
-                              <path d="m8 12 2.6 2.6L16 9.2" />
-                            </svg>
-                          ) : null}
-                          {card.icon === 'folder' ? (
-                            <svg viewBox="0 0 24 24" className="about-longterm-icon-svg">
-                              <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l1.7 2h6.8A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
-                            </svg>
-                          ) : null}
-                        </span>
-                        <h4 className="about-longterm-card-title">{card.title}</h4>
-                        <p className="about-longterm-card-copy mb-0">{card.copy}</p>
-                        {card.tags.length ? (
-                          <div className="about-longterm-tags">
-                            {card.tags.map((tag) => (
-                              <span key={tag} className="about-longterm-tag">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </article>
-                    ))}
+                        </article>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="about-longterm-ground" aria-hidden="true">

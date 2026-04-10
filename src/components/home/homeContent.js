@@ -145,9 +145,7 @@ export function buildHomeContent({ currentUser, forumCountDisplay, sectionCountD
           image: `${process.env.PUBLIC_URL}/images/home2-1.png`,
           imageAlt: 'Colorful AI-inspired composition',
           tone: 'light',
-          imageScale: '0.9',
-          imageX: '-2%',
-          imageY: '1%'
+          imagePosition: 'center center'
         },
         {
           key: 'images',
@@ -156,9 +154,7 @@ export function buildHomeContent({ currentUser, forumCountDisplay, sectionCountD
           image: `${process.env.PUBLIC_URL}/images/home2-3.png`,
           imageAlt: 'Lifestyle collage with camera photos',
           tone: 'soft',
-          imageScale: '0.95',
-          imageX: '2%',
-          imageY: '0%'
+          imagePosition: 'center center'
         },
         {
           key: 'emotion',
@@ -167,9 +163,7 @@ export function buildHomeContent({ currentUser, forumCountDisplay, sectionCountD
           image: `${process.env.PUBLIC_URL}/images/home2-4.png`,
           imageAlt: 'Child holding paws with a dog outdoors',
           tone: 'warm',
-          imageScale: '0.84',
-          imageX: '-6%',
-          imageY: '4%'
+          imagePosition: 'center center'
         },
         {
           key: 'depth',
@@ -178,9 +172,7 @@ export function buildHomeContent({ currentUser, forumCountDisplay, sectionCountD
           image: `${process.env.PUBLIC_URL}/images/home2-2.png`,
           imageAlt: 'Dark typography-based AI visual',
           tone: 'dark',
-          imageScale: '0.88',
-          imageX: '5%',
-          imageY: '3%'
+          imagePosition: 'center center'
         }
       ]
     },

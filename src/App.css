@@ -1858,9 +1858,14 @@ button:disabled,
   display: grid;
   place-items: center;
   align-content: center;
+  left: 50%;
   width: 100vw;
-  margin-left: calc(50% - 50vw);
-  margin-right: calc(50% - 50vw);
+  width: 100dvw;
+  max-width: 100vw;
+  max-width: 100dvw;
+  margin-left: 0;
+  margin-right: 0;
+  transform: translateX(-50%);
   min-height: min(72vh, 820px);
   padding: clamp(3.5rem, 8vw, 6rem) 1.5rem;
   background: #050505;
@@ -1872,6 +1877,8 @@ button:disabled,
 .about-story-hero-particles {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
   z-index: 0;
   opacity: 1;
@@ -2051,7 +2058,7 @@ button:disabled,
 }
 
 [data-page="about"].about-page-shell {
-  overflow-x: clip;
+  overflow-x: visible;
 }
 
 [data-page="about"],
@@ -2354,6 +2361,7 @@ button:disabled,
   box-shadow: none !important;
   justify-items: stretch;
   text-align: left;
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase {
@@ -2365,11 +2373,12 @@ button:disabled,
   box-shadow: none !important;
   justify-items: stretch;
   text-align: left;
+  min-width: 0;
 }
 
 [data-page="about"] .about-story-block-profile-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 22rem);
   align-items: start;
   gap: clamp(1rem, 2vw, 1.75rem);
   padding-top: clamp(2.5rem, 6vw, 4.5rem);
@@ -2379,6 +2388,7 @@ button:disabled,
   margin-inline: auto;
   justify-content: start;
   overflow: visible;
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-col-profile-showcase {
@@ -2398,7 +2408,7 @@ button:disabled,
   align-self: start;
   grid-column: 2;
   grid-row: 1 / span 2;
-  transform: translateX(-50px);
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-col-profile-showcase .about-inline-portrait-image {
@@ -2427,7 +2437,6 @@ button:disabled,
   overflow-wrap: anywhere;
   word-break: normal;
   text-wrap: balance;
-  transform: translateX(-50px);
   text-align: left;
 }
 
@@ -2459,7 +2468,6 @@ button:disabled,
   overflow-wrap: anywhere;
   word-break: normal;
   text-wrap: balance;
-  transform: translateX(-50px);
   text-align: left;
 }
 
@@ -2482,7 +2490,7 @@ button:disabled,
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-founder-summary-line {
   display: block;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-story-block {
@@ -2493,25 +2501,26 @@ button:disabled,
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-story-block:not(.about-story-block-profile-hero) {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
-  width: min(100%, 96rem);
-  max-width: 96rem;
+  grid-template-columns: minmax(0, 1fr);
+  width: min(100%, 72rem);
+  max-width: 72rem;
   margin-inline: auto;
   justify-items: stretch;
   text-align: left;
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-story-block:not(.about-story-block-profile-hero) > * {
-  grid-column: 1 / span 2;
+  grid-column: 1;
   justify-self: start;
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-story-block:not(.about-story-block-profile-hero) .about-story-copy,
 [data-page="about"] .about-detail-panel-profile-showcase .about-story-block:not(.about-story-block-profile-hero) .about-story-copy-story-match {
-  width: min(100%, 78rem);
-  max-width: 78rem;
+  width: min(100%, 58rem);
+  max-width: 58rem;
   text-align: left;
-  transform: translateX(30px);
   font-size: clamp(0.87rem, 1.49vw, 1.52rem);
 }
 
@@ -2554,7 +2563,7 @@ button:disabled,
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .about-connect-value {
-  transform: translate(30px, 12px);
+  transform: none;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .founder-link-row {
@@ -2563,7 +2572,7 @@ button:disabled,
   gap: 0.9rem;
   margin-top: 0.25rem !important;
   justify-content: flex-start;
-  transform: translateY(15px);
+  transform: none;
 }
 
 [data-page="about"] .about-detail-panel-profile-showcase .founder-link-pill {
@@ -2601,7 +2610,7 @@ button:disabled,
 
 [data-page="about"] .about-story-block-founder-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 22rem);
   align-items: start;
   gap: clamp(0.4rem, 1vw, 0.8rem);
   padding-top: clamp(2.5rem, 6vw, 4.5rem);
@@ -2610,6 +2619,7 @@ button:disabled,
   max-width: 78rem;
   margin-inline: auto;
   justify-content: start;
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-profile-name {
@@ -2637,12 +2647,15 @@ button:disabled,
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-copy-story-match,
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-copy {
   color: #111111 !important;
-  max-width: 24ch;
+  max-width: min(100%, 34rem);
   font-size: clamp(1.16rem, 1.99vw, 2.03rem);
   font-weight: 400;
   line-height: 1.48;
   letter-spacing: -0.03em;
   text-align: left;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  text-wrap: balance;
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-founder-summary-fixed-lines {
@@ -2660,11 +2673,11 @@ button:disabled,
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-founder-summary-line {
   display: block;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-founder-summary-offset {
-  margin-top: calc(0.35rem - 80px);
+  margin-top: 0.35rem;
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-block {
@@ -2696,7 +2709,7 @@ button:disabled,
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-connect-value {
-  transform: translate(30px, 12px);
+  transform: none;
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-connect-list {
@@ -2718,7 +2731,7 @@ button:disabled,
   gap: 0.9rem;
   margin-top: 0.25rem !important;
   justify-content: flex-start;
-  transform: translateY(15px);
+  transform: none;
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .founder-link-pill {
@@ -2778,7 +2791,7 @@ button:disabled,
   align-self: start;
   grid-column: 2;
   grid-row: 1 / span 2;
-  transform: translateX(-50px);
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-col-founder-showcase .about-inline-portrait-image {
@@ -2794,41 +2807,39 @@ button:disabled,
   order: 1;
   grid-column: 1;
   justify-self: start;
-  transform: translateX(-50px);
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-copy-highlight,
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-copy-story-match,
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-copy {
   order: 2;
-  max-width: 24ch;
+  max-width: min(100%, 34rem);
   grid-column: 1;
   justify-self: start;
-  transform: translateX(-50px);
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-block:not(.about-story-block-founder-hero) {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
-  width: min(100%, 96rem);
-  max-width: 96rem;
+  grid-template-columns: minmax(0, 1fr);
+  width: min(100%, 72rem);
+  max-width: 72rem;
   margin-inline: auto;
   justify-items: stretch;
   text-align: left;
-  transform: translateX(-50px);
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-block:not(.about-story-block-founder-hero) > * {
-  grid-column: 1 / span 2;
+  grid-column: 1;
   justify-self: start;
+  min-width: 0;
 }
 
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-block:not(.about-story-block-founder-hero) .about-story-copy,
 [data-page="about"] .about-detail-panel-founder-showcase .about-story-block:not(.about-story-block-founder-hero) .about-story-copy-story-match {
-  width: min(100%, 78rem);
-  max-width: 78rem;
+  width: min(100%, 58rem);
+  max-width: 58rem;
   text-align: left;
-  transform: translateX(30px);
   font-size: clamp(0.87rem, 1.49vw, 1.52rem);
 }
 
@@ -3176,11 +3187,6 @@ button:disabled,
   margin-top: clamp(16rem, 36vw, 28rem);
 }
 
-[data-page="about"] .about-direction-section .about-section-head {
-  position: relative;
-  z-index: 2;
-}
-
 [data-page="about"] .about-direction-section .about-bento-scroll-title,
 [data-page="about"] .about-direction-section .about-longterm-card-title,
 [data-page="about"] .about-direction-section .about-longterm-card-copy,
@@ -3197,22 +3203,56 @@ button:disabled,
 
 [data-page="about"] .about-longterm-stage {
   position: relative;
-  padding-bottom: clamp(14rem, 28vw, 20rem);
+  left: 50%;
+  width: 100vw;
+  width: 100dvw;
+  max-width: 100vw;
+  max-width: 100dvw;
+  transform: translateX(-50%);
+  min-height: clamp(34rem, 62vw, 52rem);
+  padding: clamp(2.5rem, 5vw, 4.5rem);
+  overflow: hidden;
   z-index: 1;
 }
 
-[data-page="about"] .about-longterm-cards {
+[data-page="about"] .about-longterm-content {
   position: relative;
   z-index: 1;
   display: grid;
-  gap: clamp(2rem, 4vw, 3rem);
+  gap: clamp(1.5rem, 3vw, 2.5rem);
+  width: min(100%, 46rem);
+  max-width: 100%;
+  margin: 0 auto;
   justify-items: center;
 }
 
+[data-page="about"] .about-longterm-head {
+  width: min(100%, 32rem);
+  max-width: 100%;
+  text-align: center !important;
+  padding-top: 0 !important;
+}
+
+[data-page="about"] .about-longterm-head .about-bento-scroll-title {
+  margin-bottom: 0 !important;
+}
+
+[data-page="about"] .about-longterm-cards {
+  display: grid;
+  gap: clamp(2rem, 4vw, 3rem);
+  justify-items: center;
+  max-width: min(100%, 46rem);
+  width: 100%;
+}
+
 [data-page="about"] .about-longterm-card {
+  display: grid;
   justify-self: center;
+  justify-items: center;
   gap: 1rem;
-  max-width: 42rem;
+  width: min(100%, 42rem);
+  min-width: 0;
+  text-align: center;
 }
 
 [data-page="about"] .about-longterm-tags {
@@ -3224,10 +3264,7 @@ button:disabled,
 
 [data-page="about"] .about-longterm-ground {
   position: absolute;
-  left: 50%;
-  top: calc(clamp(2rem, 6vw, 4.5rem) - 250px);
-  width: 100vw;
-  transform: translateX(-50%);
+  inset: 0;
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
@@ -3236,31 +3273,49 @@ button:disabled,
 [data-page="about"] .about-longterm-ground-image {
   display: block;
   width: 100%;
-  height: auto;
-  border-radius: 1.5rem;
+  height: 100%;
   object-fit: cover;
+  object-position: center;
 }
 
 [data-page="about"] .about-longterm-ground::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.48) 0%, rgba(0, 0, 0, 0.3) 42%, rgba(0, 0, 0, 0.58) 100%);
 }
 
 @media (max-width: 767.98px) {
   [data-page="about"] .about-longterm-stage {
-    padding-bottom: clamp(8rem, 28vw, 12rem);
+    left: 50%;
+    width: 100vw;
+    width: 100dvw;
+    max-width: 100vw;
+    max-width: 100dvw;
+    transform: translateX(-50%);
+    min-height: auto;
+    padding: 1.5rem;
+  }
+
+  [data-page="about"] .about-longterm-content,
+  [data-page="about"] .about-longterm-cards,
+  [data-page="about"] .about-longterm-head,
+  [data-page="about"] .about-longterm-card {
+    width: 100%;
+    max-width: 100%;
   }
 
   [data-page="about"] .about-longterm-ground {
-    top: calc(clamp(4rem, 14vw, 6.5rem) - 250px);
-    width: 100vw;
+    inset: 0;
   }
 
   .about-story-hero-v2 {
     min-height: min(56vh, 620px);
     padding: clamp(1.5rem, 5vw, 2.5rem) 1.25rem clamp(3rem, 9vw, 4.5rem);
+    width: 100vw;
+    width: 100dvw;
+    max-width: 100vw;
+    max-width: 100dvw;
   }
 
   .about-story-hero-title-block {
